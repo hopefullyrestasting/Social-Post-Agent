@@ -5,7 +5,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     const q = (url.searchParams.get("q") || "").trim().slice(0,100);
     const brand = (url.searchParams.get("brand") || "").trim().slice(0,100);
     const status = (url.searchParams.get("status") || "").trim().slice(0,50);
-    const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit") || 100)));
+    const limit = Math.min(250, Math.max(1, Number(url.searchParams.get("limit") || 250)));
     const offset = Math.max(0, Number(url.searchParams.get("offset") || 0));
     const where:string[]=[]; const values:(string|number)[]=[];
     if(q){where.push("(p.name_arabic LIKE ? OR p.name_english LIKE ? OR p.category LIKE ?)"); values.push(`%${q}%`,`%${q}%`,`%${q}%`);}
