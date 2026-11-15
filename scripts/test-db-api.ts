@@ -9,6 +9,9 @@ import {
   onRequestGet as getResearch,
 } from "../functions/api/db/research";
 import {
+  onRequestPost as postResearchIngest,
+} from "../functions/api/db/research/ingest";
+import {
   onRequestGet as getStats,
 } from "../functions/api/db/stats";
 
@@ -43,6 +46,31 @@ class MockStatement {
     }
     if (this.sql.includes("COUNT(*)") && this.sql.includes("creatives")) {
       return { count: 0 } as T;
+    }
+    if (this.sql.includes("FROM products") && this.sql.includes("WHERE id = ?")) {
+      if (this.values[0] !== "product-1") return null;
+      if (this.sql.includes("verification_status")) {
+        return {
+          id: "product-1",
+          name_arabic: "منتج العناية",
+          verification_status: "verified",
+          confidence_score: 0.9,
+          warehouse_stock_status: "in_stock",
+        } as T;
+      }
+      return { id: "product-1", name_arabic: "منتج العناية" } as T;
+    }
+    if (
+      this.sql.includes("FROM product_information_sources") &&
+      this.sql.includes("source_url = ?")
+    ) {
+      return null;
+    }
+    if (
+      this.sql.includes("FROM product_assets") &&
+      this.sql.includes("image_url = ?")
+    ) {
+      return null;
     }
     if (this.sql.includes("WHERE p.id = ?")) {
       return this.values[0] === "product-1"
@@ -107,6 +135,9 @@ class MockStatement {
         ],
       };
     }
+    if (this.sql.includes("SELECT claim_type, claim_text FROM product_research_claims")) {
+      return { results: [] };
+    }
     if (this.sql.includes("FROM product_assets")) {
       return { results: [] };
     }
@@ -168,11 +199,22 @@ class MockDatabase {
   prepare(sql: string) {
     return new MockStatement(sql, this);
   }
+
+  async batch(statements: MockStatement[]) {
+    for (const statement of statements) {
+      this.calls.push({ sql: statement.sql, values: statement.values });
+    }
+    return statements.map(() => ({ success: true }));
+  }
 }
 
-function context(database: MockDatabase, url: string) {
+function context(
+  database: MockDatabase,
+  url: string,
+  init?: RequestInit,
+) {
   return {
-    request: new Request(url),
+    request: new Request(url, init),
     env: { DB: database as unknown as D1Database },
   } as unknown as Parameters<typeof getProducts>[0];
 }
@@ -287,7 +329,135 @@ async function run() {
   );
   assert.equal(missingProductResponse.status, 404);
 
-  console.log("D1 API tests passed: pagination, filters, input validation, stats, brands, and product research.");
+  // --- POST /api/db/research/ingest -----------------------------------------
+
+  const ingestPayload = {
+    product_id: "product-1",
+    source_name: "Official source",
+    source_url: "https://example.test/official",
+    source_type: "manufacturer",
+    image_url: "https://example.test/packshot.png",
+    verified_claims: [
+      { claim_type: "benefit", claim_text: "Verified benefit" },
+      { claim_type: "usage", claim_text: "Verified usage" },
+      { claim_type: "benefit", claim_text: "Verified benefit" },
+    ],
+    warehouse_stock_status: "in_stock",
+  };
+
+  const ingestDatabase = new MockDatabase();
+  const ingestResponse = await postResearchIngest(
+    context(
+      ingestDatabase,
+      "https://example.test/api/db/research/ingest",
+      {
+        method: "POST",
+        body: JSON.stringify(ingestPayload),
+      },
+    ),
+  );
+  const ingest = await json(ingestResponse);
+
+  assert.equal(ingestResponse.status, 200);
+  assert.equal(ingest.success, true);
+  assert.equal(
+    (ingest.product as { verification_status: string }).verification_status,
+    "verified",
+  );
+  assert.equal(
+    (ingest.claims as { inserted: number }).inserted,
+    2,
+    "Duplicate claim in the payload must be skipped.",
+  );
+  assert.equal(
+    (ingest.claims as { skipped: number }).skipped,
+    1,
+  );
+  assert.equal(ingest.warehouseStockCheckRecorded, true);
+
+  const ingestSql = ingestDatabase.calls.map((call) => call.sql);
+  assert.ok(
+    ingestSql.some((sql) =>
+      sql.includes("INSERT INTO product_information_sources"),
+    ),
+  );
+  assert.equal(
+    ingestSql.filter((sql) => sql.includes("INSERT INTO product_research_claims"))
+      .length,
+    2,
+  );
+  assert.ok(
+    ingestSql.some(
+      (sql) =>
+        sql.includes("UPDATE product_assets SET is_primary = 0") &&
+        sql.includes("id != ?"),
+    ),
+    "Previous primary assets must be demoted, not deleted.",
+  );
+  assert.ok(
+    ingestSql.some((sql) => sql.includes("INSERT INTO product_assets")),
+  );
+  assert.ok(
+    ingestSql.some((sql) =>
+      sql.includes("INSERT INTO warehouse_stock_checks"),
+    ),
+  );
+  const productUpdate = ingestDatabase.calls.find((call) =>
+    call.sql.includes("UPDATE products"),
+  );
+  assert.ok(productUpdate);
+  assert.ok(productUpdate.sql.includes("verification_status = 'verified'"));
+  assert.deepEqual(productUpdate.values.slice(-2), [
+    "in_stock",
+    "product-1",
+  ] as BoundValue[]);
+
+  const invalidIngestDatabase = new MockDatabase();
+  const invalidIngestResponse = await postResearchIngest(
+    context(
+      invalidIngestDatabase,
+      "https://example.test/api/db/research/ingest",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          ...ingestPayload,
+          image_url: "not-a-url",
+          verified_claims: [{ claim_type: "medical", claim_text: "Nope" }],
+        }),
+      },
+    ),
+  );
+  assert.equal(invalidIngestResponse.status, 400);
+  assert.equal(
+    invalidIngestDatabase.calls.length,
+    0,
+    "Validation must short-circuit before touching D1.",
+  );
+
+  const notJsonResponse = await postResearchIngest(
+    context(
+      new MockDatabase(),
+      "https://example.test/api/db/research/ingest",
+      { method: "POST", body: "{not-json" },
+    ),
+  );
+  assert.equal(notJsonResponse.status, 400);
+
+  const missingIngestProductResponse = await postResearchIngest(
+    context(
+      new MockDatabase(),
+      "https://example.test/api/db/research/ingest",
+      {
+        method: "POST",
+        body: JSON.stringify({ ...ingestPayload, product_id: "missing" }),
+      },
+    ),
+  );
+  assert.equal(missingIngestProductResponse.status, 404);
+
+  console.log(
+    "D1 API tests passed: pagination, filters, input validation, stats, brands, product research, and verified research ingestion.",
+  );
 }
 
 run().catch((error: unknown) => {

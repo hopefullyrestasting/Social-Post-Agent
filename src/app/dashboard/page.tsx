@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { AL_RAHMA_BRAND_CONFIG } from "@/lib/al-rahma/brand-core";
+import AdPreview from "@/components/al-rahma/ad-preview";
+import VerifyModal from "@/components/al-rahma/verify-modal";
 
 type Brand = {
   id: string;
@@ -187,6 +189,12 @@ export default function DashboardPage() {
   const [research, setResearch] = useState<Research | null>(null);
   const [researchLoading, setResearchLoading] = useState(false);
   const [researchError, setResearchError] = useState("");
+  const [verifyProduct, setVerifyProduct] = useState<Product | null>(null);
+  const [previewProduct, setPreviewProduct] = useState<Product | null>(null);
+  const [previewResearch, setPreviewResearch] = useState<Research | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState("");
+  const [notice, setNotice] = useState("");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -301,6 +309,41 @@ export default function DashboardPage() {
     }
   }
 
+  async function showPreview(product: Product) {
+    if (previewProduct?.id === product.id) {
+      setPreviewProduct(null);
+      setPreviewResearch(null);
+      setPreviewError("");
+      return;
+    }
+
+    setPreviewProduct(product);
+    setPreviewResearch(null);
+    setPreviewError("");
+    setPreviewLoading(true);
+    try {
+      const result = await requestApi<{ research: Research }>(
+        `/api/db/research?product_id=${encodeURIComponent(product.id)}`,
+        new AbortController().signal,
+      );
+      setPreviewResearch(result.research);
+    } catch (error) {
+      setPreviewError(
+        error instanceof Error ? error.message : "تعذر تجهيز معاينة الإعلان",
+      );
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
+  function handleVerified(message: string) {
+    setVerifyProduct(null);
+    setNotice(message);
+    setPreviewProduct(null);
+    setPreviewResearch(null);
+    refresh();
+  }
+
   const statCards = [
     { label: "إجمالي المنتجات", value: stats?.products },
     { label: "إجمالي البراندات", value: stats?.brands },
@@ -358,6 +401,15 @@ export default function DashboardPage() {
             className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-800"
           >
             تعذر تحميل بيانات قاعدة البيانات: {error}
+          </div>
+        )}
+
+        {notice && (
+          <div
+            role="status"
+            className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900"
+          >
+            {notice}
           </div>
         )}
 
@@ -635,21 +687,63 @@ export default function DashboardPage() {
                           )}
                         </td>
                         <td className="p-3">
-                          <button
-                            type="button"
-                            onClick={() => showResearch(item)}
-                            className="font-semibold text-emerald-700 underline"
-                          >
-                            {researchProduct?.id === item.id
-                              ? "إغلاق"
-                              : "المصادر والتحقق"}
-                          </button>
+                          <div className="flex flex-col items-start gap-1">
+                            <button
+                              type="button"
+                              onClick={() => showResearch(item)}
+                              className="font-semibold text-emerald-700 underline"
+                            >
+                              {researchProduct?.id === item.id
+                                ? "إغلاق"
+                                : "المصادر والتحقق"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setNotice("");
+                                setVerifyProduct(item);
+                              }}
+                              className="font-semibold text-slate-700 underline"
+                            >
+                              إضافة صورة مرجعية وتوثيق المنتج
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => showPreview(item)}
+                              className="font-semibold text-slate-700 underline"
+                            >
+                              {previewProduct?.id === item.id
+                                ? "إغلاق المعاينة"
+                                : "معاينة إعلانين (2 Variants)"}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+
+              {previewProduct && (
+                <section aria-live="polite" className="mt-4">
+                  {previewLoading && (
+                    <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
+                      جاري تجهيز النسختين على خلفية بيضاء وشبكة فضية...
+                    </p>
+                  )}
+                  {previewError && (
+                    <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">
+                      تعذر تجهيز معاينة الإعلان: {previewError}
+                    </p>
+                  )}
+                  {previewResearch && (
+                    <AdPreview
+                      product={previewProduct}
+                      research={previewResearch}
+                    />
+                  )}
+                </section>
+              )}
 
               {researchProduct && (
                 <section
@@ -873,6 +967,14 @@ export default function DashboardPage() {
           {BRAND.legalName} · للطلب والاستفسار: {BRAND.contact.phone}
         </p>
       </div>
+
+      {verifyProduct && (
+        <VerifyModal
+          product={verifyProduct}
+          onClose={() => setVerifyProduct(null)}
+          onSaved={handleVerified}
+        />
+      )}
     </main>
   );
 }
