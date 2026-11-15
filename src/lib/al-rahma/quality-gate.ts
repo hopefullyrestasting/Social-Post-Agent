@@ -26,7 +26,6 @@ const BANNED_TERMS = [
 ];
 
 const CTA_REQUIRED_KEYWORDS = ["اطلب", "رسالة", "خاص", "واتساب", "تواصل", "احجز"];
-const TRUST_REQUIRED_KEYWORDS = ["معاينة", "استلام", "شحن", "ضمان", "جودة"];
 
 export class QualityGate {
   /**
@@ -73,25 +72,34 @@ export class QualityGate {
     });
     if (!hasCta) errors.push("البوست يفتقر لدعوة واضحة لاتخاذ إجراء (Call to Action)");
 
-    // 4. فحص نقاط الثقة والضمان (Trust Factors)
-    const hasTrust = TRUST_REQUIRED_KEYWORDS.some((kw) => copy.body.includes(kw));
+    // 4. Verify that advertised product information has a verified source.
+    const hasVerifiedSource =
+      product.verificationStatus === "verified" &&
+      Boolean(product.sourceUrl?.trim());
     checks.push({
-      checkName: "Trust & Assurance Points",
-      category: "copy",
-      passed: hasTrust,
-      score: hasTrust ? 100 : 40,
-      message: hasTrust ? "يحتوي البوست على نقاط ثقة وضمان للعميل (معاينة / شحن / استلام)" : "يفضل إضافة ميزة المعاينة قبل الاستلام لزيادة المبيعات",
+      checkName: "Verified Product Source",
+      category: "compliance",
+      passed: hasVerifiedSource,
+      score: hasVerifiedSource ? 100 : 0,
+      message: hasVerifiedSource
+        ? "المنتج مرتبط بمصدر موثّق."
+        : "لا يمكن اعتماد الإعلان قبل توثيق مصدر معلومات المنتج.",
     });
-    if (!hasTrust) warnings.push("زيادة ثقة العميل بذكر المعاينة قبل الاستلام");
+    if (!hasVerifiedSource) {
+      errors.push("يجب توثيق مصدر معلومات المنتج قبل اعتماد الإعلان.");
+    }
 
     // 5. فحص تطابق الأسعار (Price Consistency)
-    const hasPriceMention = copy.body.includes(String(product.salePrice));
+    const hasPriceMention =
+      product.salePrice !== undefined &&
+      product.salePrice > 0 &&
+      copy.body.includes(String(product.salePrice));
     checks.push({
       checkName: "Price Consistency",
       category: "copy",
       passed: hasPriceMention,
       score: hasPriceMention ? 100 : 20,
-      message: hasPriceMention ? `تم ذكر السعر (${product.salePrice}) بوضوح في النص` : "لم يتم ذكر السعر بوضوح في محتوى البوست",
+      message: hasPriceMention       ? `تم ذكر السعر (${product.salePrice}) بوضوح في النص` : "لم يتم ذكر السعر بوضوح في محتوى البوست",
     });
     if (!hasPriceMention) warnings.push("عدم ذكر السعر قد يقلل من الشفافية");
 

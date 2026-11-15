@@ -31,7 +31,7 @@ export class OverlaySystem {
       originalPrice,
       currency = "ج.م",
       showFooterBar = true,
-      footerText = "🚚 شحن لكل مصر | 📦 معاينة قبل الاستلام | 💬 اطلب الآن",
+      footerText = "للطلب والاستفسار: 01000017548 | واتساب",
       customPillText,
     } = opts;
 
@@ -62,7 +62,7 @@ export class OverlaySystem {
             ${brand.brandName}
           </text>
           <text x="56" y="43" font-family="${brand.fonts.primary}" font-size="10" fill="${amber}">
-            أوفر سعر وجودة لكل بيت
+            عناية وجمال ومستلزمات طبية
           </text>
         </g>
       `);

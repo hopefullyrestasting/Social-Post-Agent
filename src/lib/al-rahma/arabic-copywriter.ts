@@ -1,21 +1,23 @@
 import { AL_RAHMA_BRAND_CORE } from "./brand-core";
 
 export type PostAngle =
-  | "flash_sale"        // عرض تخفيض قوي وسريع
-  | "product_features"   // شرح مواصفات وجودة المنتج
-  | "home_solution"      // حل مشكلة في البيت
-  | "combo_deal"         // عرض باقة وتوفير
-  | "trust_guarantee";   // تركيز على المعاينة والضمان
+  | "flash_sale"
+  | "product_features"
+  | "beauty_routine"
+  | "combo_deal"
+  | "product_information";
 
 export interface ProductDetails {
   title: string;
   category: string;
   originalPrice?: number;
-  salePrice: number;
+  salePrice?: number;
   currency?: string;
   features: string[];
   urgencyNote?: string;
   badgeText?: string;
+  sourceUrl?: string;
+  verificationStatus?: string;
 }
 
 export interface GeneratedArabicCopy {
@@ -31,94 +33,85 @@ export interface GeneratedArabicCopy {
 
 const HOOKS_BY_ANGLE: Record<PostAngle, string[]> = {
   flash_sale: [
-    "🔥 أقوى عرض في مصر من مخزن الرحمة.. السعر اتكسر حرفياً!",
-    "🚨 عرض خاص جداً ومحدود.. وفر فلوسك وجهز بيتك بأشيك شكل!",
-    "💥 الحق العرض قبل ما يخلص! السعر ده مش هيتكرر تاني نهائي.",
+    "للاستفسار عن السعر والعروض المتاحة، تواصلوا مع مخزن الرحمة.",
+    "اكتشفوا تفاصيل المنتج واسألوا عن السعر الحالي.",
   ],
   product_features: [
-    "✨ بتدوري على الجودة اللي تعيش معاكي والشياكة في نفس الوقت؟",
-    "👌 الجودة الحقيقية بتبان من أول استخدام.. شوفي مميزات المنتج ده بنفسك!",
-    "🌟 حل عملي ومميز لكل ست بيت ذكية بتدور على الأفضل وبسعر التوفير.",
+    "تفاصيل المنتج التالية مأخوذة من المعلومات التي أُدخلت له.",
+    "راجعوا بيانات المنتج ومصدر معلوماته قبل الاستخدام.",
   ],
-  home_solution: [
-    "🏡 لو عايز توفر مساحة وتخلي بيتك مترتب وشيك طول الوقت.. الحل هنا!",
-    "💡 منتج هيغير روتين بيتك وهيريحك ويوفر وقتك ومجهودك يومياً.",
-    "🛋️ جمال وأناقة بيتك مش محتاج ميزانية ضخمة.. الذكاء في اختيار الأنسب!",
+  beauty_routine: [
+    "اختيار منتجات العناية يبدأ من معرفة تفاصيل المنتج.",
+    "تعرّفوا على معلومات المنتج قبل إضافته إلى روتين العناية.",
   ],
   combo_deal: [
-    "🎁 باقة التوفير الكبرى من مخزن الرحمة.. اشتري ووفّر أكثر من الضعف!",
-    "🎉 عرض الجملة وصل لحد عندك.. وفر كتير مع باقات عروض الرحمة الحصرية.",
-    "🛒 لمينا لك أهم مستلزمات البيت في عرض واحد بسعر خيالي!",
+    "للاستفسار عن العروض المتاحة على منتجات مخزن الرحمة، تواصلوا معنا.",
+    "اسألوا مخزن الرحمة عن تفاصيل المنتجات والعروض الحالية.",
   ],
-  trust_guarantee: [
-    "🛡️ اطلب وإنت مطمن 100%.. متاح المعاينة والتجربة قبل ما تدفع أي جنيه!",
-    "🤝 ثقتكم ورضاكم أهم من أي مكسب.. شحن سريع ومعاينة حرة عند الاستلام.",
-    "🚚 طلبك بيوصلك لحد باب بيتك مغلف ومضمون وبأعلى درجات الأمان.",
+  product_information: [
+    "تعرفوا على معلومات المنتج ومصدرها قبل اتخاذ قرار الشراء.",
+    "معلومات المنتج المتاحة تساعدكم على اختيار ما يناسبكم.",
   ],
 };
 
 const CTA_OPTIONS = [
-  "📩 للطلب السريع: ابعتلنا رسالة على الخاص دلوقتي أو من خلال الواتساب.",
-  "📲 اضغط على زر إرسال رسالة وطلبك هيتسجل فوراً قبل نفاذ الكمية.",
-  "💬 كلمنا على الخاص وخدمة العملاء هترد عليك خلال دقائق بالأسعار والتفاصيل.",
+  "للطلب والاستفسار تواصلوا معنا على 01000017548 أو عبر واتساب.",
+  "للاستفسار عن السعر والتوفر: 01000017548 | واتساب مخزن الرحمة.",
 ];
 
 export class ArabicCopywriter {
-  /**
-   * توليد بوست كامل متناسق وموجّه تسويقياً للجمهور المصري
-   */
-  public static generatePost(product: ProductDetails, angle: PostAngle = "flash_sale"): GeneratedArabicCopy {
+  public static generatePost(
+    product: ProductDetails,
+    angle: PostAngle = "product_information",
+  ): GeneratedArabicCopy {
     const currency = product.currency || "ج.م";
     const hooks = HOOKS_BY_ANGLE[angle];
     const hook = hooks[Math.floor(Math.random() * hooks.length)];
-
-    let savingsText = "";
-    if (product.originalPrice && product.originalPrice > product.salePrice) {
-      const diff = product.originalPrice - product.salePrice;
-      const percentage = Math.round((diff / product.originalPrice) * 100);
-      savingsText = `خصم ${percentage}% (وفرت ${diff} ${currency})`;
-    }
-
-    const priceTag = product.originalPrice && product.originalPrice > product.salePrice
-      ? `السعر قبل العرض: ${product.originalPrice} ${currency} ❌\nالسعر في العرض الآن: ${product.salePrice} ${currency} فقط! ✅`
-      : `السعر: ${product.salePrice} ${currency} فقط! ✅`;
-
-    const featuresList = product.features
-      .map((f) => `  ▫️ ${f}`)
-      .join("\n");
-
-    const headline = product.badgeText || (savingsText ? `${product.title} - ${savingsText}` : product.title);
+    const salePrice = product.salePrice;
+    const hasSalePrice =
+      salePrice !== undefined && Number.isFinite(salePrice) && salePrice > 0;
+    const originalPrice = product.originalPrice;
+    const hasDiscount =
+      hasSalePrice &&
+      originalPrice !== undefined &&
+      Number.isFinite(originalPrice) &&
+      originalPrice > salePrice;
+    const savingsText = hasDiscount
+      ? `فرق السعر: ${originalPrice - salePrice} ${currency}`
+      : undefined;
+    const priceTag = hasSalePrice
+      ? hasDiscount
+        ? `السعر السابق: ${originalPrice} ${currency}\nالسعر: ${salePrice} ${currency}`
+        : `السعر: ${salePrice} ${currency}`
+      : "";
+    const headline = product.badgeText || product.title;
     const cta = CTA_OPTIONS[Math.floor(Math.random() * CTA_OPTIONS.length)];
-
-    const urgency = product.urgencyNote || "⚠️ الكميات محدودة جداً نظراً للإقبال الشديد.. الأولوية لأسبقية الحجز!";
-
-    const body = `
-${hook}
-
-📌 مواصفات ومميزات المنتج:
-${featuresList}
-
-💰 تفاصيل الأسعار والعرض:
-${priceTag}
-${savingsText ? `🎁 ${savingsText}` : ""}
-
-${urgency}
-
-🛡️ مميزات الشراء من مخزن الرحمة:
-  ✅ معاينة الشحنة قبل الاستلام والدفع عند التأكد من الجودة.
-  ✅ شحن فوري لجميع محافظات مصر.
-  ✅ خدمة ما بعد البيع ودعم مستمر.
-
-${cta}
-`.trim();
-
+    const facts = product.features
+      .map((feature) => feature.trim())
+      .filter(Boolean)
+      .map((feature) => `• ${feature}`);
+    const details = [
+      product.category.trim() ? `التصنيف: ${product.category.trim()}` : "",
+      ...facts,
+      priceTag,
+      product.urgencyNote?.trim() || "",
+      product.sourceUrl?.trim()
+        ? `مصدر المعلومات: ${product.sourceUrl.trim()}`
+        : "",
+    ].filter(Boolean);
+    const body = [hook, ...details, cta].join("\n\n");
     const specificHashtags = [
-      `#${product.category.replace(/\s+/g, "_")}`,
-      `#${product.title.split(" ")[0] || "منتجات"}`,
-    ];
-    const allHashtags = Array.from(new Set([...specificHashtags, ...AL_RAHMA_BRAND_CORE.defaultHashtags]));
-
-    const fullPostText = `${headline}\n\n${body}\n\n${allHashtags.join(" ")}`;
+      product.category.trim()
+        ? `#${product.category.trim().replace(/\s+/g, "_")}`
+        : "",
+      product.title.trim()
+        ? `#${product.title.trim().split(/\s+/)[0]}`
+        : "",
+    ].filter(Boolean);
+    const hashtags = Array.from(
+      new Set([...specificHashtags, ...AL_RAHMA_BRAND_CORE.defaultHashtags]),
+    );
+    const fullPostText = `${headline}\n\n${body}\n\n${hashtags.join(" ")}`;
 
     return {
       headline,
@@ -127,9 +120,8 @@ ${cta}
       cta,
       priceTag,
       savingsText,
-      hashtags: allHashtags,
+      hashtags,
       fullPostText,
     };
   }
 }
-

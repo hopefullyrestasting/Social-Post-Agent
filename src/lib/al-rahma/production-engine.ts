@@ -38,14 +38,16 @@ export class ProductionEngine {
       height = 1080,
       customPillText,
     } = request;
+    const salePrice = product.salePrice ?? 0;
+    const hasSalePrice = salePrice > 0;
 
     // 1. توليد النصوص التسويقية العربية
     const copy = ArabicCopywriter.generatePost(product, angle);
 
     // 2. إعداد مواصفات الـ Overlay
     let discountText = "عرض خاص";
-    if (product.originalPrice && product.originalPrice > product.salePrice) {
-      const percentage = Math.round(((product.originalPrice - product.salePrice) / product.originalPrice) * 100);
+    if (product.originalPrice && product.originalPrice > salePrice) {
+      const percentage = Math.round(((product.originalPrice - salePrice) / product.originalPrice) * 100);
       discountText = `خصم ${percentage}%`;
     }
 
@@ -53,14 +55,14 @@ export class ProductionEngine {
       width,
       height,
       showLogo: true,
-      showDiscountBadge: true,
+      showDiscountBadge: hasSalePrice,
       discountText,
-      showPriceTag: true,
-      salePrice: product.salePrice,
+      showPriceTag: hasSalePrice,
+      salePrice,
       originalPrice: product.originalPrice,
       currency: product.currency || "ج.م",
       showFooterBar: true,
-      customPillText: customPillText || "خامة أصلية 100%",
+      customPillText,
     };
 
     // 3. توليد كود الـ SVG للطبقات البصرية
@@ -80,7 +82,7 @@ export class ProductionEngine {
       svgDataUri,
       metadata: {
         productName: product.title,
-        salePrice: product.salePrice,
+        salePrice,
         angle,
         generatedAt: new Date().toISOString(),
         dimensions: { width, height },

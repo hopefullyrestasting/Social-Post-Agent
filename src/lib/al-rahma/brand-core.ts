@@ -39,9 +39,10 @@ export interface BrandCoreConfig {
 export const AL_RAHMA_BRAND_CORE: BrandCoreConfig = {
   brandName: "مخزن الرحمة",
   brandNameEnglish: "Al-Rahma Store",
-  industry: "مستحضرات التجميل والعناية الشخصية والعطور والمستلزمات الطبية",
-  tagline: "منتجات العناية والجمال متوفرة لدى مخزن الرحمة",
-  taglineEnglish: "Beauty, Personal Care and Pharmacy Supplies",
+  industry:
+    "مستحضرات التجميل والعناية بالشعر والبشرة والعناية الشخصية والعطور والمستلزمات الطبية",
+  tagline: "منتجات العناية والجمال والمستلزمات الطبية لدى مخزن الرحمة",
+  taglineEnglish: "Beauty, Personal Care, Fragrance and Pharmacy Supplies",
   valueProposition:
     "نوفر مستحضرات التجميل والعناية الشخصية والعطور والمستلزمات الطبية، مع التواصل المباشر للاستفسار عن التوفر والعروض.",
   toneOfVoice: [
@@ -94,15 +95,13 @@ export const AL_RAHMA_BRAND_CORE: BrandCoreConfig = {
   defaultHashtags: [
     "#مخزن_الرحمة",
     "#عروض_الرحمة",
-    "#تخفيضات_مصر",
     "#مستحضرات_تجميل",
+    "#العناية_بالشعر",
+    "#العناية_بالبشرة",
     "#عناية_شخصية",
     "#عطور",
     "#مستلزمات_صيدليات",
-    "#عروض_يومية",
-    "#أوفر_سعر",
-    "#تجهيز_شقق",
-    "#تسوق_أونلاين",
+    "#مستلزمات_طبية",
   ],
 };
 
