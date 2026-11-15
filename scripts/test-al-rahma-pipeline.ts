@@ -21,6 +21,11 @@ const brand = AL_RAHMA_BRAND_CONFIG;
 
 assert.match(brand.contact.phone, /^\d{11}$/);
 assert.match(brand.contact.whatsappUrl, /^https:\/\/wa\.me\/\d+$/);
+assert.equal(
+  brand.contact.whatsappUrl,
+  `https://wa.me/20${brand.contact.phone.replace(/^0/, "")}`,
+  "WhatsApp URL must encode the configured phone in international form.",
+);
 assert.match(brand.activity, /مستحضرات التجميل/);
 assert.equal(brand.visual.format.width, 1080);
 assert.equal(brand.visual.format.height, 1920);

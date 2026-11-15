@@ -155,7 +155,7 @@ export const AL_RAHMA_BRAND_CONFIG: BrandConfig = {
   },
   contact: {
     phone: "01000017548",
-    whatsappUrl: "https://wa.me/20100017548",
+    whatsappUrl: "https://wa.me/201000017548",
     deliveryPromise: "يتم تأكيد تفاصيل التوصيل عند التواصل",
     returnPolicy: "تُحدد سياسة الاستبدال والاسترجاع من إدارة المخزن",
   },
