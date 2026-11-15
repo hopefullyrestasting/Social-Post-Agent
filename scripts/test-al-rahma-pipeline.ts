@@ -15,6 +15,7 @@ import {
   templateForVariant,
   cairoToday,
 } from "../src/lib/al-rahma";
+import { removePackshotBackgroundServer } from "../functions/api/ai/remove-bg";
 
 const brand = AL_RAHMA_BRAND_CONFIG;
 
@@ -345,6 +346,56 @@ const workersScene = resolveBackground({
 assert.equal(workersScene.provider, "cloudflare-ai");
 assert.equal(workersScene.kind, "image");
 
+// --- Repo helpers ------------------------------------------------------------
+
+const repoRoot = process.cwd();
+
+function walk(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const fullPath = join(directory, entry.name);
+    if (entry.isDirectory()) return walk(fullPath);
+    return /\.(ts|tsx)$/.test(entry.name) ? [fullPath] : [];
+  });
+}
+
+const normalized = (file: string) => relative(repoRoot, file).split("\\").join("/");
+
+(async () => {
+// --- Server-side background removal (lightweight client, cloud/server processing) ---
+
+const pkgJson = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")) as {
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+};
+assert.equal(
+  Boolean(pkgJson.dependencies?.["@imgly/background-removal"] || pkgJson.devDependencies?.["@imgly/background-removal"]),
+  false,
+  "@imgly/background-removal must not be present in package dependencies (client must stay lightweight).",
+);
+
+const clientSrcOffenders = walk(join(repoRoot, "src")).filter((file) =>
+  readFileSync(file, "utf8").includes("@imgly/background-removal"),
+);
+assert.deepEqual(
+  clientSrcOffenders.map((f) => normalized(f)),
+  [],
+  "Client src must not import @imgly/background-removal.",
+);
+
+// Fallback behavior: no AI provider / no remove.bg key and unreachable source -> null (caller falls back to original URL)
+const bgFallbackResult = await removePackshotBackgroundServer(
+  {},
+  "https://example.invalid/not-reachable-packshot.png",
+);
+assert.equal(bgFallbackResult, null, "Server-side bg removal must fail gracefully and return null for fallback.");
+
+// Private/blocked hosts must not be fetched
+const bgBlockedResult = await removePackshotBackgroundServer(
+  { AI: { run: async () => "x" } },
+  "http://127.0.0.1/private.png",
+);
+assert.equal(bgBlockedResult, null, "Server-side bg removal must block private/local hosts.");
+
 // --- Overlay ----------------------------------------------------------------
 
 const overlay = OverlaySystem.generateOverlaySvg({
@@ -377,7 +428,6 @@ assert.ok(defaultOverlay.includes("\u200Fللتواصل:"));
 
 // --- Single-source guard ----------------------------------------------------
 
-const repoRoot = process.cwd();
 const scannedDirs = ["src", "functions", "scripts"];
 const configPath = "src/lib/al-rahma/brand-core.ts";
 const needles = [
@@ -386,15 +436,6 @@ const needles = [
   brand.brandName,
 ];
 
-function walk(directory: string): string[] {
-  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-    const fullPath = join(directory, entry.name);
-    if (entry.isDirectory()) return walk(fullPath);
-    return /\.(ts|tsx)$/.test(entry.name) ? [fullPath] : [];
-  });
-}
-
-const normalized = (file: string) => relative(repoRoot, file).split("\\").join("/");
 const offenders = scannedDirs
   .flatMap((directory) => walk(join(repoRoot, directory)))
   .filter((file) => normalized(file) !== configPath)
@@ -412,3 +453,7 @@ assert.deepEqual(
 console.log(
   "Al Rahma pipeline tests passed: BrandConfig, 4-8 benefit-only copy (no usage, no ellipsis), 3 designer templates, RTL header/delivery pill, dominant 760px hero packshot, dual-tone high-impact sales typography, quality gate, promos, 48h cultural greeting, and single-source brand identity.",
 );
+})().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

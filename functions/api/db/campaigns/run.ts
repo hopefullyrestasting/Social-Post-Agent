@@ -7,6 +7,7 @@ import {
   type ProductDetails,
   type PromotionRecord,
 } from "../../../../src/lib/al-rahma";
+import { removePackshotBackgroundServer } from "../../ai/remove-bg";
 
 /**
  * POST /api/db/campaigns/run (protected by admin middleware)
@@ -22,6 +23,7 @@ interface Env {
   AI?: {
     run: (model: string, input: Record<string, unknown>) => Promise<unknown>;
   };
+  REMOVE_BG_API_KEY?: string;
 }
 
 interface EligibleProductRow {
@@ -468,6 +470,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         loadResearch(env, product.id),
       ]);
 
+      // Server-side packshot cutout (keeps browser lightweight). Fallback to original URL on failure.
+      let productImageUrl = product.image_url;
+      try {
+        const cutout = await removePackshotBackgroundServer(env, product.image_url);
+        if (cutout) productImageUrl = cutout;
+      } catch (error) {
+        console.error("Server-side packshot cutout failed, using original image.", error);
+      }
+
       const details: ProductDetails = {
         title: product.name_arabic,
         category: product.category ?? "",
@@ -475,7 +486,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         verificationStatus: product.verification_status,
         verifiedBenefits: research.verifiedBenefits,
         verifiedUsage: research.verifiedUsage,
-        productImageUrl: product.image_url,
+        productImageUrl,
         warehouseStockStatus: (product.warehouse_stock_status ?? "unknown") as
           | "in_stock"
           | "out_of_stock"

@@ -1,14 +1,14 @@
 /**
- * Client-side export helpers for WhatsApp Status creatives.
+ * Lightweight client-side export helpers for WhatsApp Status creatives.
  *
  * SVGs may reference external packshot URLs and AI scene backgrounds; to render
  * them on a canvas without tainting we inline remote images as data URLs
  * (routed through the same-origin proxy when needed), then rasterize at exact
  * 1080x1920 dimensions.
  *
- * Packshot images (marked data-packshot="true") that have solid white/near-white
- * backgrounds are processed with edge flood-fill + chroma-keying and soft edge
- * feathering so the product bottle stands cleanly without a white box.
+ * Packshot images (marked data-packshot="true") get a lightweight pure-canvas
+ * alpha/white-background cleanup + alpha bounding-box trim for crisp export.
+ * No external AI model downloads run in the browser.
  */
 
 export interface ExportCreative {
@@ -87,11 +87,6 @@ async function loadImage(src: string): Promise<HTMLImageElement> {
     img.onerror = () => reject(new Error("تعذر تحميل صورة الإعلان للرسم."));
     img.src = src;
   });
-}
-
-async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
-  const res = await fetch(dataUrl);
-  return await res.blob();
 }
 
 function trimAlphaBoundingBox(canvas: HTMLCanvasElement): HTMLCanvasElement {
@@ -253,35 +248,35 @@ async function naiveCutoutFallback(dataUrl: string): Promise<string> {
 }
 
 /**
- * Neural packshot cutout with safe fallback.
- * Uses @imgly/background-removal in the browser for segmentation (preserves white bottles),
- * then applies alpha bounding-box auto-trim (alpha > 20 + 4px padding).
- * Falls back to naive flood-fill cutout + trim when neural/WASM is unavailable.
+ * Lightweight client-side packshot cleanup: pure Canvas alpha bbox trim and a
+ * naive white-background fallback for non-transparent sources. No external AI
+ * model downloads. Server-side cutouts are preferred during campaign generation.
  */
 async function cutoutProductPackshot(dataUrl: string): Promise<string> {
   try {
-    if (typeof window !== "undefined" && typeof document !== "undefined") {
-      try {
-        const mod = await import("@imgly/background-removal");
-        const removeBackground = (mod as { removeBackground?: (input: Blob, config?: unknown) => Promise<Blob> }).removeBackground;
-        if (typeof removeBackground === "function") {
-          const inputBlob = await dataUrlToBlob(dataUrl);
-          const outputBlob = await removeBackground(inputBlob);
-          const outUrl = await blobToDataUrl(outputBlob);
-          const img = await loadImage(outUrl);
-          const canvas = document.createElement("canvas");
-          canvas.width = img.naturalWidth || img.width;
-          canvas.height = img.naturalHeight || img.height;
-          const ctx = canvas.getContext("2d");
-          if (ctx && canvas.width > 0 && canvas.height > 0) {
-            ctx.drawImage(img, 0, 0);
-            const trimmed = trimAlphaBoundingBox(canvas);
-            return trimmed.toDataURL("image/png");
-          }
-          return outUrl;
-        }
-      } catch {
-        // fall through to naive fallback
+    if (typeof window === "undefined" || typeof document === "undefined") {
+      return dataUrl;
+    }
+    const img = await loadImage(dataUrl);
+    const w = img.naturalWidth || img.width;
+    const h = img.naturalHeight || img.height;
+    if (!w || !h) return dataUrl;
+
+    // If the image already has meaningful transparency, just trim alpha bbox.
+    const probe = document.createElement("canvas");
+    probe.width = w;
+    probe.height = h;
+    const pctx = probe.getContext("2d", { willReadFrequently: true });
+    if (pctx) {
+      pctx.drawImage(img, 0, 0);
+      const sample = pctx.getImageData(0, 0, w, h).data;
+      let transparent = 0;
+      for (let i = 3; i < sample.length; i += 4 * 97) {
+        if (sample[i] < 250) transparent++;
+      }
+      if (transparent > 0) {
+        const trimmed = trimAlphaBoundingBox(probe);
+        return trimmed.toDataURL("image/png");
       }
     }
   } catch {
@@ -294,6 +289,7 @@ async function cutoutProductPackshot(dataUrl: string): Promise<string> {
 async function removeWhiteBackground(dataUrl: string): Promise<string> {
   return await cutoutProductPackshot(dataUrl);
 }
+
 async function fetchAsDataUrl(url: string, isPackshot = false): Promise<string | null> {
   const candidates = /^https?:\/\//i.test(url)
     ? [toProxyUrl(url), url]
@@ -397,7 +393,6 @@ export async function svgToPngBlob(
     URL.revokeObjectURL(url);
   }
 }
-
 
 export async function svgToPngDataUrl(
   svgMarkup: string,

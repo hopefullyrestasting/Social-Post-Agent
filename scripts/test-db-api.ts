@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { onRequest as adminMiddleware } from "../functions/api/_middleware";
 import { onRequestGet as getBrands } from "../functions/api/db/brands";
 import { onRequestGet as getCampaigns } from "../functions/api/db/campaigns";
@@ -981,6 +983,20 @@ async function run() {
 
   // --- Campaigns -------------------------------------------------------------
   await testCampaignEndpoints();
+
+  // --- Lightweight client guard (server-side bg removal) --------------------
+  const repoRoot = process.cwd();
+  const pkgJson = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")) as {
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+  };
+  assert.equal(
+    Boolean(pkgJson.dependencies?.["@imgly/background-removal"] || pkgJson.devDependencies?.["@imgly/background-removal"]),
+    false,
+    "@imgly/background-removal must not be present in package dependencies.",
+  );
+  const exportSource = readFileSync(join(repoRoot, "src/lib/al-rahma/export.ts"), "utf8");
+  assert.equal(exportSource.includes("@imgly/background-removal"), false, "Client export must not import @imgly/background-removal.");
 
   console.log(
     "D1 API tests passed: pagination, filters, validation, stats, brands, research, ingest, admin auth 401/unconfigured-preview, promos, 48h calendar, bulk ingest, and campaign batch run/persistence.",
