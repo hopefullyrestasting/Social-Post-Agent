@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="50%" stop-color="#F8FAFC"/>
+      <stop offset="100%" stop-color="#ECFDF5"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#A7F3D0" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#34D399" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#A7F3D0" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#E2E8F0" stop-opacity="0.55"/>
+    </linearGradient>
+    <linearGradient id="acrylic" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#E5E7EB"/>
+    </linearGradient>
+  </defs>
+  <rect width="1080" height="1920" fill="url(#bg)"/>
+  <rect x="0" y="980" width="1080" height="420" fill="url(#rim)"/>
+
+  <!-- clean frosted glass & white acrylic display stage -->
+  <g id="stage">
+    <ellipse cx="540" cy="1455" rx="440" ry="58" fill="#0F172A" fill-opacity="0.08"/>
+    <rect x="180" y="1288" width="720" height="130" rx="18" fill="url(#acrylic)"/>
+    <ellipse cx="540" cy="1288" rx="360" ry="36" fill="#FFFFFF"/>
+    <rect x="210" y="1248" width="660" height="34" rx="12" fill="url(#glass)" stroke="#A7F3D0" stroke-opacity="0.5" stroke-width="2"/>
+    <line x1="220" y1="1288" x2="860" y2="1288" stroke="#34D399" stroke-opacity="0.35" stroke-width="2"/>
+    <line x1="240" y1="1322" x2="840" y2="1322" stroke="#CBD5E1" stroke-opacity="0.5" stroke-width="2"/>
+  </g>
+
+  <!-- soft mint/emerald studio rim lighting accents (crisp shapes) -->
+  <g stroke="#10B981" stroke-opacity="0.18" stroke-width="3" fill="none">
+    <path d="M120 300 L960 300"/>
+    <path d="M120 360 L960 360"/>
+    <circle cx="540" cy="1180" r="380" stroke-opacity="0.08"/>
+  </g>
+</svg>

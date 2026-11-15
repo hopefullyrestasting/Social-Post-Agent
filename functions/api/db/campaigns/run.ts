@@ -84,9 +84,17 @@ const requestSchema = z
 
 const MS_PER_DAY = 86_400_000;
 
+const SHARP_QUALITY_SUFFIX =
+  "sharp focus, crisp edges, architectural 3D product photography stage, 8k resolution, high detail, no blur, no bokeh background";
+
 const VARIANT_SCENE_PROMPTS: Record<1 | 2, string> = {
-  1: "Photorealistic luxury cosmetic product photography stage, minimalist 3D white and soft silver hexagonal podium in the lower center, lush green tropical palm leaves framing the bottom corners, soft matte silver spheres floating gently in blurred background, bright clean studio lighting, empty podium top, no bottles, no text, no logos, vertical 9:16",
-  2: "Minimalist editorial skincare studio background, warm cream and soft sage green architectural arch backdrop, natural sunlight shadows, subtle botanical leaves, clean empty display surface at bottom, photorealistic commercial photography, no products, no text, vertical 9:16",
+  1: `Photorealistic luxury cosmetic product photography stage, minimalist 3D white and brushed-silver hexagonal podium in the lower center, crisp green tropical palm leaves framing the bottom corners, subtle 3D matte silver spheres, bright clean studio lighting, empty podium top, no bottles, no text, no logos, vertical 9:16, ${SHARP_QUALITY_SUFFIX}`,
+  2: `Architectural cream and soft sage-green 3D arch niche skincare studio background, crisp natural sunlight window shadows, clean stone display plinth at bottom, subtle botanical leaves, empty stage, no products, no text, vertical 9:16, ${SHARP_QUALITY_SUFFIX}`,
+};
+
+const BUNDLED_STAGE_FALLBACKS: Record<1 | 2, string> = {
+  1: "/studio-scenes/silver-podium-botanical.svg",
+  2: "/studio-scenes/arch-sunlit-studio.svg",
 };
 
 function base64FromBytes(bytes: Uint8Array): string {
@@ -159,15 +167,8 @@ async function bytesFromUnknown(value: unknown): Promise<Uint8Array | null> {
   return null;
 }
 
-function pollinationsUrlForPrompt(prompt: string, seed?: number): string {
-  const params = new URLSearchParams({
-    width: "1080",
-    height: "1920",
-    nologo: "true",
-    model: "flux",
-  });
-  if (typeof seed === "number") params.set("seed", String(seed));
-  return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?${params.toString()}`;
+function bundledStageFallback(variant: 1 | 2): string {
+  return BUNDLED_STAGE_FALLBACKS[variant];
 }
 
 async function generateStudioScene(
@@ -175,6 +176,7 @@ async function generateStudioScene(
   variant: 1 | 2,
   seed: number,
 ): Promise<string> {
+  void seed;
   const prompt = VARIANT_SCENE_PROMPTS[variant];
   if (env.AI && typeof env.AI.run === "function") {
     try {
@@ -210,7 +212,7 @@ async function generateStudioScene(
       console.error("Workers AI studio-scene generation failed, falling back.", error);
     }
   }
-  return pollinationsUrlForPrompt(prompt, seed);
+  return bundledStageFallback(variant);
 }
 async function loadBrandLogoUrl(env: Env): Promise<string | null> {
   try {
@@ -613,4 +615,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     );
   }
 };
+
+
 

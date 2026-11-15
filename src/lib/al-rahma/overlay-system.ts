@@ -63,6 +63,11 @@ function commonDefs(): string {
         <stop offset="0%" stop-color="#064E3B" stop-opacity="0.92" />
         <stop offset="100%" stop-color="#065F46" stop-opacity="0.88" />
       </linearGradient>
+      <linearGradient id="headline-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#0B3D2E" />
+        <stop offset="45%" stop-color="#0F172A" />
+        <stop offset="100%" stop-color="#334155" />
+      </linearGradient>
       <filter id="glass-blur" x="-10%" y="-20%" width="120%" height="140%">
         <feGaussianBlur in="SourceGraphic" stdDeviation="0.2" />
       </filter>
@@ -77,6 +82,15 @@ function commonDefs(): string {
       </filter>
       <filter id="shadow-blur-soft" x="-40%" y="-160%" width="180%" height="420%">
         <feGaussianBlur stdDeviation="10" />
+      </filter>
+      <filter id="contact-shadow-tight" x="-40%" y="-160%" width="180%" height="420%">
+        <feGaussianBlur stdDeviation="4" />
+      </filter>
+      <filter id="contact-shadow-wide" x="-40%" y="-160%" width="180%" height="420%">
+        <feGaussianBlur stdDeviation="9" />
+      </filter>
+      <filter id="badge-drop" x="-30%" y="-30%" width="160%" height="180%">
+        <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#0F172A" flood-opacity="0.12" />
       </filter>
     </defs>
   `;
@@ -153,7 +167,7 @@ function heroHeadline(width: number, headline: string): string {
     x,
     y,
     size,
-    fill: "#0F172A",
+    fill: "url(#headline-gradient)",
     weight: 800,
     anchor: "middle",
     lineHeight,
@@ -169,9 +183,9 @@ function podiumAndPackshot(
   const podiumBottomY = 1400;
   const podiumW = 760;
   const podiumX = (width - podiumW) / 2;
-  const packshotH = 660;
-  const packshotBottom = 1350;
-  const packshotY = packshotBottom - packshotH; // 690
+  const packshotH = 670;
+  const packshotBottom = 1355;
+  const packshotY = packshotBottom - packshotH; // 685
   const packshotW = 560;
   const packshotX = (width - packshotW) / 2;
 
@@ -198,8 +212,10 @@ function podiumAndPackshot(
     packshot = `
       <g id="packshot-hero">
         <ellipse id="packshot-rim-glow" cx="${cx}" cy="${packshotY + packshotH * 0.45}" rx="210" ry="300" fill="#FFFFFF" fill-opacity="0.18" filter="url(#packshot-rim)" />
-        <ellipse id="packshot-contact-shadow" cx="${cx}" cy="${packshotBottom - 6}" rx="170" ry="26" fill="#0F172A" fill-opacity="0.28" filter="url(#shadow-blur-soft)" />
-        <ellipse id="packshot-contact-shadow-core" cx="${cx}" cy="${packshotBottom - 8}" rx="95" ry="12" fill="#020617" fill-opacity="0.22" />
+        <!-- wide soft ambient shadow across podium top -->
+        <ellipse id="packshot-contact-shadow-wide" cx="${cx}" cy="${packshotBottom - 2}" rx="190" ry="28" fill="#0F172A" fill-opacity="0.18" filter="url(#contact-shadow-wide)" />
+        <!-- tight dark contact shadow at bottle base -->
+        <ellipse id="packshot-contact-shadow-tight" cx="${cx}" cy="${packshotBottom - 2}" rx="110" ry="14" fill="#0F172A" fill-opacity="0.42" filter="url(#contact-shadow-tight)" />
         <g id="packshot" data-packshot="true" filter="url(#soft-drop)">
           <image data-packshot="true" href="${escapeXml(productUrl)}" x="${packshotX}" y="${packshotY}" width="${packshotW}" height="${packshotH}" preserveAspectRatio="xMidYMid meet" />
         </g>
@@ -207,17 +223,22 @@ function podiumAndPackshot(
     `;
   }
 
-  // Side frosted-glass benefit badges
+  // Side frosted-glass benefit badges (agency-grade)
   const badge = (x: number, y: number, label: string, align: "start" | "end") => {
-    const w = 250;
-    const h = 58;
+    const w = 258;
+    const h = 62;
     const bx = align === "end" ? x - w : x;
+    const iconCx = align === "end" ? w - 30 : 30;
+    const iconX = iconCx - 6;
+    const iconY = h / 2 - 2;
+    const stroke = align === "start" ? "#059669" : "#94A3B8";
     return `
-      <g transform="translate(${bx}, ${y})">
-        <rect width="${w}" height="${h}" rx="29" fill="#FFFFFF" fill-opacity="0.72" stroke="#D1FAE5" stroke-width="1.5" />
-        <rect width="${w}" height="${h}" rx="29" fill="#ECFDF5" fill-opacity="0.35" />
-        <circle cx="${align === "end" ? w - 26 : 26}" cy="${h / 2}" r="7" fill="#059669" />
-        <text x="${w / 2}" y="37" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="22" font-weight="700" fill="#065F46" text-anchor="middle">${escapeXml(label)}</text>
+      <g transform="translate(${bx}, ${y})" filter="url(#badge-drop)">
+        <rect width="${w}" height="${h}" rx="31" fill="rgba(255,255,255,0.88)" stroke="${stroke}" stroke-width="1.5" />
+        <rect x="1.5" y="1.5" width="${w - 3}" height="${h - 3}" rx="29.5" fill="#FFFFFF" fill-opacity="0.18" />
+        <circle cx="${iconCx}" cy="${h / 2}" r="11" fill="#059669" fill-opacity="0.12" stroke="#059669" stroke-width="1.2" />
+        <path d="M ${iconX} ${iconY} l 4 4 l 8 -9" fill="none" stroke="#059669" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />
+        <text x="${w / 2 + (align === "end" ? -8 : 8)}" y="39" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="22" font-weight="700" fill="#065F46" text-anchor="middle">${escapeXml(label)}</text>
       </g>
     `;
   };

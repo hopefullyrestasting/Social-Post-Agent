@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
+  <defs>
+    <linearGradient id="silk" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="45%" stop-color="#F8FAFC"/>
+      <stop offset="100%" stop-color="#ECEFF3"/>
+    </linearGradient>
+    <radialGradient id="spot" cx="0.5" cy="0.18" r="0.55">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.95"/>
+      <stop offset="55%" stop-color="#FFFFFF" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="marble" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="55%" stop-color="#F3F4F6"/>
+      <stop offset="100%" stop-color="#D1D5DB"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#FDE68A"/>
+      <stop offset="50%" stop-color="#D97706"/>
+      <stop offset="100%" stop-color="#F59E0B"/>
+    </linearGradient>
+  </defs>
+  <rect width="1080" height="1920" fill="url(#silk)"/>
+  <rect width="1080" height="1920" fill="url(#spot)"/>
+  <path d="M320 0 L760 0 L640 520 L440 520 Z" fill="#FFFFFF" fill-opacity="0.20"/>
+
+  <!-- luxury pearl-white cylindrical marble pedestal with gold/silver trim -->
+  <g id="pedestal">
+    <ellipse cx="540" cy="1448" rx="360" ry="50" fill="#0F172A" fill-opacity="0.10"/>
+    <rect x="300" y="1225" width="480" height="190" rx="18" fill="url(#marble)"/>
+    <ellipse cx="540" cy="1225" rx="240" ry="34" fill="#FFFFFF"/>
+    <ellipse cx="540" cy="1222" rx="210" ry="22" fill="#F8FAFC" fill-opacity="0.8"/>
+    <rect x="300" y="1218" width="480" height="10" fill="url(#gold)" fill-opacity="0.85"/>
+    <rect x="300" y="1402" width="480" height="8" fill="#CBD5E1" fill-opacity="0.9"/>
+    <line x1="320" y1="1260" x2="760" y2="1260" stroke="#FFFFFF" stroke-opacity="0.6" stroke-width="2"/>
+    <line x1="320" y1="1378" x2="760" y2="1378" stroke="#94A3B8" stroke-opacity="0.25" stroke-width="2"/>
+  </g>
+
+  <!-- crisp silk folds suggestion -->
+  <g stroke="#E5E7EB" stroke-opacity="0.55" stroke-width="2" fill="none">
+    <path d="M120 1500 C 260 1420, 380 1460, 520 1500"/>
+    <path d="M560 1500 C 700 1460, 820 1420, 960 1500"/>
+  </g>
+</svg>

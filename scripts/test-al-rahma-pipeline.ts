@@ -240,8 +240,8 @@ for (const result of variants) {
   assert.ok(result.svgOverlay.includes("#FFFFFF"));
   assert.ok(result.svgOverlay.includes('data-template="'), "Template marker must be present.");
   assert.ok(result.svgOverlay.includes('data-packshot="true"'), "Packshot must be marked for cutout compositing.");
-  assert.ok(result.svgOverlay.includes('height="660"'), "Hero packshot must be rendered at 660px height.");
-  assert.ok(result.svgOverlay.includes('y="690"'), "Hero packshot must be grounded at bottom y=1350 (y=690 for 660px height).");
+  assert.ok(result.svgOverlay.includes('height="670"'), "Hero packshot must be rendered at 670px height.");
+  assert.ok(result.svgOverlay.includes('y="685"'), "Hero packshot must be grounded at bottom y=1355 (y=685 for 670px height).");
   assert.ok(result.svgOverlay.includes("#25D366") || result.svgOverlay.includes("25D366"), "Contact block must include WhatsApp icon.");
   assert.ok(result.svgOverlay.includes("#065F46") || result.svgOverlay.includes("065F46"), "Contact/footer must include bold emerald styling.");
   assert.equal(result.qualityReport.passed, true);
@@ -358,8 +358,8 @@ assert.ok(overlay.includes("\u200Fللتواصل:"));
 assert.ok(overlay.includes("متاح توصيل"));
 assert.ok(overlay.includes("ترطيب") && overlay.includes("عميق"), "Benefit line text must render in overlay.");
 assert.ok(overlay.includes('data-packshot="true"'));
-assert.ok(overlay.includes('height="660"'));
-assert.ok(overlay.includes('y="690"'));
+assert.ok(overlay.includes('height="670"'));
+assert.ok(overlay.includes('y="685"'));
 assert.equal(overlay.includes("..."), false);
 
 const defaultOverlay = OverlaySystem.generateOverlaySvg({ width: 1080, height: 1920 });

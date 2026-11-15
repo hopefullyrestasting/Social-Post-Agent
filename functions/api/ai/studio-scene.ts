@@ -1,4 +1,4 @@
-/**
+﻿/**
  * POST /api/ai/studio-scene
  *
  * Generates a photorealistic 9:16 studio background (no text, no bottles/products,
@@ -20,13 +20,22 @@ type TemplateId = "silver-podium-botanical" | "botanical-arch-frame" | "editoria
 
 const DEFAULT_TEMPLATE: TemplateId = "silver-podium-botanical";
 
+const SHARP_QUALITY_SUFFIX =
+  "sharp focus, crisp edges, architectural 3D product photography stage, 8k resolution, high detail, no blur, no bokeh background";
+
 const PROMPTS: Record<TemplateId, string> = {
   "silver-podium-botanical":
-    "Photorealistic luxury cosmetic product photography stage, minimalist 3D white and soft silver hexagonal podium in the lower center, lush green tropical palm leaves framing the bottom corners, soft matte silver spheres floating gently in blurred background, bright clean studio lighting, empty podium top, no bottles, no text, no logos, vertical 9:16",
+    `Photorealistic luxury cosmetic product photography stage, minimalist 3D white and brushed-silver hexagonal podium in the lower center, crisp green tropical palm leaves framing the bottom corners, subtle 3D matte silver spheres, bright clean studio lighting, empty podium top, no bottles, no text, no logos, vertical 9:16, ${SHARP_QUALITY_SUFFIX}`,
   "botanical-arch-frame":
-    "Minimalist editorial skincare studio background, warm cream and soft sage green architectural arch backdrop, natural sunlight shadows, subtle botanical leaves, clean empty display surface at bottom, photorealistic commercial photography, no products, no text, vertical 9:16",
+    `Architectural cream and soft sage-green 3D arch niche skincare studio background, crisp natural sunlight window shadows, clean stone display plinth at bottom, subtle botanical leaves, empty stage, no products, no text, vertical 9:16, ${SHARP_QUALITY_SUFFIX}`,
   "editorial-beauty-card":
-    "photorealistic 9:16 editorial beauty studio background, light cream and silver tones, subtle cosmetic line-art patterns, framed central product stage, clean premium minimal composition, soft shadows, no text, no bottle, no product, no logo, empty stage",
+    `Luxury pearl-white cylindrical marble pedestal studio stage with subtle metallic gold and silver trim and studio spotlight beam, clean premium minimal composition, light cream and silver tones, empty display surface, no text, no bottle, no product, no logo, vertical 9:16, ${SHARP_QUALITY_SUFFIX}`,
+};
+
+const BUNDLED_STAGE_FALLBACKS: Record<TemplateId, string> = {
+  "silver-podium-botanical": "/studio-scenes/silver-podium-botanical.svg",
+  "botanical-arch-frame": "/studio-scenes/arch-sunlit-studio.svg",
+  "editorial-beauty-card": "/studio-scenes/silk-pearl-pedestal.svg",
 };
 
 function clampSeed(value: unknown): number | undefined {
@@ -148,16 +157,8 @@ async function generateWithWorkersAi(
 
   return null;
 }
-function pollinationsUrl(template: TemplateId, seed?: number, promptOverride?: string): string {
-  const prompt = promptOverride?.trim() || PROMPTS[template] || PROMPTS[DEFAULT_TEMPLATE];
-  const params = new URLSearchParams({
-    width: "1080",
-    height: "1920",
-    nologo: "true",
-    model: "flux",
-  });
-  if (typeof seed === "number") params.set("seed", String(seed));
-  return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?${params.toString()}`;
+function bundledStageFallback(template: TemplateId): string {
+  return BUNDLED_STAGE_FALLBACKS[template] ?? BUNDLED_STAGE_FALLBACKS[DEFAULT_TEMPLATE];
 }
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -182,7 +183,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       ? body.template
       : DEFAULT_TEMPLATE
   ) as TemplateId;
-  const seed = clampSeed(body.seed);
+  void clampSeed(body.seed);
   const promptOverride = typeof body.prompt === "string" ? body.prompt : undefined;
 
   const aiResult = await generateWithWorkersAi(env, template, promptOverride);
@@ -198,11 +199,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   return Response.json({
     success: true,
-    provider: "pollinations",
+    provider: "bundled-studio-stage",
     template,
-    image: pollinationsUrl(template, seed, promptOverride),
+    image: bundledStageFallback(template),
     kind: "url",
-    fallback: "env.AI unavailable; using Pollinations FLUX URL.",
+    fallback: "env.AI unavailable; using sharp bundled studio stage.",
   });
 };
 
@@ -215,7 +216,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       : DEFAULT_TEMPLATE
   ) as TemplateId;
   const seedParam = url.searchParams.get("seed");
-  const seed = seedParam ? clampSeed(Number(seedParam)) : undefined;
+  void (seedParam ? clampSeed(Number(seedParam)) : undefined);
   const promptOverride = url.searchParams.get("prompt") || undefined;
 
   const aiResult = await generateWithWorkersAi(env, template, promptOverride);
@@ -231,10 +232,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   return Response.json({
     success: true,
-    provider: "pollinations",
+    provider: "bundled-studio-stage",
     template,
-    image: pollinationsUrl(template, seed, promptOverride),
+    image: bundledStageFallback(template),
     kind: "url",
-    fallback: "env.AI unavailable; using Pollinations FLUX URL.",
+    fallback: "env.AI unavailable; using sharp bundled studio stage.",
   });
 };
+

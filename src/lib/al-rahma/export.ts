@@ -213,12 +213,47 @@ async function removeWhiteBackground(dataUrl: string): Promise<string> {
     }
 
     ctx.putImageData(imageData, 0, 0);
+
+    // Smart alpha-bounding-box auto-trim: crop tightly to non-transparent pixels (alpha > 20)
+    let minX = w;
+    let minY = h;
+    let maxX = -1;
+    let maxY = -1;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const a = data[(y * w + x) * 4 + 3];
+        if (a > 20) {
+          if (x < minX) minX = x;
+          if (y < minY) minY = y;
+          if (x > maxX) maxX = x;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+
+    if (maxX >= minX && maxY >= minY) {
+      const padding = 4;
+      const cropX = Math.max(0, minX - padding);
+      const cropY = Math.max(0, minY - padding);
+      const cropW = Math.min(w - cropX, maxX - minX + 1 + padding * 2);
+      const cropH = Math.min(h - cropY, maxY - minY + 1 + padding * 2);
+      if (cropW > 0 && cropH > 0 && (cropW !== w || cropH !== h)) {
+        const trimmed = document.createElement("canvas");
+        trimmed.width = cropW;
+        trimmed.height = cropH;
+        const tctx = trimmed.getContext("2d");
+        if (tctx) {
+          tctx.drawImage(canvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+          return trimmed.toDataURL("image/png");
+        }
+      }
+    }
+
     return canvas.toDataURL("image/png");
   } catch {
     return dataUrl;
   }
 }
-
 async function fetchAsDataUrl(url: string, isPackshot = false): Promise<string | null> {
   const candidates = /^https?:\/\//i.test(url)
     ? [toProxyUrl(url), url]

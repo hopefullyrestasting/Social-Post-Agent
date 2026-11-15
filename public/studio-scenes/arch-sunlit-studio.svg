@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
+  <defs>
+    <linearGradient id="wall" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F7F1E7"/>
+      <stop offset="55%" stop-color="#F3EBDD"/>
+      <stop offset="55%" stop-color="#DCE8D8"/>
+      <stop offset="100%" stop-color="#D2E1CC"/>
+    </linearGradient>
+    <linearGradient id="sun" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#FDE68A" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="plinthTop" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#E7E5E4"/>
+    </linearGradient>
+    <linearGradient id="plinthFront" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#E7E5E4"/>
+      <stop offset="100%" stop-color="#A8A29E"/>
+    </linearGradient>
+  </defs>
+  <rect width="1080" height="1920" fill="url(#wall)"/>
+  <rect width="1080" height="1920" fill="url(#sun)"/>
+
+  <!-- architectural 3D arch niche -->
+  <g id="arch">
+    <path d="M160 1500 L160 520 A380 380 0 0 1 920 520 L920 1500 Z" fill="#FFFFFF" fill-opacity="0.28"/>
+    <path d="M200 1480 L200 540 A340 340 0 0 1 880 540 L880 1480 Z" fill="#F8FAFC" fill-opacity="0.22" stroke="#FFFFFF" stroke-opacity="0.55" stroke-width="3"/>
+    <path d="M240 1460 L240 560 A300 300 0 0 1 840 560 L840 1460 Z" fill="#EAF3E6" fill-opacity="0.18" stroke="#D97706" stroke-opacity="0.18" stroke-width="2"/>
+  </g>
+
+  <!-- crisp natural sunlight window shadows -->
+  <g id="sunlight-shadows" fill="#78716C" fill-opacity="0.08">
+    <polygon points="0,220 420,220 620,1080 0,1080"/>
+    <polygon points="1080,260 760,260 620,980 1080,980"/>
+  </g>
+  <g stroke="#FFFFFF" stroke-opacity="0.22" stroke-width="3">
+    <line x1="120" y1="260" x2="420" y2="860"/>
+    <line x1="960" y1="300" x2="720" y2="820"/>
+  </g>
+
+  <!-- clean stone display plinth -->
+  <g id="plinth">
+    <ellipse cx="540" cy="1445" rx="420" ry="54" fill="#0F172A" fill-opacity="0.10"/>
+    <rect x="220" y="1295" width="640" height="120" rx="10" fill="url(#plinthFront)"/>
+    <ellipse cx="540" cy="1295" rx="320" ry="34" fill="url(#plinthTop)"/>
+    <ellipse cx="540" cy="1292" rx="290" ry="22" fill="#FFFFFF" fill-opacity="0.55"/>
+    <line x1="240" y1="1295" x2="840" y2="1295" stroke="#FFFFFF" stroke-opacity="0.6" stroke-width="2"/>
+  </g>
+</svg>
