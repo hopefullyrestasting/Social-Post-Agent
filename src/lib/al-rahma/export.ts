@@ -89,14 +89,53 @@ async function loadImage(src: string): Promise<HTMLImageElement> {
   });
 }
 
-/**
- * Remove solid white/near-white background from a packshot image.
- * Uses edge flood-fill to identify connected background regions and soft edge
- * feathering to avoid harsh cutout halos. Returns a transparent PNG data URL.
- * If the image appears to already have transparency or not be on a white bg,
- * returns the original data URL.
- */
-async function removeWhiteBackground(dataUrl: string): Promise<string> {
+async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
+  const res = await fetch(dataUrl);
+  return await res.blob();
+}
+
+function trimAlphaBoundingBox(canvas: HTMLCanvasElement): HTMLCanvasElement {
+  const w = canvas.width;
+  const h = canvas.height;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx || w === 0 || h === 0) return canvas;
+  const imageData = ctx.getImageData(0, 0, w, h);
+  const { data } = imageData;
+
+  let minX = w;
+  let minY = h;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const a = data[(y * w + x) * 4 + 3];
+      if (a > 20) {
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+
+  if (maxX < minX || maxY < minY) return canvas;
+  const padding = 4;
+  const cropX = Math.max(0, minX - padding);
+  const cropY = Math.max(0, minY - padding);
+  const cropW = Math.min(w - cropX, maxX - minX + 1 + padding * 2);
+  const cropH = Math.min(h - cropY, maxY - minY + 1 + padding * 2);
+  if (cropW <= 0 || cropH <= 0 || (cropW === w && cropH === h)) return canvas;
+
+  const trimmed = document.createElement("canvas");
+  trimmed.width = cropW;
+  trimmed.height = cropH;
+  const tctx = trimmed.getContext("2d");
+  if (!tctx) return canvas;
+  tctx.drawImage(canvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+  return trimmed;
+}
+
+async function naiveCutoutFallback(dataUrl: string): Promise<string> {
   try {
     const img = await loadImage(dataUrl);
     const w = img.naturalWidth || img.width;
@@ -118,14 +157,12 @@ async function removeWhiteBackground(dataUrl: string): Promise<string> {
       const g = data[i + 1];
       const b = data[i + 2];
       const a = data[i + 3];
-      if (a < 10) return true; // already transparent
+      if (a < 10) return true;
       const max = Math.max(r, g, b);
       const min = Math.min(r, g, b);
-      // bright and low saturation
       return max >= 242 && min >= 228 && max - min <= 18;
     };
 
-    // Sample corners to confirm white-ish background; if not, skip removal.
     const corners = [
       idx(0, 0),
       idx(w - 1, 0),
@@ -150,7 +187,6 @@ async function removeWhiteBackground(dataUrl: string): Promise<string> {
       queue.push(p);
     };
 
-    // Seed flood fill from all edge pixels that are near-white
     for (let x = 0; x < w; x++) {
       pushIfBg(x, 0);
       pushIfBg(x, h - 1);
@@ -171,12 +207,10 @@ async function removeWhiteBackground(dataUrl: string): Promise<string> {
       pushIfBg(x, y - 1);
     }
 
-    // If almost nothing removed, keep original (likely not a white-bg packshot)
     let removed = 0;
     for (let i = 0; i < visited.length; i++) if (visited[i]) removed++;
     if (removed < w * h * 0.02) return dataUrl;
 
-    // Apply transparency and feather edges (soften boundary pixels)
     const isBg = (x: number, y: number) => {
       if (x < 0 || y < 0 || x >= w || y >= h) return true;
       return visited[y * w + x] === 1;
@@ -190,7 +224,6 @@ async function removeWhiteBackground(dataUrl: string): Promise<string> {
           data[i + 3] = 0;
           continue;
         }
-        // Feather: if adjacent to removed bg, reduce alpha softly
         let adj = 0;
         if (isBg(x + 1, y)) adj++;
         if (isBg(x - 1, y)) adj++;
@@ -205,7 +238,6 @@ async function removeWhiteBackground(dataUrl: string): Promise<string> {
           const g = data[i + 1];
           const b = data[i + 2];
           const brightness = (r + g + b) / 3;
-          // stronger feather for brighter edge pixels (typical white halo)
           const factor = brightness > 230 ? Math.max(0.35, 1 - adj * 0.12) : Math.max(0.6, 1 - adj * 0.06);
           data[i + 3] = Math.round(data[i + 3] * factor);
         }
@@ -213,46 +245,54 @@ async function removeWhiteBackground(dataUrl: string): Promise<string> {
     }
 
     ctx.putImageData(imageData, 0, 0);
-
-    // Smart alpha-bounding-box auto-trim: crop tightly to non-transparent pixels (alpha > 20)
-    let minX = w;
-    let minY = h;
-    let maxX = -1;
-    let maxY = -1;
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
-        const a = data[(y * w + x) * 4 + 3];
-        if (a > 20) {
-          if (x < minX) minX = x;
-          if (y < minY) minY = y;
-          if (x > maxX) maxX = x;
-          if (y > maxY) maxY = y;
-        }
-      }
-    }
-
-    if (maxX >= minX && maxY >= minY) {
-      const padding = 4;
-      const cropX = Math.max(0, minX - padding);
-      const cropY = Math.max(0, minY - padding);
-      const cropW = Math.min(w - cropX, maxX - minX + 1 + padding * 2);
-      const cropH = Math.min(h - cropY, maxY - minY + 1 + padding * 2);
-      if (cropW > 0 && cropH > 0 && (cropW !== w || cropH !== h)) {
-        const trimmed = document.createElement("canvas");
-        trimmed.width = cropW;
-        trimmed.height = cropH;
-        const tctx = trimmed.getContext("2d");
-        if (tctx) {
-          tctx.drawImage(canvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
-          return trimmed.toDataURL("image/png");
-        }
-      }
-    }
-
-    return canvas.toDataURL("image/png");
+    const trimmed = trimAlphaBoundingBox(canvas);
+    return trimmed.toDataURL("image/png");
   } catch {
     return dataUrl;
   }
+}
+
+/**
+ * Neural packshot cutout with safe fallback.
+ * Uses @imgly/background-removal in the browser for segmentation (preserves white bottles),
+ * then applies alpha bounding-box auto-trim (alpha > 20 + 4px padding).
+ * Falls back to naive flood-fill cutout + trim when neural/WASM is unavailable.
+ */
+async function cutoutProductPackshot(dataUrl: string): Promise<string> {
+  try {
+    if (typeof window !== "undefined" && typeof document !== "undefined") {
+      try {
+        const mod = await import("@imgly/background-removal");
+        const removeBackground = (mod as { removeBackground?: (input: Blob, config?: unknown) => Promise<Blob> }).removeBackground;
+        if (typeof removeBackground === "function") {
+          const inputBlob = await dataUrlToBlob(dataUrl);
+          const outputBlob = await removeBackground(inputBlob);
+          const outUrl = await blobToDataUrl(outputBlob);
+          const img = await loadImage(outUrl);
+          const canvas = document.createElement("canvas");
+          canvas.width = img.naturalWidth || img.width;
+          canvas.height = img.naturalHeight || img.height;
+          const ctx = canvas.getContext("2d");
+          if (ctx && canvas.width > 0 && canvas.height > 0) {
+            ctx.drawImage(img, 0, 0);
+            const trimmed = trimAlphaBoundingBox(canvas);
+            return trimmed.toDataURL("image/png");
+          }
+          return outUrl;
+        }
+      } catch {
+        // fall through to naive fallback
+      }
+    }
+  } catch {
+    // fall through to naive fallback
+  }
+  return await naiveCutoutFallback(dataUrl);
+}
+
+// Backward-compatible alias used by inlineExternalImages/fetch path
+async function removeWhiteBackground(dataUrl: string): Promise<string> {
+  return await cutoutProductPackshot(dataUrl);
 }
 async function fetchAsDataUrl(url: string, isPackshot = false): Promise<string | null> {
   const candidates = /^https?:\/\//i.test(url)
