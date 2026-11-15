@@ -21,10 +21,12 @@ not redesign or replace it.
 | `src/app/` | Pages: `/` landing, `/dashboard` D1 dashboard (client component) |
 | `src/lib/al-rahma/brand-core.ts` | **Single source of truth** for brand identity, contact, theme |
 | `src/lib/al-rahma/arabic-copywriter.ts` | Arabic copy templates (brand/phone injected from config) |
-| `src/lib/al-rahma/overlay-system.ts` | Pure SVG overlay (logo, badge, price, footer) |
+| `src/lib/al-rahma/overlay-system.ts` | Pure SVG overlay (brand chip, packshot, availability, CTA, footer) |
 | `src/lib/al-rahma/quality-gate.ts` | Pre-publish checks, including source verification |
-| `src/lib/al-rahma/production-engine.ts` | Copy → SVG → Quality Gate orchestration |
-| `functions/api/db/` | Pages Functions: `stats`, `brands`, `products`, `research` |
+| `src/lib/al-rahma/production-engine.ts` | Copy → SVG → Quality Gate orchestration (2 variants) |
+| `src/lib/al-rahma/background-provider.ts` | Background seam: deterministic studio + optional env adapters |
+| `src/components/al-rahma/` | Dashboard verify modal and 2-variant ad preview |
+| `functions/api/db/` | Pages Functions: `stats`, `brands`, `products`, `research`, `research/ingest` |
 | `migrations/` | `0000_baseline.sql` (captured schema), `0001_product_research.sql` |
 | `scripts/` | Test entrypoints run by `npm test` |
 | `.opencode/skills/` | Project skills for D1/Pages, research, and ad composition |
