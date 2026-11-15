@@ -22,9 +22,9 @@ const DEFAULT_TEMPLATE: TemplateId = "silver-podium-botanical";
 
 const PROMPTS: Record<TemplateId, string> = {
   "silver-podium-botanical":
-    "photorealistic 9:16 studio background, soft silver grey gradient, floating matte pearl spheres with soft shadows, realistic multi-tiered white and silver hexagonal podium, lush green botanical palm leaves on sides, clean luxury cosmetic product stage, soft diffused studio lighting, no text, no bottle, no product, no logo, empty podium center",
+    "Photorealistic luxury cosmetic product photography stage, minimalist 3D white and soft silver hexagonal podium in the lower center, lush green tropical palm leaves framing the bottom corners, soft matte silver spheres floating gently in blurred background, bright clean studio lighting, empty podium top, no bottles, no text, no logos, vertical 9:16",
   "botanical-arch-frame":
-    "photorealistic 9:16 studio background, two-tone split warm cream top and soft sage olive green bottom, centered arched showcase niche frame, subtle gold star accents, elegant botanical beauty set, soft studio lighting, no text, no bottle, no product, no logo, empty center stage",
+    "Minimalist editorial skincare studio background, warm cream and soft sage green architectural arch backdrop, natural sunlight shadows, subtle botanical leaves, clean empty display surface at bottom, photorealistic commercial photography, no products, no text, vertical 9:16",
   "editorial-beauty-card":
     "photorealistic 9:16 editorial beauty studio background, light cream and silver tones, subtle cosmetic line-art patterns, framed central product stage, clean premium minimal composition, soft shadows, no text, no bottle, no product, no logo, empty stage",
 };
@@ -62,10 +62,11 @@ function base64FromBytes(bytes: Uint8Array): string {
 async function generateWithWorkersAi(
   env: Env,
   template: TemplateId,
+  promptOverride?: string,
 ): Promise<{ dataUri: string } | null> {
   if (!env.AI || typeof env.AI.run !== "function") return null;
 
-  const prompt = PROMPTS[template] ?? PROMPTS[DEFAULT_TEMPLATE];
+  const prompt = promptOverride?.trim() || PROMPTS[template] || PROMPTS[DEFAULT_TEMPLATE];
 
   try {
     const result = await env.AI.run("@cf/black-forest-labs/flux-1-schnell", {
@@ -101,8 +102,8 @@ async function generateWithWorkersAi(
   return null;
 }
 
-function pollinationsUrl(template: TemplateId, seed?: number): string {
-  const prompt = PROMPTS[template] ?? PROMPTS[DEFAULT_TEMPLATE];
+function pollinationsUrl(template: TemplateId, seed?: number, promptOverride?: string): string {
+  const prompt = promptOverride?.trim() || PROMPTS[template] || PROMPTS[DEFAULT_TEMPLATE];
   const params = new URLSearchParams({
     width: "1080",
     height: "1920",
@@ -136,8 +137,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       : DEFAULT_TEMPLATE
   ) as TemplateId;
   const seed = clampSeed(body.seed);
+  const promptOverride = typeof body.prompt === "string" ? body.prompt : undefined;
 
-  const aiResult = await generateWithWorkersAi(env, template);
+  const aiResult = await generateWithWorkersAi(env, template, promptOverride);
   if (aiResult) {
     return Response.json({
       success: true,
@@ -152,7 +154,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     success: true,
     provider: "pollinations",
     template,
-    image: pollinationsUrl(template, seed),
+    image: pollinationsUrl(template, seed, promptOverride),
     kind: "url",
     fallback: "env.AI unavailable; using Pollinations FLUX URL.",
   });
@@ -168,8 +170,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   ) as TemplateId;
   const seedParam = url.searchParams.get("seed");
   const seed = seedParam ? clampSeed(Number(seedParam)) : undefined;
+  const promptOverride = url.searchParams.get("prompt") || undefined;
 
-  const aiResult = await generateWithWorkersAi(env, template);
+  const aiResult = await generateWithWorkersAi(env, template, promptOverride);
   if (aiResult) {
     return Response.json({
       success: true,
@@ -184,7 +187,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     success: true,
     provider: "pollinations",
     template,
-    image: pollinationsUrl(template, seed),
+    image: pollinationsUrl(template, seed, promptOverride),
     kind: "url",
     fallback: "env.AI unavailable; using Pollinations FLUX URL.",
   });

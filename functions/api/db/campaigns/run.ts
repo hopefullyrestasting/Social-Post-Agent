@@ -19,6 +19,9 @@ import {
 
 interface Env {
   DB: D1Database;
+  AI?: {
+    run: (model: string, input: Record<string, unknown>) => Promise<unknown>;
+  };
 }
 
 interface EligibleProductRow {
@@ -80,6 +83,90 @@ const requestSchema = z
   .optional();
 
 const MS_PER_DAY = 86_400_000;
+
+const VARIANT_SCENE_PROMPTS: Record<1 | 2, string> = {
+  1: "Photorealistic luxury cosmetic product photography stage, minimalist 3D white and soft silver hexagonal podium in the lower center, lush green tropical palm leaves framing the bottom corners, soft matte silver spheres floating gently in blurred background, bright clean studio lighting, empty podium top, no bottles, no text, no logos, vertical 9:16",
+  2: "Minimalist editorial skincare studio background, warm cream and soft sage green architectural arch backdrop, natural sunlight shadows, subtle botanical leaves, clean empty display surface at bottom, photorealistic commercial photography, no products, no text, vertical 9:16",
+};
+
+function toUint8Array(value: unknown): Uint8Array | null {
+  if (value instanceof Uint8Array) return value;
+  if (value instanceof ArrayBuffer) return new Uint8Array(value);
+  if (ArrayBuffer.isView(value)) {
+    return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+  }
+  if (Array.isArray(value) && value.every((n) => typeof n === "number")) {
+    return Uint8Array.from(value);
+  }
+  return null;
+}
+
+function base64FromBytes(bytes: Uint8Array): string {
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+function pollinationsUrlForPrompt(prompt: string, seed?: number): string {
+  const params = new URLSearchParams({
+    width: "1080",
+    height: "1920",
+    nologo: "true",
+    model: "flux",
+  });
+  if (typeof seed === "number") params.set("seed", String(seed));
+  return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?${params.toString()}`;
+}
+
+async function generateStudioScene(
+  env: Env,
+  variant: 1 | 2,
+  seed: number,
+): Promise<string> {
+  const prompt = VARIANT_SCENE_PROMPTS[variant];
+  if (env.AI && typeof env.AI.run === "function") {
+    try {
+      const result = await env.AI.run("@cf/black-forest-labs/flux-1-schnell", {
+        prompt,
+        num_steps: 4,
+      });
+      if (typeof result === "string") {
+        return result.startsWith("data:") ? result : `data:image/png;base64,${result}`;
+      }
+      if (result && typeof result === "object") {
+        const obj = result as Record<string, unknown>;
+        if (typeof obj.image === "string") {
+          const img = obj.image;
+          return img.startsWith("data:") ? img : `data:image/png;base64,${img}`;
+        }
+        const bytes = toUint8Array(obj.image ?? obj.data ?? obj.bytes ?? result);
+        if (bytes) {
+          return `data:image/png;base64,${base64FromBytes(bytes)}`;
+        }
+      }
+    } catch (error) {
+      console.error("Workers AI studio-scene generation failed, falling back.", error);
+    }
+  }
+  return pollinationsUrlForPrompt(prompt, seed);
+}
+
+async function loadBrandLogoUrl(env: Env): Promise<string | null> {
+  try {
+    const row = await env.DB.prepare(
+      "SELECT value FROM business_settings WHERE key = ? LIMIT 1",
+    )
+      .bind("brand_logo_url")
+      .first<{ value: string | null }>();
+    const value = row?.value?.trim();
+    return value ? value : null;
+  } catch {
+    return null;
+  }
+}
 
 function toPromotionRecord(row: PromotionRow): PromotionRecord {
   return {
@@ -309,6 +396,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     }
 
     const occasion = await loadActiveOccasion(env);
+    const brandLogoUrl = await loadBrandLogoUrl(env);
     const statements: D1PreparedStatement[] = [];
     const creativesOut: Record<string, unknown>[] = [];
     const selectedIds: string[] = [];
@@ -334,11 +422,19 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           | "unknown",
       };
 
+      const seedBase = Array.from(product.id).reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+      const [scene1, scene2] = await Promise.all([
+        generateStudioScene(env, 1, seedBase),
+        generateStudioScene(env, 2, seedBase + 1),
+      ]);
+
       const variants = ProductionEngine.executeVariants({
         product: details,
         promotion,
         occasion,
         today,
+        brandLogoUrl,
+        sceneImageUrls: { 1: scene1, 2: scene2 },
       });
 
       for (const variant of variants) {

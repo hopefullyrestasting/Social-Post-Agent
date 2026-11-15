@@ -84,7 +84,7 @@ async function loadImage(src: string): Promise<HTMLImageElement> {
     img.decoding = "async";
     img.crossOrigin = "anonymous";
     img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error("image load failed"));
+    img.onerror = () => reject(new Error("تعذر تحميل صورة الإعلان للرسم."));
     img.src = src;
   });
 }
@@ -323,6 +323,16 @@ export async function svgToPngBlob(
   }
 }
 
+
+export async function svgToPngDataUrl(
+  svgMarkup: string,
+  width = WIDTH,
+  height = HEIGHT,
+): Promise<string> {
+  const blob = await svgToPngBlob(svgMarkup, width, height);
+  return await blobToDataUrl(blob);
+}
+
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -371,4 +381,10 @@ export async function downloadCreativesZip(
 
   const archive = await zip.generateAsync({ type: "blob" });
   downloadBlob(archive, zipName);
+}
+
+export async function getCreativePngDataUrl(creative: ExportCreative): Promise<string | null> {
+  const svg = getCreativeSvg(creative);
+  if (!svg) return null;
+  return await svgToPngDataUrl(svg);
 }

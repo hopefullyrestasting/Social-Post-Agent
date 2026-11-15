@@ -31,9 +31,10 @@ export function wrapText(text: string, maxChars: number, maxLines = 3): string[]
   if (current && lines.length < maxLines) lines.push(current);
 
   const consumed = lines.join(" ").split(/\s+/).filter(Boolean).length;
-  if (consumed < words.length) {
+  if (consumed < words.length && lines.length > 0) {
     const last = lines[lines.length - 1] ?? "";
-    lines[lines.length - 1] = `${last.replace(/\s+\S*$/, "")} …`;
+    const trimmed = last.replace(/\s+\S*$/, "").trim();
+    lines[lines.length - 1] = trimmed ? `${trimmed}…` : `${last}…`;
   }
 
   return lines;
