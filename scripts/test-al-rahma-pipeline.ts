@@ -240,8 +240,14 @@ for (const result of variants) {
   assert.ok(result.svgOverlay.includes("#FFFFFF"));
   assert.ok(result.svgOverlay.includes('data-template="'), "Template marker must be present.");
   assert.ok(result.svgOverlay.includes('data-packshot="true"'), "Packshot must be marked for cutout compositing.");
-  assert.ok(result.svgOverlay.includes('height="670"'), "Hero packshot must be rendered at 670px height.");
-  assert.ok(result.svgOverlay.includes('y="685"'), "Hero packshot must be grounded at bottom y=1355 (y=685 for 670px height).");
+  assert.ok(result.svgOverlay.includes('height="760"'), "Hero packshot must be rendered at 760px height.");
+  assert.ok(result.svgOverlay.includes('x="220" y="410" width="640" height="760"'), "Hero packshot must use dominant hero geometry (x=220,y=410,w=640,h=760).");
+  assert.ok(result.svgOverlay.includes('id="delivery-pill"'), "Header must include redesigned متاح توصيل delivery pill badge.");
+  assert.ok(result.svgOverlay.includes('متاح توصيل'), "Header/subtitle must include متاح توصيل.");
+  assert.ok(result.svgOverlay.includes('id="sales-copy-impact"'), "High-impact sales typography section must render.");
+  assert.ok(result.svgOverlay.includes('font-size="60"') && result.svgOverlay.includes('font-weight="900"'), "Sales typography must be high-impact (~60px, black/extra bold).");
+  assert.ok(result.svgOverlay.includes("#047857") && result.svgOverlay.includes("#1E293B"), "Sales typography must use dual-tone emerald/charcoal colors.");
+  assert.equal(result.svgOverlay.includes('id="benefit-card"'), false, "Sales copy must not use cramped benefit card/box.");
   assert.ok(result.svgOverlay.includes("#25D366") || result.svgOverlay.includes("25D366"), "Contact block must include WhatsApp icon.");
   assert.ok(result.svgOverlay.includes("#065F46") || result.svgOverlay.includes("065F46"), "Contact/footer must include bold emerald styling.");
   assert.equal(result.qualityReport.passed, true);
@@ -358,8 +364,11 @@ assert.ok(overlay.includes("\u200Fللتواصل:"));
 assert.ok(overlay.includes("متاح توصيل"));
 assert.ok(overlay.includes("ترطيب") && overlay.includes("عميق"), "Benefit line text must render in overlay.");
 assert.ok(overlay.includes('data-packshot="true"'));
-assert.ok(overlay.includes('height="670"'));
-assert.ok(overlay.includes('y="685"'));
+assert.ok(overlay.includes('height="760"'));
+assert.ok(overlay.includes('x="220" y="410" width="640" height="760"'));
+assert.ok(overlay.includes('id="delivery-pill"'));
+assert.ok(overlay.includes('id="sales-copy-impact"'));
+assert.ok(overlay.includes("#047857") && overlay.includes("#1E293B"));
 assert.equal(overlay.includes("..."), false);
 
 const defaultOverlay = OverlaySystem.generateOverlaySvg({ width: 1080, height: 1920 });
@@ -401,5 +410,5 @@ assert.deepEqual(
 );
 
 console.log(
-  "Al Rahma pipeline tests passed: BrandConfig, 4-8 benefit-only copy (no usage, no ellipsis), 3 designer templates, RTL contact/footer, hero packshot grounding, quality gate, promos, 48h cultural greeting, and single-source brand identity.",
+  "Al Rahma pipeline tests passed: BrandConfig, 4-8 benefit-only copy (no usage, no ellipsis), 3 designer templates, RTL header/delivery pill, dominant 760px hero packshot, dual-tone high-impact sales typography, quality gate, promos, 48h cultural greeting, and single-source brand identity.",
 );
