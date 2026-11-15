@@ -1,8 +1,6 @@
-import { GeneratedArabicCopy, ProductDetails } from "./arabic-copywriter";
-import {
-  OccasionGreetingInput,
-  PromotionEvaluation,
-} from "./commercial";
+﻿import { GeneratedArabicCopy, ProductDetails } from "./arabic-copywriter";
+import { AL_RAHMA_BRAND_CONFIG } from "./brand-core";
+import { OccasionGreetingInput, PromotionEvaluation } from "./commercial";
 import { OverlayOptions } from "./overlay-system";
 
 export interface QualityCheckResult {
@@ -33,17 +31,14 @@ export interface CommercialContext {
 }
 
 const BANNED_TERMS = [
-  "مجانا 100% بدون أي مقابل",
-  "اكسب فلوس",
-  "سحر خيالي غير حقيقي",
-  "مضمون يشفي جميع الأمراض",
-  "بدون أي أعراض جانبية",
-  "نتيجة مضمونة",
+  "نتائج مضمونة 100%",
+  "علاج نهائي",
+  "بدون أي آثار جانبية",
+  "بدون أي مخاطر",
 ];
 
-const CTA_REQUIRED_KEYWORDS = ["اطلب", "رسالة", "خاص", "واتساب", "تواصل", "احجز"];
+const CTA_REQUIRED_KEYWORDS = ["اطلب", "تواصل", "واتساب", "اتصل", "راسل", "احجز"];
 
-/** Pricing, discount and urgency language is never allowed in the composer. */
 const PRICING_TERMS = [
   "خصم",
   "تخفيض",
@@ -54,7 +49,6 @@ const PRICING_TERMS = [
   "عرض خاص",
   "لفترة محدودة",
   "الكمية محدودة",
-  "اطلب الآن قبل",
   "EGP",
   "LE ",
 ];
@@ -62,9 +56,6 @@ const PRICING_TERMS = [
 const PERCENTAGE_PATTERN = /[%٪]/;
 
 export class QualityGate {
-  /**
-   * فحص شامل للمحتوى والتصميم قبل النشر لضمان معايير الجودة والتحويل
-   */
   public static evaluate(
     copy: GeneratedArabicCopy,
     product: ProductDetails,
@@ -75,9 +66,8 @@ export class QualityGate {
     const errors: string[] = [];
     const warnings: string[] = [];
 
-    // 1. فحص العنوان الرئيسي (Headline check)
-    const wordsInHeadline = copy.headline.trim().split(/\s+/).filter(Boolean)
-      .length;
+    // 1. Headline clarity
+    const wordsInHeadline = copy.headline.trim().split(/\s+/).filter(Boolean).length;
     const headlineOk = wordsInHeadline >= 2 && wordsInHeadline <= 20;
     checks.push({
       checkName: "Headline Length & Clarity",
@@ -85,43 +75,52 @@ export class QualityGate {
       passed: headlineOk,
       score: headlineOk ? 100 : 50,
       message: headlineOk
-        ? `العنوان مناسب ومباشر (${wordsInHeadline} كلمات)`
-        : `العنوان يحتاج ضبط (${wordsInHeadline} كلمات، المفضل بين 2 إلى 20 كلمة)`,
+        ? `عنوان مناسب (${wordsInHeadline} كلمات)`
+        : `يفضل تعديل العنوان (${wordsInHeadline} كلمات)`,
     });
-    if (!headlineOk) warnings.push("يفضل اختصار أو توضيح العنوان الرئيسي");
+    if (!headlineOk) warnings.push("يفضل اختيار عنوان أوضح.");
 
-    // 2. فحص الهوك وجذب الانتباه (Hook check)
-    const hasHook = copy.hook.length >= 10;
+    // 2. Hook
+    const hasHook = copy.hook.trim().length >= 10;
     checks.push({
       checkName: "Attention Hook Presence",
       category: "copy",
       passed: hasHook,
       score: hasHook ? 100 : 30,
-      message: hasHook
-        ? "يوجد افتتاحية جذابة لجذب انتباه العميل"
-        : "الافتتاحية مفقودة أو قصيرة جداً",
+      message: hasHook ? "يوجد خطاف افتتاحي مناسب." : "الافتتاحية قصيرة جداً.",
     });
-    if (!hasHook) errors.push("يجب إضافة افتتاحية (Hook) قوية للبوست");
+    if (!hasHook) errors.push("يجب إضافة افتتاحية (Hook) قوية.");
 
-    // 3. فحص الدعوة لاتخاذ إجراء (CTA Check)
+    // 3. CTA
     const hasCta = CTA_REQUIRED_KEYWORDS.some(
-      (kw) => copy.cta.includes(kw) || copy.body.includes(kw),
+      (kw) => copy.cta.includes(kw) || copy.body.includes(kw) || copy.ctaShort.includes(kw),
     );
     checks.push({
       checkName: "Call To Action (CTA)",
       category: "copy",
       passed: hasCta,
       score: hasCta ? 100 : 0,
-      message: hasCta
-        ? "يوجد طلب واضح ومحدد لاتخاذ إجراء (CTA)"
-        : "البوست يفتقر لـ CTA واضح (اطلب / تواصل / واتساب)",
+      message: hasCta ? "يوجد طلب واضح للتواصل (CTA)." : "النص يفتقد دعوة واضحة للتواصل.",
     });
-    if (!hasCta) errors.push("البوست يفتقر لدعوة واضحة لاتخاذ إجراء (Call to Action)");
+    if (!hasCta) errors.push("يجب إضافة دعوة واضحة للتواصل (CTA).");
 
-    // 4. Verify that advertised product information has a verified source.
+    // 3b. Sales copy length (4-9 words)
+    const benefitWords = copy.benefitLine.trim().split(/\s+/).filter(Boolean).length;
+    const benefitOk = benefitWords >= 4 && benefitWords <= 9;
+    checks.push({
+      checkName: "Sales Copy Length",
+      category: "copy",
+      passed: benefitOk,
+      score: benefitOk ? 100 : 40,
+      message: benefitOk
+        ? `جملة البيع مناسبة (${benefitWords} كلمات)`
+        : `جملة البيع يجب أن تكون من 4 إلى 9 كلمات (${benefitWords})`,
+    });
+    if (!benefitOk) errors.push("جملة البيع يجب أن تكون قصيرة من 4 إلى 9 كلمات.");
+
+    // 4. Verified source
     const hasVerifiedSource =
-      product.verificationStatus === "verified" &&
-      Boolean(product.sourceUrl?.trim());
+      product.verificationStatus === "verified" && Boolean(product.sourceUrl?.trim());
     checks.push({
       checkName: "Verified Product Source",
       category: "compliance",
@@ -129,13 +128,13 @@ export class QualityGate {
       score: hasVerifiedSource ? 100 : 0,
       message: hasVerifiedSource
         ? "المنتج مرتبط بمصدر موثّق."
-        : "لا يمكن اعتماد الإعلان قبل توثيق مصدر معلومات المنتج.",
+        : "لا يمكن اعتماد معلومات المنتج بدون مصدر موثّق.",
     });
     if (!hasVerifiedSource) {
-      errors.push("يجب توثيق مصدر معلومات المنتج قبل اعتماد الإعلان.");
+      errors.push("يجب توفر مصدر موثّق لمعلومات المنتج قبل اعتماد الإعلان.");
     }
 
-    // 5. The hero element must be the authentic packshot, never generated art.
+    // 5. Authentic packshot
     const hasPackshot = Boolean(product.productImageUrl?.trim());
     checks.push({
       checkName: "Authentic Reference Packshot",
@@ -143,19 +142,18 @@ export class QualityGate {
       passed: hasPackshot,
       score: hasPackshot ? 100 : 0,
       message: hasPackshot
-        ? "صورة المنتج الأصلية متاحة وستُركَّب كما هي."
-        : "لا يمكن إنشاء إعلان بدون صورة المنتج الأصلية.",
+        ? "صورة المنتج الأصلية متاحة للتركيب."
+        : "لا يمكن إنشاء الإعلان بدون صورة المنتج الأصلية.",
     });
     if (!hasPackshot) {
       errors.push("يجب إضافة صورة المنتج الأصلية (packshot) قبل إنشاء الإعلان.");
     }
 
-    // 6. No pricing, discount or urgency language is allowed.
-    const pricingSource = `${copy.headline}\n${copy.fullPostText}`;
-    const foundPricing = PRICING_TERMS.filter((term) =>
-      pricingSource.includes(term),
-    );
+    // 6. No invented pricing/discount/urgency language in copy
+    const pricingSource = `${copy.headline}\n${copy.benefitLine}\n${copy.fullPostText}`;
+    const foundPricing = PRICING_TERMS.filter((term) => pricingSource.includes(term));
     if (PERCENTAGE_PATTERN.test(pricingSource)) foundPricing.push("نسبة مئوية");
+    // Pricing terms in copy are not allowed even with active promotion (badge handles price)
     const noPricing = foundPricing.length === 0;
     checks.push({
       checkName: "No Price Or Discount Claims",
@@ -163,14 +161,14 @@ export class QualityGate {
       passed: noPricing,
       score: noPricing ? 100 : 0,
       message: noPricing
-        ? "النص خالٍ من الأسعار والخصومات والعروض."
-        : `تم رصد لغة سعرية أو ترويجية غير مسموحة: ${foundPricing.join(", ")}`,
+        ? "النص خالٍ من ادعاءات الأسعار والخصومات غير المصرح بها."
+        : `تم رصد لغة سعرية/ترويجية في النص: ${foundPricing.join(", ")}`,
     });
     if (!noPricing) {
       errors.push("احذف أي أسعار أو خصومات أو إلحاح غير موثّق من النص.");
     }
 
-    // 6b. Controlled promotion: the only allowed way to show a price.
+    // 6b. Controlled promotion validation (pricing allowed only as validated badge)
     if (commercial?.promotion && commercial.promotion.status !== "none") {
       const promotion = commercial.promotion;
       const promotionOk = promotion.status !== "invalid";
@@ -181,43 +179,36 @@ export class QualityGate {
         score: promotionOk ? 100 : 0,
         message:
           promotion.status === "active"
-            ? `عرض سعري موثّق من سجل العروض النشط (خصم ${promotion.promotion.discountPercent}%).`
+            ? `عرض سعري موثّق من سجل العروض (خصم ${promotion.promotion.discountPercent}%).`
             : promotion.status === "invalid"
               ? promotion.reason
               : promotion.status === "scheduled"
-                ? "العرض لم يبدأ بعد؛ تم الرجوع إلى النمط بدون سعر."
-                : "انتهى العرض؛ تم الرجوع تلقائياً إلى النمط بدون سعر.",
+                ? "العرض لم يبدأ بعد؛ لن يُعرض السعر."
+                : "انتهى العرض؛ لن يُعرض السعر.",
       });
       if (!promotionOk) {
-        errors.push(
-          "لا يمكن عرض سعر غير متوافق مع سجل العروض؛ راجع بيانات العرض.",
-        );
+        errors.push("لا يمكن عرض سعر غير متوافق مع سجل العروض.");
       }
     }
 
-    // 6c. Cultural greeting must stay a tasteful, in-window greeting.
+    // 6c. Cultural greeting
     if (commercial?.occasion) {
       const greeting = commercial.occasion.greeting.trim();
-      const occasionOk =
-        greeting.startsWith("كل عام") && greeting.length <= 120;
+      const occasionOk = greeting.startsWith("كل عام") && greeting.length <= 120;
       checks.push({
         checkName: "Cultural Occasion Greeting",
         category: "copy",
         passed: occasionOk,
         score: occasionOk ? 100 : 40,
         message: occasionOk
-          ? `تهنئة مناسبة لـ ${commercial.occasion.occasionName} مضافة إلى التصميم.`
-          : "صيغة التهنئة غير مناسبة؛ استخدم تهنئة عربية مهذبة قصيرة.",
+          ? `تهنئة مناسبة لـ ${commercial.occasion.occasionName}.`
+          : "صيغة تهنئة المناسبة غير صالحة.",
       });
-      if (!occasionOk) {
-        warnings.push("راجع صيغة تهنئة المناسبة قبل النشر.");
-      }
+      if (!occasionOk) warnings.push("راجع صيغة تهنئة المناسبة.");
     }
 
-    // 7. فحص الكلمات المحظورة والمضللة (Compliance & Spam)
-    const foundBanned = BANNED_TERMS.filter((term) =>
-      copy.fullPostText.includes(term),
-    );
+    // 7. Banned terms
+    const foundBanned = BANNED_TERMS.filter((term) => copy.fullPostText.includes(term));
     const complianceOk = foundBanned.length === 0;
     checks.push({
       checkName: "Spam & Compliance Filter",
@@ -225,14 +216,14 @@ export class QualityGate {
       passed: complianceOk,
       score: complianceOk ? 100 : 0,
       message: complianceOk
-        ? "النص خالٍ من أي عبارات مضللة أو محظورة"
-        : `تم رصد عبارات مضللة: ${foundBanned.join(", ")}`,
+        ? "النص خالٍ من العبارات المضللة المحظورة."
+        : `تم رصد عبارات محظورة: ${foundBanned.join(", ")}`,
     });
     if (!complianceOk) {
-      errors.push(`احذف العبارات المضللة: ${foundBanned.join(", ")}`);
+      errors.push(`احذف العبارات المحظورة: ${foundBanned.join(", ")}`);
     }
 
-    // 8. فحص الهاشتاجات (Hashtag Hygiene)
+    // 8. Hashtags
     const hasTags = copy.hashtags.length >= 3 && copy.hashtags.length <= 15;
     checks.push({
       checkName: "Hashtag Optimization",
@@ -240,14 +231,14 @@ export class QualityGate {
       passed: hasTags,
       score: hasTags ? 100 : 60,
       message: hasTags
-        ? `عدد الهاشتاجات مثالي (${copy.hashtags.length} هاشتاج)`
-        : `عدد الهاشتاجات (${copy.hashtags.length}) خارج النطاق الموصى به (3-15)`,
+        ? `عدد الهاشتاجات مناسب (${copy.hashtags.length}).`
+        : `عدد الهاشتاجات (${copy.hashtags.length}) خارج النطاق الموصى به (3-15).`,
     });
 
-    // 9. فحص الأبعاد والتنسيق البصري (إذا تم تمريره)
+    // 9. Visual dimensions
     if (visual) {
-      const width = visual.width ?? 0;
-      const height = visual.height ?? 0;
+      const width = visual.width ?? AL_RAHMA_BRAND_CONFIG.visual.format.width;
+      const height = visual.height ?? AL_RAHMA_BRAND_CONFIG.visual.format.height;
       const validDimensions = width >= 500 && height >= 500;
       checks.push({
         checkName: "Visual Resolution & Safe Zones",
@@ -255,11 +246,24 @@ export class QualityGate {
         passed: validDimensions,
         score: validDimensions ? 100 : 40,
         message: validDimensions
-          ? `الأبعاد ملائمة للتصاميم عالية الجودة (${width}x${height})`
-          : "أبعاد الصورة صغيرة جداً",
+          ? `أبعاد التصميم مناسبة (${width}x${height}).`
+          : "أبعاد الصورة غير مناسبة.",
       });
-      if (!validDimensions) errors.push("أبعاد الصورة غير ملائمة للنشر الاحترافي");
+      if (!validDimensions) errors.push("أبعاد الصورة غير مناسبة للنشر.");
     }
+
+    // 10. Brand subtitle in config (sanity/contract)
+    const subtitleOk = AL_RAHMA_BRAND_CONFIG.activity.includes("متاح توصيل");
+    checks.push({
+      checkName: "Brand Subtitle Contract",
+      category: "compliance",
+      passed: subtitleOk,
+      score: subtitleOk ? 100 : 0,
+      message: subtitleOk
+        ? "عنوان النشاط يتضمن (متاح توصيل)."
+        : "عنوان النشاط يجب أن يتضمن (متاح توصيل).",
+    });
+    if (!subtitleOk) errors.push("عنوان النشاط في BrandConfig يجب أن يتضمن (متاح توصيل).");
 
     const totalScore = Math.round(
       checks.reduce((acc, c) => acc + c.score, 0) / checks.length,

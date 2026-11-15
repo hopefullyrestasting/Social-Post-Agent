@@ -32,16 +32,17 @@ type Props = {
   occasion?: OccasionGreetingInput | null;
 };
 
-const VARIANT_TITLES: Record<string, string> = {
-  "hero-clean": "النسخة 1 · صورة أمامية نظيفة",
-  "studio-angle": "النسخة 2 · زاوية استوديو ديناميكية",
+const TEMPLATE_TITLES: Record<string, string> = {
+  "silver-podium-botanical": "النسخة 1 — منصة فضية ونباتات",
+  "botanical-arch-frame": "النسخة 2 — إطار قوسي نباتي",
+  "editorial-beauty-card": "النسخة 2 — بطاقة تحريرية تجميلية",
 };
 
 const ANGLE_LABELS: Record<string, string> = {
   product_information: "معلومات المنتج",
-  product_features: "خصائص المنتج",
+  product_features: "مميزات المنتج",
   beauty_routine: "روتين العناية",
-  combo_deal: "تفاصيل المنتج",
+  combo_deal: "تشكيلة منتجات",
 };
 
 function stockStatus(value: string | null): WarehouseStockStatus {
@@ -68,9 +69,7 @@ export default function AdPreview({
       category: product.category ?? "",
       sourceUrl: verifiedSource?.source_url,
       verificationStatus: research.product.verification_status,
-      verifiedBenefits: research.verifiedBenefits.map(
-        (claim) => claim.claim_text,
-      ),
+      verifiedBenefits: research.verifiedBenefits.map((claim) => claim.claim_text),
       verifiedUsage: research.verifiedUsage.map((claim) => claim.claim_text),
       productImageUrl: primary?.image_url ?? null,
       warehouseStockStatus: stockStatus(research.latestStockStatus),
@@ -87,14 +86,14 @@ export default function AdPreview({
     <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h4 className="font-bold">
-          معاينة إعلانين (2 Variants) · {product.name_arabic}
+          معاينة إعلانين (2 Variants) — {product.name_arabic}
         </h4>
         <span className="text-xs text-slate-500">
           {results[0]?.metadata.dimensions.width}×
-          {results[0]?.metadata.dimensions.height} · خلفية بيضاء وشبكة فضية ·
+          {results[0]?.metadata.dimensions.height} — {results[0]?.template} —{" "}
           {results[0]?.background.provider === "deterministic-studio"
-            ? " استوديو مجاني"
-            : ` ${results[0]?.background.provider}`}
+            ? "مشهد استوديو"
+            : results[0]?.background.provider}
         </span>
       </div>
 
@@ -106,16 +105,16 @@ export default function AdPreview({
 
           return (
             <article
-              key={result.variant}
+              key={`${result.variantNumber}-${result.template}`}
               className="rounded-2xl border border-slate-200 bg-white p-3"
             >
               <header className="mb-2 flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <p className="font-extrabold">
-                    {VARIANT_TITLES[result.variant] ?? result.variant}
+                    {TEMPLATE_TITLES[result.template] ?? result.template}
                   </p>
                   <p className="text-xs text-slate-500">
-                    {ANGLE_LABELS[result.angle] ?? result.angle} ·{" "}
+                    {ANGLE_LABELS[result.angle] ?? result.angle} —{" "}
                     {result.copy.ctaShort}
                   </p>
                 </div>
@@ -127,7 +126,7 @@ export default function AdPreview({
                   }`}
                 >
                   {result.success
-                    ? `جاهز للنشر · ${result.qualityReport.overallScore}%`
+                    ? `جاهز للنشر — ${result.qualityReport.overallScore}%`
                     : "يحتاج استكمال البيانات"}
                 </span>
               </header>
@@ -143,7 +142,7 @@ export default function AdPreview({
                 </p>
                 {result.copy.benefitLine && (
                   <p>
-                    <b>السطر الموثّق:</b> {result.copy.benefitLine}
+                    <b>جملة البيع:</b> {result.copy.benefitLine}
                   </p>
                 )}
                 {result.blockers.length > 0 && (
@@ -161,7 +160,7 @@ export default function AdPreview({
                 <a
                   className="inline-block font-bold text-emerald-700 underline"
                   href={result.svgDataUri}
-                  download={`${product.id}-${result.variant}.svg`}
+                  download={`${product.id}-${result.template}.svg`}
                 >
                   تحميل SVG
                 </a>
@@ -175,9 +174,9 @@ export default function AdPreview({
         {results[0]?.metadata.promotion ? (
           <p>
             <b>عرض سعري موثّق:</b> خصم{" "}
-            {results[0].metadata.promotion.discountPercent}% ·{" "}
+            {results[0].metadata.promotion.discountPercent}% —{" "}
             {results[0].metadata.promotion.promoPrice} ج.م بدلاً من{" "}
-            {results[0].metadata.promotion.originalPrice} ج.م · حتى{" "}
+            {results[0].metadata.promotion.originalPrice} ج.م — حتى{" "}
             {results[0].metadata.promotion.endsAt}
           </p>
         ) : (

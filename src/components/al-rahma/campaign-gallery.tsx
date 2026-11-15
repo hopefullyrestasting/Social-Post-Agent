@@ -12,6 +12,7 @@ import {
 type CampaignCreative = ExportCreative & {
   campaign_id?: string | null;
   variant?: string;
+  template?: string;
   headline_arabic?: string | null;
   copy_arabic?: string | null;
   quality_status?: string | null;
@@ -32,11 +33,16 @@ type Campaign = {
   creatives: CampaignCreative[];
 };
 
-type ApiResult<T> = ({ success: true } & T) | { success: false; error?: string; detail?: string; message?: string };
+type ApiResult<T> =
+  | ({ success: true } & T)
+  | { success: false; error?: string; detail?: string; message?: string };
 
 const VARIANT_LABELS: Record<string, string> = {
-  "hero-clean": "نسخة 1 · أمامية نظيفة",
-  "studio-angle": "نسخة 2 · زاوية استوديو",
+  "silver-podium-botanical": "نسخة 1 — منصة فضية ونباتات",
+  "botanical-arch-frame": "نسخة 2 — إطار قوسي نباتي",
+  "editorial-beauty-card": "نسخة 2 — بطاقة تحريرية تجميلية",
+  "1": "نسخة 1 — منصة فضية ونباتات",
+  "2": "نسخة 2 — قالب بديل",
 };
 
 function creativeSvgMarkup(creative: CampaignCreative): string | null {
@@ -44,7 +50,10 @@ function creativeSvgMarkup(creative: CampaignCreative): string | null {
 }
 
 function groupByProduct(creatives: CampaignCreative[]) {
-  const groups = new Map<string, { name: string; brand: string; items: CampaignCreative[] }>();
+  const groups = new Map<
+    string,
+    { name: string; brand: string; items: CampaignCreative[] }
+  >();
   for (const creative of creatives) {
     const key = creative.product_id || creative.id;
     const existing = groups.get(key);
@@ -59,7 +68,9 @@ function groupByProduct(creatives: CampaignCreative[]) {
     }
   }
   for (const group of groups.values()) {
-    group.items.sort((a, b) => (Number(a.variant_number) || 0) - (Number(b.variant_number) || 0));
+    group.items.sort(
+      (a, b) => (Number(a.variant_number) || 0) - (Number(b.variant_number) || 0),
+    );
   }
   return Array.from(groups.entries());
 }
@@ -139,7 +150,7 @@ export default function CampaignGallery() {
       if (!response.ok || !body.success) {
         throw new Error(
           response.status === 401
-            ? "المفتاح الإداري مطلوب أو غير صحيح. أدخله من أعلى لوحة التحكم."
+            ? "المفتاح الإداري مطلوب أو غير صحيح. أدخل المفتاح من أعلى لوحة التحكم."
             : (body as { detail?: string; error?: string }).detail ||
                 (body as { error?: string }).error ||
                 `تعذر تشغيل الدفعة (${response.status})`,
@@ -148,7 +159,7 @@ export default function CampaignGallery() {
 
       const previewNote =
         response.headers.get("X-Auth-Mode") === "unconfigured-preview"
-          ? " · وضع المعاينة: لم يُربط مفتاح الإدارة بعد."
+          ? " — وضع المعاينة: لم يُضبط مفتاح الإدارة بعد."
           : "";
       setNotice(`${body.message || "تم تشغيل دفعة اليوم بنجاح."}${previewNote}`);
       await load();
@@ -200,7 +211,8 @@ export default function CampaignGallery() {
         <div>
           <h3 className="text-lg font-extrabold">معرض الحملات وتوليد دفعة اليوم</h3>
           <p className="mt-1 text-sm text-slate-500">
-            توليد يدوي لدفعة يومية: حتى 5 منتجات موثّقة × صورتين (10 إعلانات 1080×1920) جاهزة لحالات واتساب. لا يوجد تشغيل تلقائي (Cron).
+            توليد يدوي لدفعة يومية: حتى 5 منتجات موثّقة × نسختين (10 إعلانات 1080×1920)
+            جاهزة للحالة وواتساب. لا يوجد تشغيل تلقائي (Cron).
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -210,7 +222,7 @@ export default function CampaignGallery() {
             disabled={running}
             className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-emerald-500 disabled:opacity-50"
           >
-            {running ? "جاري التوليد..." : "توليد دفعة اليوم (5 منتجات × صورتين)"}
+            {running ? "جارٍ التوليد..." : "توليد دفعة اليوم (5 منتجات × نسختين)"}
           </button>
           <button
             type="button"
@@ -223,21 +235,27 @@ export default function CampaignGallery() {
       </div>
 
       {notice && (
-        <div role="status" className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900">
+        <div
+          role="status"
+          className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900"
+        >
           {notice}
         </div>
       )}
       {error && (
-        <div role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-red-800">
+        <div
+          role="alert"
+          className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-red-800"
+        >
           {error}
         </div>
       )}
 
       {loading ? (
-        <p className="py-6 text-center text-slate-500">جاري تحميل الحملات...</p>
+        <p className="py-6 text-center text-slate-500">جارٍ تحميل الحملات...</p>
       ) : campaigns.length === 0 ? (
         <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
-          لا توجد حملات مسجلة بعد. اضغط «توليد دفعة اليوم» بعد توثيق منتجات بصور مرجعية.
+          لا توجد حملات مسجلة بعد. اضغط «توليد دفعة اليوم» بعد توثيق منتجات وصور مرجعية.
         </p>
       ) : (
         <div className="space-y-6">
@@ -245,9 +263,10 @@ export default function CampaignGallery() {
             <div className="rounded-xl border border-emerald-100 bg-emerald-50/30 p-4">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <p className="font-extrabold">آخر حملة · {latest.campaign_date}</p>
+                  <p className="font-extrabold">آخر حملة — {latest.campaign_date}</p>
                   <p className="text-sm text-slate-600">
-                    الحالة: {latest.status} · المنتجات: {latest.total_products ?? 0} · الإعلانات: {latest.total_images ?? latest.creatives.length}
+                    الحالة: {latest.status} — المنتجات: {latest.total_products ?? 0} —
+                    الإعلانات: {latest.total_images ?? latest.creatives.length}
                   </p>
                   {latest.error_summary && (
                     <p className="mt-1 text-sm text-amber-800">{latest.error_summary}</p>
@@ -256,11 +275,13 @@ export default function CampaignGallery() {
                 <button
                   type="button"
                   onClick={() => void handleDownloadZip(latest)}
-                  disabled={downloading === `zip-${latest.id}` || latest.creatives.length === 0}
+                  disabled={
+                    downloading === `zip-${latest.id}` || latest.creatives.length === 0
+                  }
                   className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white transition hover:bg-slate-800 disabled:opacity-50"
                 >
                   {downloading === `zip-${latest.id}`
-                    ? "جاري تجهيز ZIP..."
+                    ? "جارٍ تجهيز ZIP..."
                     : `تنزيل الكل كملف ZIP (${latest.creatives.length})`}
                 </button>
               </div>
@@ -270,21 +291,39 @@ export default function CampaignGallery() {
               ) : (
                 <div className="space-y-5">
                   {latestGroups.map(([productId, group]) => (
-                    <div key={productId} className="rounded-xl border border-slate-200 bg-white p-3">
+                    <div
+                      key={productId}
+                      className="rounded-xl border border-slate-200 bg-white p-3"
+                    >
                       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                         <h4 className="font-bold">
-                          {group.name} {group.brand ? <span className="text-slate-500">· {group.brand}</span> : null}
+                          {group.name}{" "}
+                          {group.brand ? (
+                            <span className="text-slate-500">— {group.brand}</span>
+                          ) : null}
                         </h4>
-                        <span className="text-xs text-slate-500">{group.items.length} إعلان</span>
+                        <span className="text-xs text-slate-500">
+                          {group.items.length} إعلان
+                        </span>
                       </div>
                       <div className="grid gap-4 lg:grid-cols-2">
                         {group.items.map((creative) => {
                           const svg = creativeSvgMarkup(creative);
+                          const templateKey = String(
+                            creative.variant ??
+                              creative.template ??
+                              creative.variant_number ??
+                              "",
+                          );
                           const label =
-                            VARIANT_LABELS[String(creative.variant ?? "")] ||
+                            VARIANT_LABELS[templateKey] ||
+                            VARIANT_LABELS[String(creative.variant_number ?? "")] ||
                             `نسخة ${creative.variant_number ?? "?"}`;
                           return (
-                            <article key={creative.id} className="rounded-xl border border-slate-200 p-3">
+                            <article
+                              key={creative.id}
+                              className="rounded-xl border border-slate-200 p-3"
+                            >
                               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                                 <p className="text-sm font-extrabold">{label}</p>
                                 <span
@@ -315,11 +354,13 @@ export default function CampaignGallery() {
                                   className="font-bold text-emerald-700 underline disabled:opacity-50"
                                 >
                                   {downloading === creative.id
-                                    ? "جاري التحويل..."
+                                    ? "جارٍ التحويل..."
                                     : "تنزيل PNG (1080×1920)"}
                                 </button>
                                 {creative.headline_arabic && (
-                                  <span className="text-slate-600">{creative.headline_arabic}</span>
+                                  <span className="text-slate-600">
+                                    {creative.headline_arabic}
+                                  </span>
                                 )}
                               </div>
                             </article>
@@ -335,17 +376,27 @@ export default function CampaignGallery() {
 
           {campaigns.length > 1 && (
             <details className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <summary className="cursor-pointer font-bold">حملات سابقة ({campaigns.length - 1})</summary>
+              <summary className="cursor-pointer font-bold">
+                حملات سابقة ({campaigns.length - 1})
+              </summary>
               <ul className="mt-3 space-y-2 text-sm text-slate-700">
                 {campaigns.slice(1).map((campaign) => (
-                  <li key={campaign.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white p-3">
+                  <li
+                    key={campaign.id}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white p-3"
+                  >
                     <span>
-                      {campaign.campaign_date} · {campaign.status} · {campaign.total_products ?? 0} منتج · {campaign.total_images ?? campaign.creatives.length} إعلان
+                      {campaign.campaign_date} — {campaign.status} —{" "}
+                      {campaign.total_products ?? 0} منتج —{" "}
+                      {campaign.total_images ?? campaign.creatives.length} إعلان
                     </span>
                     <button
                       type="button"
                       onClick={() => void handleDownloadZip(campaign)}
-                      disabled={downloading === `zip-${campaign.id}` || campaign.creatives.length === 0}
+                      disabled={
+                        downloading === `zip-${campaign.id}` ||
+                        campaign.creatives.length === 0
+                      }
                       className="font-bold text-emerald-700 underline disabled:opacity-50"
                     >
                       {downloading === `zip-${campaign.id}` ? "..." : "تنزيل ZIP"}
