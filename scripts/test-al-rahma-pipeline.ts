@@ -245,15 +245,23 @@ for (const result of variants) {
   assert.ok(result.svgOverlay.includes('x="250" y="490" width="580" height="740"'), "Hero packshot must use approved geometry (x=250,y=490,w=580,h=740, bottom at 1230).");
   assert.ok(result.svgOverlay.includes('id="top-header-pill"'), "Top dark-emerald header pill must render.");
   assert.ok(result.svgOverlay.includes("#113D2E"), "Approved dark-emerald header/footer color must be used.");
-  assert.ok(result.svgOverlay.includes('id="header-divider"') && result.svgOverlay.includes('x1="722"'), "Header must include vertical divider at absolute x=770 (local x=722).");
+  assert.ok(result.svgOverlay.includes('width="1000" height="150" rx="36" fill="#113D2E"'), "Header pill must match approved dimensions and color.");
+  assert.ok(result.svgOverlay.includes('x="915" y="73" width="96" height="96"'), "Brand logo must be positioned in the approved header lockup.");
+  assert.ok(result.svgOverlay.includes('x="895" y="134"') && result.svgOverlay.includes('font-size="38"') && result.svgOverlay.includes('font-weight="900"'), "Brand name must use approved header coordinates/typography.");
+  assert.ok(result.svgOverlay.includes('id="header-divider"') && result.svgOverlay.includes('x1="685"') && result.svgOverlay.includes('y1="78"') && result.svgOverlay.includes('x2="685"') && result.svgOverlay.includes('y2="168"'), "Header must include vertical divider at approved coordinates.");
+  assert.ok(result.svgOverlay.includes('x="660" y="132"') && result.svgOverlay.includes('font-size="25"') && result.svgOverlay.includes('fill="#E2E8F0"'), "Header tagline must use approved coordinates/typography with no overlap.");
   assert.ok(result.svgOverlay.includes("مستحضرات تجميل ومستلزمات الصيدليات - متاح توصيل"), "Header activity/delivery text must match approved lockup.");
   assert.ok(result.svgOverlay.includes('id="product-title"'), "Product title block must render.");
   assert.ok(result.svgOverlay.includes("تركيبة طبيعية") && result.svgOverlay.includes("جودة مضمونة"), "Side feature pills must render.");
   assert.ok(result.svgOverlay.includes('id="sales-copy-card"'), "Elevated sales copy card must render.");
-  assert.ok(result.svgOverlay.includes("#155E42"), "Sales copy must use approved emerald color.");
-  assert.ok(result.svgOverlay.includes('font-weight="800"'), "Sales copy must use bold Cairo 800 styling.");
-  assert.ok(result.svgOverlay.includes('y="1730"'), "Bottom contact bar must start at y=1730.");
+  assert.ok(result.svgOverlay.includes('y="1310"') && result.svgOverlay.includes('height="195"') && result.svgOverlay.includes('rx="28"'), "Sales copy card must use approved geometry.");
+  assert.ok(result.svgOverlay.includes('font-size="44"') && result.svgOverlay.includes('font-weight="800"') && result.svgOverlay.includes("#155E42"), "Sales copy must use approved typography and color.");
+  assert.ok(result.svgOverlay.includes('y="1730"') && result.svgOverlay.includes('height="190"'), "Bottom contact bar must use approved geometry.");
+  assert.ok(result.svgOverlay.includes('x="960" y="1840"') && result.svgOverlay.includes('font-size="42"'), "Contact label must use approved coordinates/typography.");
+  assert.ok(result.svgOverlay.includes('x="540" y="1842"') && result.svgOverlay.includes('font-size="52"'), "Phone number must be centered with approved coordinates/typography.");
+  assert.ok(result.svgOverlay.includes('cx="250" cy="1825"') && result.svgOverlay.includes('cx="165" cy="1825"') && result.svgOverlay.includes('r="30"'), "Contact icons must be placed away from phone digits with r=30.");
   assert.ok(result.svgOverlay.includes("\u200Fللتواصل:") && result.svgOverlay.includes(brand.contact.phone), "Contact bar must render label and phone.");
+  assert.equal(result.svgOverlay.includes('href="/studio-scenes/'), false, "External studio scene URLs must never be emitted in SVG (PNG export safety).");
   assert.ok(result.svgOverlay.includes("#059669"), "Contact/icons must include emerald accent styling.");
   assert.equal(result.qualityReport.passed, true);
   assert.equal(result.metadata.promotion, null);
@@ -332,14 +340,16 @@ assert.equal(fallback.provider, "deterministic-studio");
 assert.equal(fallback.kind, "scene");
 assert.equal(fallback.template, "silver-podium-botanical");
 
-const aiScene = resolveBackground({
+const externalScene = resolveBackground({
   width: 1080,
   height: 1920,
   template: "botanical-arch-frame",
   sceneImageUrl: "https://image.pollinations.ai/prompt/test",
 });
-assert.equal(aiScene.provider, "pollinations");
-assert.equal(aiScene.kind, "image");
+assert.equal(externalScene.provider, "deterministic-studio");
+assert.equal(externalScene.kind, "scene");
+assert.equal(externalScene.markup.includes('href="https://image.pollinations.ai/prompt/test"'), false);
+assert.ok(externalScene.markup.includes("shader-podium"), "Non-data scene URLs must fall back to inline 3D podium vectors for PNG-safe export.");
 
 const workersScene = resolveBackground({
   width: 1080,
@@ -423,13 +433,22 @@ assert.ok(overlay.includes('height="740"'));
 assert.ok(overlay.includes('x="250" y="490" width="580" height="740"'));
 assert.ok(overlay.includes('id="top-header-pill"'));
 assert.ok(overlay.includes("#113D2E"));
-assert.ok(overlay.includes('id="header-divider"') && overlay.includes('x1="722"'));
+assert.ok(overlay.includes('width="1000" height="150" rx="36" fill="#113D2E"'));
+assert.ok(overlay.includes('x="915" y="73" width="96" height="96"'));
+assert.ok(overlay.includes('x="895" y="134"'));
+assert.ok(overlay.includes('id="header-divider"') && overlay.includes('x1="685"') && overlay.includes('y1="78"') && overlay.includes('x2="685"') && overlay.includes('y2="168"'));
+assert.ok(overlay.includes('x="660" y="132"'));
 assert.ok(overlay.includes("مستحضرات تجميل ومستلزمات الصيدليات - متاح توصيل"));
 assert.ok(overlay.includes('id="product-title"'));
 assert.ok(overlay.includes("تركيبة طبيعية") && overlay.includes("جودة مضمونة"));
 assert.ok(overlay.includes('id="sales-copy-card"'));
-assert.ok(overlay.includes("#155E42"));
-assert.ok(overlay.includes('y="1730"'));
+assert.ok(overlay.includes('y="1310"') && overlay.includes('height="195"'));
+assert.ok(overlay.includes('font-size="44"') && overlay.includes("#155E42"));
+assert.ok(overlay.includes('y="1730"') && overlay.includes('height="190"'));
+assert.ok(overlay.includes('x="960" y="1840"'));
+assert.ok(overlay.includes('x="540" y="1842"'));
+assert.ok(overlay.includes('cx="250" cy="1825"') && overlay.includes('cx="165" cy="1825"') && overlay.includes('r="30"'));
+assert.equal(overlay.includes('href="/studio-scenes/'), false);
 assert.equal(overlay.includes("..."), false);
 
 const defaultOverlay = OverlaySystem.generateOverlaySvg({ width: 1080, height: 1920 });

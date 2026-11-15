@@ -70,34 +70,39 @@ function commonDefs(): string {
 }
 
 function headerPill(width: number, brandLogoUrl?: string | null): string {
-  // Top Header Pill y=48..198
-  const x = 48;
+  // Top dark-emerald pill: x=40, y=48, w=1000, h=150, rx=36
+  const x = 40;
   const y = 48;
-  const w = width - 96;
+  const w = 1000;
   const h = 150;
   const logo = brandLogoUrl?.trim() || null;
 
-  const rightGroupX = w - 24; // anchor from right inside pill
-  const logoSize = 86;
-  const logoX = rightGroupX - logoSize;
-  const logoY = (h - logoSize) / 2;
-  const brandX = logoX - 16;
-  const dividerX = 770 - x; // local x for absolute divider at x=770 within translated header group
+  // Absolute coordinates as specified by Phase 13 lockup.
+  const logoX = 915;
+  const logoY = 73;
+  const logoSize = 96;
+  const brandX = 895;
+  const brandY = 134;
+  const dividerX = 685;
+  const dividerY1 = 78;
+  const dividerY2 = 168;
+  const taglineX = 660;
+  const taglineY = 132;
 
   const logoNode = logo
     ? `<image href="${escapeXml(logo)}" x="${logoX}" y="${logoY}" width="${logoSize}" height="${logoSize}" preserveAspectRatio="xMidYMid meet" />
-       <rect x="${logoX}" y="${logoY}" width="${logoSize}" height="${logoSize}" rx="20" fill="#FFFFFF" fill-opacity="0.10" stroke="#FFFFFF" stroke-opacity="0.18" />`
-    : `<rect x="${logoX}" y="${logoY}" width="${logoSize}" height="${logoSize}" rx="20" fill="#FFFFFF" fill-opacity="0.12" stroke="#FFFFFF" stroke-opacity="0.18" />
-       <circle cx="${logoX + logoSize / 2}" cy="${logoY + logoSize / 2}" r="24" fill="#059669" />
-       <path d="M ${logoX + 30} ${logoY + 45} L ${logoX + 40} ${logoY + 56} L ${logoX + 58} ${logoY + 34}" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />`;
+       <rect x="${logoX}" y="${logoY}" width="${logoSize}" height="${logoSize}" rx="22" fill="#FFFFFF" fill-opacity="0.10" stroke="#FFFFFF" stroke-opacity="0.18" />`
+    : `<rect x="${logoX}" y="${logoY}" width="${logoSize}" height="${logoSize}" rx="22" fill="#FFFFFF" fill-opacity="0.12" stroke="#FFFFFF" stroke-opacity="0.18" />
+       <circle cx="${logoX + logoSize / 2}" cy="${logoY + logoSize / 2}" r="26" fill="#059669" />
+       <path d="M ${logoX + 34} ${logoY + 50} L ${logoX + 45} ${logoY + 62} L ${logoX + 64} ${logoY + 38}" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />`;
 
   return `
-    <g id="top-header-pill" transform="translate(${x}, ${y})">
-      <rect width="${w}" height="${h}" rx="36" fill="#113D2E" />
+    <g id="top-header-pill">
+      <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="36" fill="#113D2E" />
       ${logoNode}
-      <text x="${brandX}" y="92" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="40" font-weight="800" fill="#FFFFFF" text-anchor="end">${escapeXml(BRAND.brandName)}</text>
-      <line id="header-divider" x1="${dividerX}" y1="34" x2="${dividerX}" y2="${h - 34}" stroke="#FFFFFF" stroke-opacity="0.42" stroke-width="2" />
-      <text x="${dividerX - 26}" y="90" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="32" font-weight="700" fill="#FFFFFF" text-anchor="end">${escapeXml(HEADER_ACTIVITY)}</text>
+      <text x="${brandX}" y="${brandY}" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="38" font-weight="900" fill="#FFFFFF" text-anchor="end">${escapeXml(BRAND.brandName)}</text>
+      <line id="header-divider" x1="${dividerX}" y1="${dividerY1}" x2="${dividerX}" y2="${dividerY2}" stroke="rgba(255,255,255,0.35)" stroke-width="2" />
+      <text x="${taglineX}" y="${taglineY}" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="25" font-weight="700" fill="#E2E8F0" text-anchor="end">${escapeXml(HEADER_ACTIVITY)}</text>
     </g>
   `;
 }
@@ -189,19 +194,17 @@ function heroPackshot(
 }
 
 function salesCopyCard(width: number, text: string): string {
-  // Sales Copy Elevated Card y=1330..1495, white rx=28, bold emerald #155E42 Cairo 800 48-54px
+  // Elevated white sales card y=1310, height=195, rx=28. 4-8 words, max 2 balanced lines, no clipping.
   const x = 86;
-  const y = 1330;
+  const y = 1310;
   const w = width - 172;
-  const h = 165;
+  const h = 195;
+  const size = 44;
+  const lineHeight = 58;
 
-  const words = text.trim().split(/\s+/).filter(Boolean);
-  const { lines, charsPerLine } = wrapTextNoTruncate(text, 24, 2, 12);
-  const size = Math.max(48, Math.min(54, 48 + Math.max(0, 22 - charsPerLine)));
-  const lineHeight = Math.round(size * 1.3);
+  const { lines } = wrapTextNoTruncate(text, 22, 2, 10);
   const blockH = size + (lines.length - 1) * lineHeight;
   const textY = y + h / 2 - blockH / 2 + size - 2;
-  void words;
 
   const tspans = lines
     .map((line, index) => `<tspan x="${width / 2}" dy="${index === 0 ? 0 : lineHeight}">${escapeXml(line)}</tspan>`)
@@ -293,13 +296,13 @@ function ctaPill(width: number, y: number, text: string): string {
   `;
 }
 
-function circularIcon(x: number, y: number, type: "phone" | "whatsapp"): string {
-  const r = 28;
+function circularIcon(cx: number, cy: number, type: "phone" | "whatsapp"): string {
+  const r = 30;
   if (type === "whatsapp") {
     return `
-      <g transform="translate(${x}, ${y})">
-        <circle cx="0" cy="0" r="${r}" fill="#059669" />
-        <g transform="translate(-12,-12)">
+      <g>
+        <circle cx="${cx}" cy="${cy}" r="${r}" fill="#059669" />
+        <g transform="translate(${cx - 12},${cy - 12})">
           <path d="M17.2 14.2c-.3-.1-1.7-.8-1.9-.9-.3-.1-.5-.1-.7.1-.2.3-.8.9-.9 1.1-.2.2-.3.2-.6.1-.3-.1-1.2-.4-2.3-1.4-.8-.7-1.4-1.7-1.6-2-.2-.3 0-.5.1-.6.1-.1.3-.3.4-.5.1-.1.2-.3.3-.4.1-.2 0-.3 0-.5-.1-.1-.7-1.6-.9-2.2-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.4s1 2.8 1.2 3c.1.2 2 3.1 4.9 4.3.7.3 1.2.5 1.7.6.7.2 1.3.2 1.8.1.6-.1 1.7-.7 1.9-1.3.2-.6.2-1.2.2-1.3-.1-.1-.3-.2-.5-.3z" fill="#FFFFFF"/>
           <path d="M12 3.5a8.5 8.5 0 0 0-7.3 12.8L3.5 20.5l4.3-1.1A8.5 8.5 0 1 0 12 3.5z" fill="none" stroke="#FFFFFF" stroke-width="1.6"/>
         </g>
@@ -307,29 +310,27 @@ function circularIcon(x: number, y: number, type: "phone" | "whatsapp"): string 
     `;
   }
   return `
-    <g transform="translate(${x}, ${y})">
-      <circle cx="0" cy="0" r="${r}" fill="#059669" />
-      <g transform="translate(-12,-12)" stroke="#FFFFFF" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <g>
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="#059669" />
+      <g transform="translate(${cx - 12},${cy - 12})" stroke="#FFFFFF" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round">
         <path d="M22 16.92v3a2 2 0 0 1-2.18 2A19.8 19.8 0 0 1 11.19 19a19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.78.62 2.63a2 2 0 0 1-.45 2.11L8 9.91a16 16 0 0 0 6 6l1.45-1.28a2 2 0 0 1 2.11-.45c.85.29 1.73.5 2.63.62A2 2 0 0 1 22 16.92z" fill="#FFFFFF" fill-opacity="0.08"/>
       </g>
     </g>
   `;
 }
 
-function contactBlock(width: number, height: number): string {
-  // Bottom Contact Bar y=1730..1920
+function contactBlock(width: number): string {
+  // Full-width dark-emerald footer x=0, y=1730, w=1080, h=190
   const y = 1730;
-  const barH = height - y;
+  const barH = 190;
   const phone = BRAND.contact.phone;
   return `
     <g id="contact-block">
       <rect x="0" y="${y}" width="${width}" height="${barH}" fill="#113D2E" />
-      <text x="${width / 2 + 210}" y="${y + 78}" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="40" font-weight="700" fill="#FFFFFF" text-anchor="middle" direction="rtl">${escapeXml(CONTACT_LABEL)}</text>
-      <g id="contact-row">
-        ${circularIcon(width / 2 + 95, y + 122, "whatsapp")}
-        <text x="${width / 2 - 40}" y="${y + 136}" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="52" font-weight="900" fill="#FFFFFF" text-anchor="middle" direction="ltr">${escapeXml(phone)}</text>
-        ${circularIcon(width / 2 - 185, y + 122, "phone")}
-      </g>
+      <text x="960" y="1840" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="42" font-weight="800" fill="#FFFFFF" text-anchor="end" direction="rtl">${escapeXml(CONTACT_LABEL)}</text>
+      <text x="540" y="1842" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="52" font-weight="900" fill="#FFFFFF" text-anchor="middle" direction="ltr">${escapeXml(phone)}</text>
+      ${circularIcon(250, 1825, "whatsapp")}
+      ${circularIcon(165, 1825, "phone")}
     </g>
   `;
 }
@@ -372,7 +373,7 @@ export class OverlaySystem {
         ${benefit ? salesCopyCard(width, benefit) : ""}
         ${availability ? availabilityPill(width, 1518, availability) : ""}
         ${!promotion && cta ? ctaPill(width, 1510, cta) : ""}
-        ${opts.showFooterBar === false ? "" : contactBlock(width, height)}
+        ${opts.showFooterBar === false ? "" : contactBlock(width)}
       </svg>
     `.trim();
   }

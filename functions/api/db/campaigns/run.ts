@@ -8,7 +8,10 @@ import {
   type PromotionRecord,
 } from "../../../../src/lib/al-rahma";
 import { removePackshotBackgroundServer } from "../../ai/remove-bg";
-import { stageProductWithNanoBanana } from "../../ai/nano-banana-stage";
+import {
+  stageProductWithNanoBananaDetailed,
+  type NanoBananaStageProvider,
+} from "../../ai/nano-banana-stage";
 
 /**
  * POST /api/db/campaigns/run (protected by admin middleware)
@@ -93,11 +96,6 @@ const VARIANT_SCENE_PROMPTS: Record<1 | 2, string> = {
   2: `Architectural cream and soft sage-green 3D arch niche skincare studio background, crisp natural sunlight window shadows, clean stone display plinth at bottom, subtle botanical leaves, empty stage, no products, no text, vertical 9:16, sharp focus, crisp edges, architectural 3D product photography stage, 8k resolution, high detail, no blur, no bokeh background`,
 };
 
-const BUNDLED_STAGE_FALLBACKS: Record<1 | 2, string> = {
-  1: "/studio-scenes/silver-podium-botanical.svg",
-  2: "/studio-scenes/arch-sunlit-studio.svg",
-};
-
 function base64FromBytes(bytes: Uint8Array): string {
   let binary = "";
   const chunk = 0x8000;
@@ -168,15 +166,11 @@ async function bytesFromUnknown(value: unknown): Promise<Uint8Array | null> {
   return null;
 }
 
-function bundledStageFallback(variant: 1 | 2): string {
-  return BUNDLED_STAGE_FALLBACKS[variant];
-}
-
 async function generateStudioScene(
   env: Env,
   variant: 1 | 2,
   seed: number,
-): Promise<string> {
+): Promise<string | null> {
   void seed;
   const prompt = VARIANT_SCENE_PROMPTS[variant];
   if (env.AI && typeof env.AI.run === "function") {
@@ -210,10 +204,11 @@ async function generateStudioScene(
         return `data:image/jpeg;base64,${base64FromBytes(directBytes)}`;
       }
     } catch (error) {
-      console.error("Workers AI studio-scene generation failed, falling back.", error);
+      console.error("Workers AI studio-scene generation failed, falling back to inline studio vectors.", error);
     }
   }
-  return bundledStageFallback(variant);
+  // PNG-safe fallback: do not emit external /studio-scenes URLs; let overlay/background render inline vectors.
+  return null;
 }
 async function loadBrandLogoUrl(env: Env): Promise<string | null> {
   try {
@@ -451,7 +446,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           total_images: 0,
         },
         message:
-          "Ù„Ø§ ØªÙˆØ¬Ø¯ Ù…Ù†ØªØ¬Ø§Øª Ù…ÙˆØ«Ù‘Ù‚Ø© Ù…Ø¹ ØµÙˆØ±Ø© Ù…Ø±Ø¬Ø¹ÙŠØ© Ø£Ø³Ø§Ø³ÙŠØ© Ø­Ø§Ù„ÙŠØ§Ù‹. ØªÙ… Ø­ÙØ¸ Ø­Ù…Ù„Ø© ÙØ§Ø±ØºØ© Ù„Ù„ØªØªØ¨Ø¹.",
+          "لا توجد منتجات موثّقة مع صورة مرجعية أساسية حالياً. تم حفظ حملة فارغة للتتبع.",
+        stageProvider: "studio-fallback",
+        stageProvidersByProduct: {},
         creatives: [],
       });
     }
@@ -461,6 +458,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const statements: D1PreparedStatement[] = [];
     const creativesOut: Record<string, unknown>[] = [];
     const selectedIds: string[] = [];
+    let runStageProvider: NanoBananaStageProvider = "studio-fallback";
+    const stageProvidersByProduct: Record<string, NanoBananaStageProvider> = {};
 
     for (const product of products) {
       selectedIds.push(product.id);
@@ -474,15 +473,29 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       let productImageUrl = product.image_url;
       let staged1: string | null = null;
       let staged2: string | null = null;
+      let stageProvider: NanoBananaStageProvider = "studio-fallback";
+      let stageModel: string | undefined;
 
       if (env.GEMINI_API_KEY?.trim()) {
         try {
-          staged1 = await stageProductWithNanoBanana(env, product.image_url, "silver-podium-botanical");
-          staged2 = staged1; // reuse successful staged composition for both variants
+          const staged = await stageProductWithNanoBananaDetailed(
+            env,
+            product.image_url,
+            "silver-podium-botanical",
+          );
+          staged1 = staged.image;
+          staged2 = staged.image; // reuse successful staged composition for both variants
+          stageProvider = staged.provider;
+          stageModel = staged.model;
         } catch (error) {
           console.error("Nano Banana staging failed, falling back to cutout+scene pipeline.", error);
         }
       }
+
+      if (stageProvider === "nano-banana") {
+        runStageProvider = "nano-banana";
+      }
+      stageProvidersByProduct[product.id] = stageProvider;
 
       if (!staged1 && !staged2) {
         try {
@@ -509,10 +522,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       };
 
       const seedBase = Array.from(product.id).reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
-      const [scene1, scene2] = await Promise.all([
-        generateStudioScene(env, 1, seedBase),
-        generateStudioScene(env, 2, seedBase + 1),
-      ]);
+      const [scene1, scene2] = staged1 || staged2
+        ? [null, null]
+        : await Promise.all([
+            generateStudioScene(env, 1, seedBase),
+            generateStudioScene(env, 2, seedBase + 1),
+          ]);
 
       const variants = ProductionEngine.executeVariants({
         product: details,
@@ -579,6 +594,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           success: variant.success,
           blockers: variant.blockers,
           metadata: variant.metadata,
+          stageProvider,
+          ...(stageProvider === "nano-banana" && stageModel ? { stageModel } : {}),
           qualityReport: variant.qualityReport,
         });
       }
@@ -629,9 +646,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       requested: limit,
       message:
         selectedIds.length < limit
-          ? `ØªÙ… ØªÙˆÙ„ÙŠØ¯ ${creativesOut.length} Ø¥Ø¹Ù„Ø§Ù†Ø§Ù‹ Ù„Ù€ ${selectedIds.length} Ù…Ù†ØªØ¬ Ù…ÙˆØ«Ù‘Ù‚ (Ø£Ù‚Ù„ Ù…Ù† 5 Ù…Ù†ØªØ¬Ø§Øª Ù…ØªØ§Ø­Ø© Ø­Ø§Ù„ÙŠØ§Ù‹).`
-          : `ØªÙ… ØªÙˆÙ„ÙŠØ¯ ${creativesOut.length} Ø¥Ø¹Ù„Ø§Ù†Ø§Ù‹ Ù„Ù€ ${selectedIds.length} Ù…Ù†ØªØ¬Ø§Øª Ù…ÙˆØ«Ù‘Ù‚Ø©.`,
+          ? `تم توليد ${creativesOut.length} إعلاناً لـ ${selectedIds.length} منتج موثّق (أقل من 5 منتجات متاحة حالياً).`
+          : `تم توليد ${creativesOut.length} إعلاناً لـ ${selectedIds.length} منتجات موثّقة.`,
       occasion,
+      stageProvider: runStageProvider,
+      stageProvidersByProduct,
       creatives: creativesOut,
     });
   } catch (error) {
