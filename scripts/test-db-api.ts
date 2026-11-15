@@ -418,7 +418,7 @@ class CampaignStatement {
             variant_number: 1,
             image_url: "data:image/svg+xml;charset=utf-8,%3Csvg%3E%3C/svg%3E",
             storage_key: null,
-            style_id: "al-rahma/clean-white-silver-mesh",
+            style_id: "al-rahma/silver-podium-botanical",
             headline_arabic: "عنوان",
             copy_arabic: "نص",
             quality_status: "passed",

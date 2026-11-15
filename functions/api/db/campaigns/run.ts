@@ -1,4 +1,4 @@
-import { z } from "zod";
+﻿import { z } from "zod";
 import { cairoToday, daysBetween, nextOccurrenceInWindow } from "../../_dates";
 import {
   ProductionEngine,
@@ -12,8 +12,7 @@ import {
  * POST /api/db/campaigns/run (protected by admin middleware)
  *
  * Manual daily batch: select up to 5 eligible products (verified + verified
- * primary image), prioritize not advertised in last 7 days, generate 2 variants
- * each (hero-clean, studio-angle), persist campaign + creatives + last_advertised_at.
+ * primary image), prioritize not advertised in last 7 days, generate 2 designer-template variants (Variant 1: silver-podium-botanical, Variant 2 alternates), persist campaign + creatives + last_advertised_at.
  *
  * No Cloudflare Cron is enabled by this endpoint.
  */
@@ -304,7 +303,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           total_images: 0,
         },
         message:
-          "لا توجد منتجات موثّقة مع صورة مرجعية أساسية حالياً. تم حفظ حملة فارغة للتتبع.",
+          "Ù„Ø§ ØªÙˆØ¬Ø¯ Ù…Ù†ØªØ¬Ø§Øª Ù…ÙˆØ«Ù‘Ù‚Ø© Ù…Ø¹ ØµÙˆØ±Ø© Ù…Ø±Ø¬Ø¹ÙŠØ© Ø£Ø³Ø§Ø³ÙŠØ© Ø­Ø§Ù„ÙŠØ§Ù‹. ØªÙ… Ø­ÙØ¸ Ø­Ù…Ù„Ø© ÙØ§Ø±ØºØ© Ù„Ù„ØªØªØ¨Ø¹.",
         creatives: [],
       });
     }
@@ -447,8 +446,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       requested: limit,
       message:
         selectedIds.length < limit
-          ? `تم توليد ${creativesOut.length} إعلاناً لـ ${selectedIds.length} منتج موثّق (أقل من 5 منتجات متاحة حالياً).`
-          : `تم توليد ${creativesOut.length} إعلاناً لـ ${selectedIds.length} منتجات موثّقة.`,
+          ? `ØªÙ… ØªÙˆÙ„ÙŠØ¯ ${creativesOut.length} Ø¥Ø¹Ù„Ø§Ù†Ø§Ù‹ Ù„Ù€ ${selectedIds.length} Ù…Ù†ØªØ¬ Ù…ÙˆØ«Ù‘Ù‚ (Ø£Ù‚Ù„ Ù…Ù† 5 Ù…Ù†ØªØ¬Ø§Øª Ù…ØªØ§Ø­Ø© Ø­Ø§Ù„ÙŠØ§Ù‹).`
+          : `ØªÙ… ØªÙˆÙ„ÙŠØ¯ ${creativesOut.length} Ø¥Ø¹Ù„Ø§Ù†Ø§Ù‹ Ù„Ù€ ${selectedIds.length} Ù…Ù†ØªØ¬Ø§Øª Ù…ÙˆØ«Ù‘Ù‚Ø©.`,
       occasion,
       creatives: creativesOut,
     });
@@ -460,3 +459,4 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     );
   }
 };
+

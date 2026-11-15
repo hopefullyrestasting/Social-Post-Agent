@@ -6,10 +6,10 @@ import {
 } from "./arabic-copywriter";
 import { AL_RAHMA_BRAND_CONFIG } from "./brand-core";
 import {
-  AdVariant,
   BackgroundLayer,
-  BackgroundProviderId,
+  DesignerTemplate,
   resolveBackground,
+  templateForVariant,
 } from "./background-provider";
 import {
   evaluatePromotion,
@@ -24,8 +24,10 @@ import { QualityGate, QualityGateReport } from "./quality-gate";
 
 export interface ProductionRequest {
   product: ProductDetails;
-  variant?: AdVariant;
-  backgroundProvider?: BackgroundProviderId;
+  variant?: 1 | 2;
+  template?: DesignerTemplate;
+  /** Pre-generated AI studio scene image (data URI or URL). */
+  sceneImageUrl?: string | null;
   width?: number;
   height?: number;
   /** Raw promotion row; validated and windowed inside the engine. */
@@ -36,11 +38,12 @@ export interface ProductionRequest {
   today?: string;
 }
 
-export type ProductionVariantsRequest = Omit<ProductionRequest, "variant">;
+export type ProductionVariantsRequest = Omit<ProductionRequest, "variant" | "template">;
 
 export interface ProductionResult {
   success: boolean;
-  variant: AdVariant;
+  variant: DesignerTemplate;
+  template: DesignerTemplate;
   variantNumber: 1 | 2;
   styleId: string;
   angle: PostAngle;
@@ -49,8 +52,8 @@ export interface ProductionResult {
   svgOverlay: string;
   svgDataUri: string;
   background: {
-    provider: BackgroundProviderId;
-    requestedProvider: BackgroundProviderId;
+    provider: BackgroundLayer["provider"];
+    requestedProvider: BackgroundLayer["requestedProvider"];
     kind: BackgroundLayer["kind"];
     fallbackReason?: string;
   };
@@ -59,6 +62,7 @@ export interface ProductionResult {
     productName: string;
     angle: string;
     variant: string;
+    template: string;
     variantNumber: number;
     generatedAt: string;
     dimensions: { width: number; height: number };
@@ -83,9 +87,6 @@ export interface ProductionResult {
   };
 }
 
-const STYLE_ID = "al-rahma/clean-white-silver-mesh";
-const PRODUCT_VARIANTS: readonly AdVariant[] = ["hero-clean", "studio-angle"];
-
 const AVAILABILITY_LABELS: Record<string, string> = {
   in_stock: "متوفر في المخزن",
   out_of_stock: "غير متوفر حالياً",
@@ -96,11 +97,8 @@ function availabilityText(status: string | undefined): string {
   return AVAILABILITY_LABELS[status] ?? "";
 }
 
-function resolveAngle(
-  variant: AdVariant,
-  product: ProductDetails,
-): PostAngle {
-  if (variant === "hero-clean") return "product_information";
+function resolveAngle(variantNumber: 1 | 2, product: ProductDetails): PostAngle {
+  if (variantNumber === 1) return "product_information";
   const hasUsage = (product.verifiedUsage ?? []).some(
     (item) => item.trim().length > 0,
   );
@@ -108,32 +106,37 @@ function resolveAngle(
 }
 
 export class ProductionEngine {
-  /**
-   * Clean white + subtle silver-mesh composer.
-   * No pricing, no discounts, no generative packaging.
-   */
   public static execute(request: ProductionRequest): ProductionResult {
-    return ProductionEngine.build(request, request.variant ?? "hero-clean");
+    const variantNumber = request.variant ?? 1;
+    const seed = request.product.title || request.product.productImageUrl || "al-rahma";
+    const template =
+      request.template ?? templateForVariant(variantNumber, seed);
+    return ProductionEngine.build(request, variantNumber, template);
   }
 
-  /** The two required creative variants for a product, in order 1 → 2. */
+  /** Two required creative variants per product: 1 = silver-podium-botanical, 2 alternates. */
   public static executeVariants(
     request: ProductionVariantsRequest,
   ): ProductionResult[] {
-    return PRODUCT_VARIANTS.map((variant) =>
-      ProductionEngine.build(request, variant),
+    const seed = request.product.title || request.product.productImageUrl || "al-rahma";
+    const templates: Array<{ variantNumber: 1 | 2; template: DesignerTemplate }> = [
+      { variantNumber: 1, template: templateForVariant(1, seed) },
+      { variantNumber: 2, template: templateForVariant(2, seed) },
+    ];
+    return templates.map(({ variantNumber, template }) =>
+      ProductionEngine.build(request, variantNumber, template),
     );
   }
 
   private static build(
     request: ProductionRequest,
-    variant: AdVariant,
+    variantNumber: 1 | 2,
+    template: DesignerTemplate,
   ): ProductionResult {
     const { product } = request;
     const width = request.width ?? AL_RAHMA_BRAND_CONFIG.visual.format.width;
     const height = request.height ?? AL_RAHMA_BRAND_CONFIG.visual.format.height;
-    const variantNumber: 1 | 2 = variant === "hero-clean" ? 1 : 2;
-    const angle = resolveAngle(variant, product);
+    const angle = resolveAngle(variantNumber, product);
 
     const today =
       request.today && isIsoDate(request.today)
@@ -147,29 +150,30 @@ export class ProductionEngine {
     const occasion = normalizeOccasionInput(request.occasion);
 
     const copy = ArabicCopywriter.generatePost(product, angle, {
-      variant,
+      variant: variantNumber,
       ctaIndex: variantNumber - 1,
       occasionGreeting: occasion?.greeting,
     });
 
     const productImageUrl = product.productImageUrl?.trim() || null;
-    const background = resolveBackground(request.backgroundProvider, {
+    const background = resolveBackground({
       width,
       height,
-      variant,
+      template,
+      sceneImageUrl: request.sceneImageUrl ?? null,
     });
 
     const overlayOptions: OverlayOptions = {
       width,
       height,
-      variant,
+      template,
+      sceneImageUrl: request.sceneImageUrl ?? null,
       productImageUrl,
       headline: copy.headline,
       benefitLine: copy.benefitLine,
       ctaText: copy.ctaShort,
       availabilityText: availabilityText(product.warehouseStockStatus),
       background,
-      backgroundProvider: request.backgroundProvider,
       promotion: activePromotion,
       occasion,
     };
@@ -200,11 +204,14 @@ export class ProductionEngine {
       .map((claim) => claim.trim())
       .filter((claim) => claim.length > 0);
 
+    const styleId = `al-rahma/${template}`;
+
     return {
       success: qualityReport.passed && blockers.length === 0,
-      variant,
+      variant: template,
+      template,
       variantNumber,
-      styleId: STYLE_ID,
+      styleId,
       angle,
       copy,
       qualityReport,
@@ -220,7 +227,8 @@ export class ProductionEngine {
       metadata: {
         productName: product.title,
         angle,
-        variant,
+        variant: template,
+        template,
         variantNumber,
         generatedAt: new Date().toISOString(),
         dimensions: { width, height },

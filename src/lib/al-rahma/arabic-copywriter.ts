@@ -1,12 +1,14 @@
 import { AL_RAHMA_BRAND_CONFIG } from "./brand-core";
 
 /**
- * Arabic copy for the white/silver-mesh WhatsApp Status composer.
+ * Arabic copy for the pro designer WhatsApp Status composer.
  *
  * Rules enforced here:
  * - No prices, discounts, urgency or shipping promises.
  * - Benefits/usage lines are only rendered from claims the caller already
  *   verified against a source (see `product-research-verifier`).
+ * - Sales copy shown on creative is short, punchy Egyptian commercial Arabic,
+ *   strictly 4 to 9 words.
  * - Output is deterministic so the same product + variant always produces the
  *   same creative (no `Math.random`).
  */
@@ -19,7 +21,7 @@ export type PostAngle =
 
 export type WarehouseStockStatus = "in_stock" | "out_of_stock" | "unknown";
 
-export type CopyVariant = "hero-clean" | "studio-angle";
+export type CopyVariant = 1 | 2;
 
 export interface ProductDetails {
   title: string;
@@ -48,6 +50,7 @@ export interface CopyOptions {
 export interface GeneratedArabicCopy {
   headline: string;
   hook: string;
+  /** Prominent sales copy (4-9 words) shown on the creative. */
   benefitLine: string;
   body: string;
   cta: string;
@@ -56,41 +59,14 @@ export interface GeneratedArabicCopy {
   fullPostText: string;
 }
 
-/**
- * Templates may reference `{{brand}}` and `{{phone}}` only. The values are
- * injected from `AL_RAHMA_BRAND_CONFIG` so no brand identity is hardcoded here.
- *
- * Voice: polished, upscale Egyptian commercial Arabic for pharmacies and
- * personal-care shoppers. Friendly but never vulgar, and never a medical
- * promise — only verified product facts are stated.
- */
-const HOOKS_BY_ANGLE: Record<PostAngle, [string, string]> = {
-  product_information: [
-    "قبل ما تختار، اعرف كل تفاصيل المنتج من مصدرها الموثّق.",
-    "معلومات واضحة عن المنتج تساعدك تختار اللي يناسبك بثقة.",
-  ],
-  product_features: [
-    "منتج مختار بعناية… شوف تفاصيله الموثّقة قبل الطلب.",
-    "اعرف خصائص المنتج الحقيقية، بدون مبالغة أو وعود غير مؤكدة.",
-  ],
-  beauty_routine: [
-    "روتين عناية راقٍ يبدأ باختيار المنتج المناسب لاحتياجاتك.",
-    "خطوة بسيطة في روتينك اليومي تبدأ بمعرفة تفاصيل المنتج.",
-  ],
-  combo_deal: [
-    "تفاصيل منتجات {{brand}} المتاحة عندنا… اسأل وإحنا في الخدمة.",
-    "لو بتدور على منتجات عناية وجمال، {{brand}} هيفيدك بالتفاصيل.",
-  ],
-};
-
 const CTA_TEMPLATES: [string, string] = [
-  "للطلب والاستفسار: كلمنا على {{phone}} أو ابعتلنا رسالة على واتساب.",
-  "تحب تعرف تفاصيل أكتر؟ تواصل معنا على {{phone}} أو واتساب {{brand}}.",
+  "للطلب والاستفسار: اتصل بنا على {{phone}} أو ابعتلنا رسالة على واتساب.",
+  "عايز تعرف تفاصيل أكتر؟ تواصل معنا على {{phone}}.",
 ];
 
 const CTA_SHORT_TEMPLATES: [string, string] = [
   "اطلب عبر واتساب",
-  "كلمنا على واتساب",
+  "تواصل معنا الآن",
 ];
 
 function renderTemplate(template: string): string {
@@ -114,13 +90,59 @@ function clean(items: string[] | undefined): string[] {
   );
 }
 
+function countWords(text: string): number {
+  return text.trim().split(/\s+/).filter(Boolean).length;
+}
+
+function clampWords(text: string, min: number, max: number): string {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return "";
+  if (words.length > max) return words.slice(0, max).join(" ");
+  if (words.length >= min) return words.join(" ");
+
+  // Pad deterministically with generic commercial words when too short.
+  const fillers = ["من", "مخزن", "الرحمة", "بجودة", "مميزة", "لك", "الآن", "متاح"];
+  const result = [...words];
+  for (const filler of fillers) {
+    if (result.length >= min) break;
+    if (!result.includes(filler)) result.push(filler);
+  }
+  // If still short (unlikely), repeat safe generic tail
+  while (result.length < min) result.push("الآن");
+  return result.slice(0, max).join(" ");
+}
+
+function categoryLabel(category: string): string {
+  const normalized = (category || "").trim().replaceAll("_", " ");
+  if (!normalized) return "منتجات العناية";
+  return normalized;
+}
+
+function deriveSalesCopy(
+  product: ProductDetails,
+  variant: CopyVariant,
+): string {
+  const benefits = clean(product.verifiedBenefits);
+  const usage = clean(product.verifiedUsage);
+  const category = categoryLabel(product.category);
+  const name = (product.badgeText || product.title || "").trim().split(/\s+/).slice(0, 2).join(" ");
+
+  const candidates = [
+    benefits[0] ?? "",
+    benefits[1] ?? usage[0] ?? "",
+    `${name} ${category}`.trim(),
+    `عناية مميزة من ${AL_RAHMA_BRAND_CONFIG.brandName}`,
+  ].map((s) => s.trim()).filter(Boolean);
+
+  const picked = candidates[variant - 1] ?? candidates[0] ?? category;
+  return clampWords(picked, 4, 9);
+}
+
 function buildHeadline(product: ProductDetails): string {
   const raw = (product.badgeText || product.title || "").trim();
   const words = raw.split(/\s+/).filter(Boolean);
-
   if (words.length >= 2) return raw;
-
-  const category = (product.category || "").trim().replaceAll("_", " ");
+  const category = categoryLabel(product.category);
   return `${raw} ${category}`.trim();
 }
 
@@ -130,45 +152,37 @@ export class ArabicCopywriter {
     angle: PostAngle = "product_information",
     options: CopyOptions = {},
   ): GeneratedArabicCopy {
-    const variant: CopyVariant = options.variant ?? "hero-clean";
-    const variantIndex = variant === "hero-clean" ? 0 : 1;
-    const hooks = HOOKS_BY_ANGLE[angle] ?? HOOKS_BY_ANGLE.product_information;
-    const hook = renderTemplate(
-      hooks[(options.hookIndex ?? variantIndex) % hooks.length],
-    );
+    void angle;
+    const variant: CopyVariant = options.variant ?? 1;
     const cta = renderTemplate(
-      CTA_TEMPLATES[(options.ctaIndex ?? variantIndex) % CTA_TEMPLATES.length],
+      CTA_TEMPLATES[(options.ctaIndex ?? variant - 1) % CTA_TEMPLATES.length],
     );
     const ctaShort = renderTemplate(
-      CTA_SHORT_TEMPLATES[
-        (options.ctaIndex ?? variantIndex) % CTA_SHORT_TEMPLATES.length
-      ],
+      CTA_SHORT_TEMPLATES[(options.ctaIndex ?? variant - 1) % CTA_SHORT_TEMPLATES.length],
     );
 
-    const benefits = clean(product.verifiedBenefits);
-    const usage = clean(product.verifiedUsage);
-    const benefitLine =
-      variant === "hero-clean"
-        ? benefits[0] ?? ""
-        : benefits[1] ?? usage[0] ?? benefits[0] ?? "";
-
+    const benefitLine = deriveSalesCopy(product, variant);
     const headline = buildHeadline(product);
-    const category = (product.category || "").trim().replaceAll("_", " ");
+    const category = categoryLabel(product.category);
     const greeting = (options.occasionGreeting ?? "").trim();
     const facts = clean(product.features).map((feature) => `• ${feature}`);
-    const usageFacts = usage.map((item) => `• ${item}`);
+    const usageFacts = clean(product.verifiedUsage).map((item) => `• ${item}`);
+    const hook =
+      variant === 1
+        ? `اختار المنتج المناسب ليك من ${AL_RAHMA_BRAND_CONFIG.brandName}.`
+        : `جودة مميزة وعرض أنيق من ${AL_RAHMA_BRAND_CONFIG.brandName}.`;
     const details = [
       category ? `القسم: ${category}` : "",
       ...facts,
-      ...(usageFacts.length
-        ? ["طريقة الاستخدام الموثّقة:", ...usageFacts]
-        : []),
+      ...(usageFacts.length ? ["طريقة الاستخدام الموثّقة:", ...usageFacts] : []),
       product.sourceUrl?.trim()
-        ? `مصدر المعلومات: ${product.sourceUrl.trim()}`
+        ? `مصدر المعلومة: ${product.sourceUrl.trim()}`
         : "",
     ].filter(Boolean);
 
-    const body = [greeting, hook, ...details, cta].filter(Boolean).join("\n\n");
+    const body = [greeting, hook, benefitLine, ...details, cta]
+      .filter(Boolean)
+      .join("\n\n");
     const specificHashtags = [
       category ? `#${category.replace(/\s+/g, "_")}` : "",
       headline ? `#${headline.split(/\s+/)[0]}` : "",
@@ -178,15 +192,22 @@ export class ArabicCopywriter {
     ).slice(0, 15);
     const fullPostText = `${headline}\n\n${body}\n\n${hashtags.join(" ")}`;
 
+    // Safety: ensure benefitLine is 4-9 words
+    const finalBenefit = clampWords(benefitLine, 4, 9);
+
     return {
       headline,
       hook,
-      benefitLine,
+      benefitLine: finalBenefit,
       body,
       cta,
       ctaShort,
       hashtags,
       fullPostText,
     };
+  }
+
+  public static countWords(text: string): number {
+    return countWords(text);
   }
 }
