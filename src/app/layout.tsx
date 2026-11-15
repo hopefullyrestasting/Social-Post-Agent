@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { AL_RAHMA_BRAND_CONFIG } from "@/lib/al-rahma/brand-core";
 
 export const metadata: Metadata = {
-  title: "Social Post Agent | مخزن الرحمة - Open Pomelli",
-  description: "نظام أتمتة وإنتاج منشورات التواصل الاجتماعي لـ مخزن الرحمة - مستوحى من Pomelli",
+  title: `Social Post Agent | ${AL_RAHMA_BRAND_CONFIG.brandName}`,
+  description: `نظام أتمتة وإنتاج منشورات التواصل الاجتماعي لـ ${AL_RAHMA_BRAND_CONFIG.brandName}`,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

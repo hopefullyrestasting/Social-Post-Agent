@@ -1,0 +1,8 @@
+name = "social-post-agent"
+pages_build_output_dir = "./out"
+compatibility_date = "2026-11-14"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "makhzan-al-rahma"
+database_id = "d25f54b6-61ca-4c6f-8468-7273ea971844"

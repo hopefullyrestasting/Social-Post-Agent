@@ -1,14 +1,36 @@
-export interface BrandCoreConfig {
-  brandName: string;
-  brandNameEnglish: string;
-  industry: string;
-  tagline: string;
-  taglineEnglish: string;
-  valueProposition: string;
-  toneOfVoice: string[];
-  brandPersonality: string[];
-  targetAudience: string;
-  keyMessages: string[];
+/**
+ * Single source of truth for the Al Rahma Warehouse brand.
+ *
+ * This module is intentionally dependency-free and fully serializable: the
+ * object below can be copied to JSON and used by UI, copywriting, overlays and
+ * future agent-factory configurations without importing app code.
+ *
+ * Rule: phone numbers, WhatsApp links and brand names must live here only.
+ * Everything else must read from `AL_RAHMA_BRAND_CONFIG`.
+ */
+
+export type BrandOrientation = "portrait" | "landscape" | "square";
+
+export interface BrandFormat {
+  width: number;
+  height: number;
+  orientation: BrandOrientation;
+}
+
+export interface BrandBackgroundRule {
+  style: "clean-white";
+  baseColor: string;
+  mesh: {
+    enabled: boolean;
+    color: string;
+    opacity: number;
+  };
+}
+
+export interface BrandVisualTheme {
+  themeName: string;
+  background: BrandBackgroundRule;
+  format: BrandFormat;
   primaryColors: {
     emerald: string;
     darkEmerald: string;
@@ -27,80 +49,170 @@ export interface BrandCoreConfig {
   };
   imageryStyle: string;
   layoutStyle: string;
-  contactInfo: {
-    phone: string;
-    whatsapp: string;
-    deliveryPromise: string;
-    returnPolicy: string;
-  };
-  defaultHashtags: string[];
 }
 
-export const AL_RAHMA_BRAND_CORE: BrandCoreConfig = {
+export interface BrandVoice {
+  toneOfVoice: string[];
+  brandPersonality: string[];
+  targetAudience: string;
+  keyMessages: string[];
+}
+
+export interface BrandContact {
+  phone: string;
+  whatsappUrl: string;
+  deliveryPromise: string;
+  returnPolicy: string;
+}
+
+/**
+ * Commercial rendering rules. Kept inside the brand config so a future client
+ * can swap currency, badge colors and calendar defaults without touching the
+ * composer or the API layer.
+ */
+export interface BrandCommercialConfig {
+  currencyLabel: string;
+  timezone: string;
+  calendar: {
+    countryCode: string;
+    defaultLeadDays: number;
+    maxLeadDays: number;
+  };
+  promoBadge: {
+    backgroundColor: string;
+    accentColor: string;
+    discountColor: string;
+    textColor: string;
+  };
+  occasionRibbon: {
+    backgroundColor: string;
+    textColor: string;
+  };
+}
+
+export interface BrandConfig {
+  id: string;
+  brandName: string;
+  brandNameEnglish: string;
+  legalName: string;
+  activity: string;
+  tagline: string;
+  taglineEnglish: string;
+  taglineShort: string;
+  valueProposition: string;
+  voice: BrandVoice;
+  visual: BrandVisualTheme;
+  contact: BrandContact;
+  commercial: BrandCommercialConfig;
+  hashtags: string[];
+}
+
+export const AL_RAHMA_BRAND_CONFIG: BrandConfig = {
+  id: "al-rahma-warehouse",
   brandName: "مخزن الرحمة",
-  brandNameEnglish: "Al-Rahma Store",
-  industry: "التجارة والتجزئة والسلع المنزلية والعروض العائلية",
-  tagline: "أفضل جودة بأوفر سعر لكل بيت مصري",
-  taglineEnglish: "Best Quality at the Best Price for Every Home",
+  brandNameEnglish: "Al Rahma Warehouse",
+  legalName: "مخزن الرحمة للأدوية والمستلزمات الطبية ومستحضرات التجميل",
+  activity:
+    "مستحضرات التجميل والعناية بالشعر والبشرة والعناية الشخصية والعطور والمستلزمات الطبية",
+  tagline: "منتجات العناية والجمال والمستلزمات الطبية لدى مخزن الرحمة",
+  taglineEnglish: "Beauty, Personal Care, Fragrance and Pharmacy Supplies",
+  taglineShort: "عناية وجمال ومستلزمات طبية",
   valueProposition:
-    "نوفر لك مستلزمات البيت العصري وأفضل الأدوات والسلع بأسعار الجملة المباشرة، مع ميزة المعاينة قبل الاستلام والشحن السريع لجميع المحافظات.",
-  toneOfVoice: [
-    "ترويجي جذاب ومباشر",
-    "ودود ومقرب من الأسرة المصرية",
-    "شفاف في الأسعار والمواصفات",
-    "محفز للشراء بدون مبالغة زائفة",
-    "موثوق ويركز على الضمان والتوفير",
-  ],
-  brandPersonality: [
-    "كريم وعملي",
-    "قريب من المواطن",
-    "صاحب أوفر الصفقات",
-    "ملتزم بالجودة والخدمة",
-  ],
-  targetAudience:
-    "العائلات المصرية، ربات البيوت، الشباب المقبلين على تجهيز الشقق، وكل متسوق يبحث عن قيمة حقيقية وسعر اقتصادي وجودة يعتمد عليها.",
-  keyMessages: [
-    "عروض مخزن الرحمة مبتخلصش.. وفر فلوسك وجهز بيتك بأشيك المنتجات.",
-    "سعر الجملة من أول قطعة وجودة مضمونة 100%.",
-    "عاين شحنتك براحتك قبل الدفع.. ثقتكم ورضاكم رقم 1 عندنا.",
-    "شحن فوري وسريع لحد باب بيتك في جميع المحافظات.",
-    "الكميات بتخلص بسرعة.. الحق العرض قبل نفاذ الكمية!",
-  ],
-  primaryColors: {
-    emerald: "#059669",     // لون الرحمة والنماء
-    darkEmerald: "#065f46", // للتباين والنصوص والظلال
-    amber: "#F59E0B",       // للشارات وعروض الخصم
-    slate: "#0F172A",       // للنصوص الرئيسية والخلفيات الداكنة
+    "نوفر مستحضرات التجميل والعناية الشخصية والعطور والمستلزمات الطبية، مع التواصل المباشر للاستفسار عن التوفر والعروض.",
+  voice: {
+    toneOfVoice: [
+      "ترويجي جذاب ومباشر",
+      "ودود ومباشر ومناسب لعملاء الصيدليات ومحلات التجميل",
+      "شفاف في الأسعار والمواصفات",
+      "محفز للشراء بدون مبالغة زائفة",
+      "موثوق ويذكر فقط معلومات المنتج التي تم التحقق منها",
+    ],
+    brandPersonality: [
+      "مهني وموثوق",
+      "قريب من أصحاب الصيدليات ومحلات التجميل",
+      "واضح في التوفر والعروض",
+      "ملتزم بدقة معلومات المنتج",
+    ],
+    targetAudience:
+      "أصحاب الصيدليات ومحلات مستحضرات التجميل والعناية الشخصية والعطور، والعملاء الباحثون عن هذه المنتجات.",
+    keyMessages: [
+      "المنتج اللي بتدور عليه تلاقيه في مخزن الرحمة.",
+      "اسألنا عن التوفر والعروض على منتجات العناية والجمال.",
+      "مستلزمات التجميل والعناية الشخصية والعطور في مكان واحد.",
+      "للطلب والاستفسار تواصل معنا على الهاتف أو واتساب.",
+    ],
   },
-  secondaryColors: {
-    white: "#FFFFFF",
-    offWhite: "#F8FAFC",
-    lightGray: "#E2E8F0",
-    alertRed: "#DC2626",    // لخصومات الـ Flash Deals والشارات العاجلة
+  visual: {
+    themeName: "clean-white-silver-mesh",
+    background: {
+      style: "clean-white",
+      baseColor: "#FFFFFF",
+      mesh: {
+        enabled: true,
+        color: "#CBD5E1",
+        opacity: 0.18,
+      },
+    },
+    format: {
+      width: 1080,
+      height: 1920,
+      orientation: "portrait",
+    },
+    primaryColors: {
+      emerald: "#059669", // لون الرحمة والنماء
+      darkEmerald: "#065f46", // للتباين والنصوص والظلال
+      amber: "#F59E0B", // للشارات وعروض الخصم
+      slate: "#0F172A", // للنصوص الرئيسية والخلفيات الداكنة
+    },
+    secondaryColors: {
+      white: "#FFFFFF",
+      offWhite: "#F8FAFC",
+      lightGray: "#E2E8F0",
+      alertRed: "#DC2626", // لخصومات الـ Flash Deals والشارات العاجلة
+    },
+    fonts: {
+      primary: "'Cairo', 'Tajawal', sans-serif",
+      secondary: "'Segoe UI', 'Roboto', sans-serif",
+    },
+    imageryStyle:
+      "صور حية فائقة الوضوح للمنتج مع خلفية استوديو نظيفة أو بيئة استخدام واقعية، إضاءة واضحة بدون ظلال مشوهة، إبراز خامات المنتج وتفاصيله الحقيقية.",
+    layoutStyle:
+      "تصميم عصري منظم ومريح بصرياً على مقاس رأسي 1080×1920: خلفية بيضاء نظيفة مع شبكة فضية خفيفة، صورة المنتج في المنتصف، شارة خصم بارزة، شارة سعر واضحة، وشريط ثقة سفلي.",
   },
-  fonts: {
-    primary: "'Cairo', 'Tajawal', sans-serif",
-    secondary: "'Segoe UI', 'Roboto', sans-serif",
+  contact: {
+    phone: "01000017548",
+    whatsappUrl: "https://wa.me/201000017548",
+    deliveryPromise: "يتم تأكيد تفاصيل التوصيل عند التواصل",
+    returnPolicy: "تُحدد سياسة الاستبدال والاسترجاع من إدارة المخزن",
   },
-  imageryStyle:
-    "صور حية فائقة الوضوح للمنتج مع خلفية استوديو نظيفة أو بيئة استخدام واقعية، إضاءة واضحة بدون ظلال مشوهة، إبراز خامات المنتج وتفاصيله الحقيقية.",
-  layoutStyle:
-    "تصميم عصري منظم ومريح بصرياً، يبرز صورة المنتج في المنتصف مع شارة خصم بارزة وشارة سعر واضحة، وشريط ثقة سفلي للمعاينة والتوصيل.",
-  contactInfo: {
-    phone: "01000000000",
-    whatsapp: "https://wa.me/201000000000",
-    deliveryPromise: "شحن سريع لجميع محافظات مصر",
-    returnPolicy: "متاح المعاينة قبل الاستلام والاسترجاع مجاناً",
+  commercial: {
+    currencyLabel: "ج.م",
+    timezone: "Africa/Cairo",
+    calendar: {
+      countryCode: "EG",
+      defaultLeadDays: 2,
+      maxLeadDays: 30,
+    },
+    promoBadge: {
+      backgroundColor: "#FFFFFF",
+      accentColor: "#F59E0B",
+      discountColor: "#DC2626",
+      textColor: "#065f46",
+    },
+    occasionRibbon: {
+      backgroundColor: "#FFFFFF",
+      textColor: "#065f46",
+    },
   },
-  defaultHashtags: [
+  hashtags: [
     "#مخزن_الرحمة",
     "#عروض_الرحمة",
-    "#تخفيضات_مصر",
-    "#أدوات_منزلية",
-    "#عروض_يومية",
-    "#أوفر_سعر",
-    "#تجهيز_شقق",
-    "#تسوق_أونلاين",
+    "#مستحضرات_تجميل",
+    "#العناية_بالشعر",
+    "#العناية_بالبشرة",
+    "#عناية_شخصية",
+    "#عطور",
+    "#مستلزمات_صيدليات",
+    "#مستلزمات_طبية",
   ],
 };
-

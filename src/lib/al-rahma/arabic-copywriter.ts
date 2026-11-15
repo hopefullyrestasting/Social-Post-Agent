@@ -1,135 +1,192 @@
-import { AL_RAHMA_BRAND_CORE } from "./brand-core";
+import { AL_RAHMA_BRAND_CONFIG } from "./brand-core";
+
+/**
+ * Arabic copy for the white/silver-mesh WhatsApp Status composer.
+ *
+ * Rules enforced here:
+ * - No prices, discounts, urgency or shipping promises.
+ * - Benefits/usage lines are only rendered from claims the caller already
+ *   verified against a source (see `product-research-verifier`).
+ * - Output is deterministic so the same product + variant always produces the
+ *   same creative (no `Math.random`).
+ */
 
 export type PostAngle =
-  | "flash_sale"        // عرض تخفيض قوي وسريع
-  | "product_features"   // شرح مواصفات وجودة المنتج
-  | "home_solution"      // حل مشكلة في البيت
-  | "combo_deal"         // عرض باقة وتوفير
-  | "trust_guarantee";   // تركيز على المعاينة والضمان
+  | "product_features"
+  | "beauty_routine"
+  | "combo_deal"
+  | "product_information";
+
+export type WarehouseStockStatus = "in_stock" | "out_of_stock" | "unknown";
+
+export type CopyVariant = "hero-clean" | "studio-angle";
 
 export interface ProductDetails {
   title: string;
   category: string;
-  originalPrice?: number;
-  salePrice: number;
-  currency?: string;
-  features: string[];
-  urgencyNote?: string;
+  features?: string[];
   badgeText?: string;
+  sourceUrl?: string;
+  verificationStatus?: string;
+  /** Claim text already verified against a verified source. */
+  verifiedBenefits?: string[];
+  /** Usage text already verified against a verified source. */
+  verifiedUsage?: string[];
+  /** Authentic packshot URL. Required by the composer. */
+  productImageUrl?: string | null;
+  warehouseStockStatus?: WarehouseStockStatus;
+}
+
+export interface CopyOptions {
+  variant?: CopyVariant;
+  hookIndex?: number;
+  ctaIndex?: number;
+  /** In-window cultural greeting prepended to the post body. */
+  occasionGreeting?: string;
 }
 
 export interface GeneratedArabicCopy {
   headline: string;
   hook: string;
+  benefitLine: string;
   body: string;
   cta: string;
-  priceTag: string;
-  savingsText?: string;
+  ctaShort: string;
   hashtags: string[];
   fullPostText: string;
 }
 
-const HOOKS_BY_ANGLE: Record<PostAngle, string[]> = {
-  flash_sale: [
-    "🔥 أقوى عرض في مصر من مخزن الرحمة.. السعر اتكسر حرفياً!",
-    "🚨 عرض خاص جداً ومحدود.. وفر فلوسك وجهز بيتك بأشيك شكل!",
-    "💥 الحق العرض قبل ما يخلص! السعر ده مش هيتكرر تاني نهائي.",
+/**
+ * Templates may reference `{{brand}}` and `{{phone}}` only. The values are
+ * injected from `AL_RAHMA_BRAND_CONFIG` so no brand identity is hardcoded here.
+ *
+ * Voice: polished, upscale Egyptian commercial Arabic for pharmacies and
+ * personal-care shoppers. Friendly but never vulgar, and never a medical
+ * promise — only verified product facts are stated.
+ */
+const HOOKS_BY_ANGLE: Record<PostAngle, [string, string]> = {
+  product_information: [
+    "قبل ما تختار، اعرف كل تفاصيل المنتج من مصدرها الموثّق.",
+    "معلومات واضحة عن المنتج تساعدك تختار اللي يناسبك بثقة.",
   ],
   product_features: [
-    "✨ بتدوري على الجودة اللي تعيش معاكي والشياكة في نفس الوقت؟",
-    "👌 الجودة الحقيقية بتبان من أول استخدام.. شوفي مميزات المنتج ده بنفسك!",
-    "🌟 حل عملي ومميز لكل ست بيت ذكية بتدور على الأفضل وبسعر التوفير.",
+    "منتج مختار بعناية… شوف تفاصيله الموثّقة قبل الطلب.",
+    "اعرف خصائص المنتج الحقيقية، بدون مبالغة أو وعود غير مؤكدة.",
   ],
-  home_solution: [
-    "🏡 لو عايز توفر مساحة وتخلي بيتك مترتب وشيك طول الوقت.. الحل هنا!",
-    "💡 منتج هيغير روتين بيتك وهيريحك ويوفر وقتك ومجهودك يومياً.",
-    "🛋️ جمال وأناقة بيتك مش محتاج ميزانية ضخمة.. الذكاء في اختيار الأنسب!",
+  beauty_routine: [
+    "روتين عناية راقٍ يبدأ باختيار المنتج المناسب لاحتياجاتك.",
+    "خطوة بسيطة في روتينك اليومي تبدأ بمعرفة تفاصيل المنتج.",
   ],
   combo_deal: [
-    "🎁 باقة التوفير الكبرى من مخزن الرحمة.. اشتري ووفّر أكثر من الضعف!",
-    "🎉 عرض الجملة وصل لحد عندك.. وفر كتير مع باقات عروض الرحمة الحصرية.",
-    "🛒 لمينا لك أهم مستلزمات البيت في عرض واحد بسعر خيالي!",
-  ],
-  trust_guarantee: [
-    "🛡️ اطلب وإنت مطمن 100%.. متاح المعاينة والتجربة قبل ما تدفع أي جنيه!",
-    "🤝 ثقتكم ورضاكم أهم من أي مكسب.. شحن سريع ومعاينة حرة عند الاستلام.",
-    "🚚 طلبك بيوصلك لحد باب بيتك مغلف ومضمون وبأعلى درجات الأمان.",
+    "تفاصيل منتجات {{brand}} المتاحة عندنا… اسأل وإحنا في الخدمة.",
+    "لو بتدور على منتجات عناية وجمال، {{brand}} هيفيدك بالتفاصيل.",
   ],
 };
 
-const CTA_OPTIONS = [
-  "📩 للطلب السريع: ابعتلنا رسالة على الخاص دلوقتي أو من خلال الواتساب.",
-  "📲 اضغط على زر إرسال رسالة وطلبك هيتسجل فوراً قبل نفاذ الكمية.",
-  "💬 كلمنا على الخاص وخدمة العملاء هترد عليك خلال دقائق بالأسعار والتفاصيل.",
+const CTA_TEMPLATES: [string, string] = [
+  "للطلب والاستفسار: كلمنا على {{phone}} أو ابعتلنا رسالة على واتساب.",
+  "تحب تعرف تفاصيل أكتر؟ تواصل معنا على {{phone}} أو واتساب {{brand}}.",
 ];
 
+const CTA_SHORT_TEMPLATES: [string, string] = [
+  "اطلب عبر واتساب",
+  "كلمنا على واتساب",
+];
+
+function renderTemplate(template: string): string {
+  const values: Record<string, string> = {
+    brand: AL_RAHMA_BRAND_CONFIG.brandName,
+    phone: AL_RAHMA_BRAND_CONFIG.contact.phone,
+  };
+
+  return template.replace(/\{\{(\w+)\}\}/g, (match, key: string) =>
+    key in values ? values[key] : match,
+  );
+}
+
+function clean(items: string[] | undefined): string[] {
+  return Array.from(
+    new Set(
+      (items ?? [])
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0),
+    ),
+  );
+}
+
+function buildHeadline(product: ProductDetails): string {
+  const raw = (product.badgeText || product.title || "").trim();
+  const words = raw.split(/\s+/).filter(Boolean);
+
+  if (words.length >= 2) return raw;
+
+  const category = (product.category || "").trim().replaceAll("_", " ");
+  return `${raw} ${category}`.trim();
+}
+
 export class ArabicCopywriter {
-  /**
-   * توليد بوست كامل متناسق وموجّه تسويقياً للجمهور المصري
-   */
-  public static generatePost(product: ProductDetails, angle: PostAngle = "flash_sale"): GeneratedArabicCopy {
-    const currency = product.currency || "ج.م";
-    const hooks = HOOKS_BY_ANGLE[angle];
-    const hook = hooks[Math.floor(Math.random() * hooks.length)];
+  public static generatePost(
+    product: ProductDetails,
+    angle: PostAngle = "product_information",
+    options: CopyOptions = {},
+  ): GeneratedArabicCopy {
+    const variant: CopyVariant = options.variant ?? "hero-clean";
+    const variantIndex = variant === "hero-clean" ? 0 : 1;
+    const hooks = HOOKS_BY_ANGLE[angle] ?? HOOKS_BY_ANGLE.product_information;
+    const hook = renderTemplate(
+      hooks[(options.hookIndex ?? variantIndex) % hooks.length],
+    );
+    const cta = renderTemplate(
+      CTA_TEMPLATES[(options.ctaIndex ?? variantIndex) % CTA_TEMPLATES.length],
+    );
+    const ctaShort = renderTemplate(
+      CTA_SHORT_TEMPLATES[
+        (options.ctaIndex ?? variantIndex) % CTA_SHORT_TEMPLATES.length
+      ],
+    );
 
-    let savingsText = "";
-    if (product.originalPrice && product.originalPrice > product.salePrice) {
-      const diff = product.originalPrice - product.salePrice;
-      const percentage = Math.round((diff / product.originalPrice) * 100);
-      savingsText = `خصم ${percentage}% (وفرت ${diff} ${currency})`;
-    }
+    const benefits = clean(product.verifiedBenefits);
+    const usage = clean(product.verifiedUsage);
+    const benefitLine =
+      variant === "hero-clean"
+        ? benefits[0] ?? ""
+        : benefits[1] ?? usage[0] ?? benefits[0] ?? "";
 
-    const priceTag = product.originalPrice && product.originalPrice > product.salePrice
-      ? `السعر قبل العرض: ${product.originalPrice} ${currency} ❌\nالسعر في العرض الآن: ${product.salePrice} ${currency} فقط! ✅`
-      : `السعر: ${product.salePrice} ${currency} فقط! ✅`;
+    const headline = buildHeadline(product);
+    const category = (product.category || "").trim().replaceAll("_", " ");
+    const greeting = (options.occasionGreeting ?? "").trim();
+    const facts = clean(product.features).map((feature) => `• ${feature}`);
+    const usageFacts = usage.map((item) => `• ${item}`);
+    const details = [
+      category ? `القسم: ${category}` : "",
+      ...facts,
+      ...(usageFacts.length
+        ? ["طريقة الاستخدام الموثّقة:", ...usageFacts]
+        : []),
+      product.sourceUrl?.trim()
+        ? `مصدر المعلومات: ${product.sourceUrl.trim()}`
+        : "",
+    ].filter(Boolean);
 
-    const featuresList = product.features
-      .map((f) => `  ▫️ ${f}`)
-      .join("\n");
-
-    const headline = product.badgeText || (savingsText ? `${product.title} - ${savingsText}` : product.title);
-    const cta = CTA_OPTIONS[Math.floor(Math.random() * CTA_OPTIONS.length)];
-
-    const urgency = product.urgencyNote || "⚠️ الكميات محدودة جداً نظراً للإقبال الشديد.. الأولوية لأسبقية الحجز!";
-
-    const body = `
-${hook}
-
-📌 مواصفات ومميزات المنتج:
-${featuresList}
-
-💰 تفاصيل الأسعار والعرض:
-${priceTag}
-${savingsText ? `🎁 ${savingsText}` : ""}
-
-${urgency}
-
-🛡️ مميزات الشراء من مخزن الرحمة:
-  ✅ معاينة الشحنة قبل الاستلام والدفع عند التأكد من الجودة.
-  ✅ شحن فوري لجميع محافظات مصر.
-  ✅ خدمة ما بعد البيع ودعم مستمر.
-
-${cta}
-`.trim();
-
+    const body = [greeting, hook, ...details, cta].filter(Boolean).join("\n\n");
     const specificHashtags = [
-      `#${product.category.replace(/\s+/g, "_")}`,
-      `#${product.title.split(" ")[0] || "منتجات"}`,
-    ];
-    const allHashtags = Array.from(new Set([...specificHashtags, ...AL_RAHMA_BRAND_CORE.defaultHashtags]));
-
-    const fullPostText = `${headline}\n\n${body}\n\n${allHashtags.join(" ")}`;
+      category ? `#${category.replace(/\s+/g, "_")}` : "",
+      headline ? `#${headline.split(/\s+/)[0]}` : "",
+    ].filter(Boolean);
+    const hashtags = Array.from(
+      new Set([...specificHashtags, ...AL_RAHMA_BRAND_CONFIG.hashtags]),
+    ).slice(0, 15);
+    const fullPostText = `${headline}\n\n${body}\n\n${hashtags.join(" ")}`;
 
     return {
       headline,
       hook,
+      benefitLine,
       body,
       cta,
-      priceTag,
-      savingsText,
-      hashtags: allHashtags,
+      ctaShort,
+      hashtags,
       fullPostText,
     };
   }
 }
-
