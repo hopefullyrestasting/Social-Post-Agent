@@ -34,7 +34,22 @@ function clampSeed(value: unknown): number | undefined {
   return Math.max(0, Math.min(2_147_483_647, Math.floor(value)));
 }
 
-function toUint8Array(value: unknown): Uint8Array | null {
+function base64FromBytes(bytes: Uint8Array): string {
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+function asDataJpegUri(base64: string): string {
+  const clean = base64.trim();
+  return clean.startsWith("data:") ? clean : `data:image/jpeg;base64,${clean}`;
+}
+
+async function bytesFromUnknown(value: unknown): Promise<Uint8Array | null> {
+  if (!value) return null;
   if (value instanceof Uint8Array) return value;
   if (value instanceof ArrayBuffer) return new Uint8Array(value);
   if (ArrayBuffer.isView(value)) {
@@ -43,20 +58,50 @@ function toUint8Array(value: unknown): Uint8Array | null {
   if (Array.isArray(value) && value.every((n) => typeof n === "number")) {
     return Uint8Array.from(value);
   }
+  if (typeof (value as { arrayBuffer?: unknown }).arrayBuffer === "function") {
+    try {
+      const ab = await (value as { arrayBuffer: () => Promise<ArrayBuffer> }).arrayBuffer();
+      if (ab) return new Uint8Array(ab);
+    } catch {
+      // ignore
+    }
+  }
+  if (typeof ReadableStream !== "undefined" && value instanceof ReadableStream) {
+    try {
+      const reader = value.getReader();
+      const chunks: Uint8Array[] = [];
+      let total = 0;
+      while (true) {
+        const { done, value: chunk } = await reader.read();
+        if (done) break;
+        if (chunk) {
+          const bytes = chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk as ArrayBuffer);
+          chunks.push(bytes);
+          total += bytes.length;
+        }
+      }
+      const merged = new Uint8Array(total);
+      let offset = 0;
+      for (const c of chunks) {
+        merged.set(c, offset);
+        offset += c.length;
+      }
+      return merged;
+    } catch {
+      // ignore
+    }
+  }
   if (value && typeof value === "object") {
-    const maybe = value as Record<string, unknown>;
-    if (typeof maybe.image === "string") return null; // handled as base64 string
+    const obj = value as Record<string, unknown>;
+    for (const key of ["image", "data", "bytes", "result", "body"]) {
+      if (key in obj) {
+        if (typeof obj[key] === "string") return null;
+        const inner = await bytesFromUnknown(obj[key]);
+        if (inner) return inner;
+      }
+    }
   }
   return null;
-}
-
-function base64FromBytes(bytes: Uint8Array): string {
-  let binary = "";
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
-  }
-  return btoa(binary);
 }
 
 async function generateWithWorkersAi(
@@ -75,25 +120,27 @@ async function generateWithWorkersAi(
     });
 
     if (typeof result === "string") {
-      // Some runtimes return base64 directly
-      if (result.startsWith("data:")) return { dataUri: result };
-      return { dataUri: `data:image/png;base64,${result}` };
+      return { dataUri: asDataJpegUri(result) };
     }
 
     if (result && typeof result === "object") {
       const obj = result as Record<string, unknown>;
       if (typeof obj.image === "string") {
-        const img = obj.image;
-        return {
-          dataUri: img.startsWith("data:")
-            ? img
-            : `data:image/png;base64,${img}`,
-        };
+        return { dataUri: asDataJpegUri(obj.image) };
       }
-      const bytes = toUint8Array(obj.image ?? obj.data ?? obj.bytes ?? result);
-      if (bytes) {
-        return { dataUri: `data:image/png;base64,${base64FromBytes(bytes)}` };
+      const bytes =
+        (await bytesFromUnknown(obj.image)) ??
+        (await bytesFromUnknown(obj.data)) ??
+        (await bytesFromUnknown(obj.bytes)) ??
+        (await bytesFromUnknown(result));
+      if (bytes && bytes.length > 0) {
+        return { dataUri: `data:image/jpeg;base64,${base64FromBytes(bytes)}` };
       }
+    }
+
+    const directBytes = await bytesFromUnknown(result);
+    if (directBytes && directBytes.length > 0) {
+      return { dataUri: `data:image/jpeg;base64,${base64FromBytes(directBytes)}` };
     }
   } catch (error) {
     console.error("Workers AI studio-scene generation failed, falling back.", error);
@@ -101,7 +148,6 @@ async function generateWithWorkersAi(
 
   return null;
 }
-
 function pollinationsUrl(template: TemplateId, seed?: number, promptOverride?: string): string {
   const prompt = promptOverride?.trim() || PROMPTS[template] || PROMPTS[DEFAULT_TEMPLATE];
   const params = new URLSearchParams({

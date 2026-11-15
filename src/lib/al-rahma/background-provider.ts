@@ -6,9 +6,10 @@ import { escapeXml } from "./svg-utils";
  * Scenes are pure studio stages (no text, no bottles/products). The real
  * packshot is composited separately by the overlay system.
  *
- * Default behavior is deterministic SVG scenes per template. When an AI scene
- * image is provided (data URI or URL from /api/ai/studio-scene), it is embedded
- * as the photographic stage and deterministic scene accents can still be layered.
+ * Default behavior is a high-craft deterministic SVG photorealistic studio
+ * shader fallback (lighting, 3D podium, bokeh, botanical shadows) so offline
+ * renders still look like a studio. When an AI scene image is provided
+ * (embedded data URI or URL), it is used as the photographic stage.
  */
 
 export type DesignerTemplate =
@@ -38,151 +39,166 @@ export interface BackgroundLayer {
   fallbackReason?: string;
 }
 
-function sceneDefs(): string {
+function sharedDefs(): string {
   return `
     <defs>
-      <linearGradient id="scene-silver" x1="0%" y1="0%" x2="0%" y2="100%">
-        <stop offset="0%" stop-color="#E2E8F0" />
-        <stop offset="55%" stop-color="#F1F5F9" />
-        <stop offset="100%" stop-color="#F8FAFC" />
-      </linearGradient>
-      <radialGradient id="scene-pearl" cx="35%" cy="35%" r="65%">
+      <radialGradient id="studio-light-core" cx="50%" cy="22%" r="55%">
         <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.95" />
-        <stop offset="55%" stop-color="#E2E8F0" stop-opacity="0.95" />
-        <stop offset="100%" stop-color="#94A3B8" stop-opacity="0.55" />
+        <stop offset="45%" stop-color="#F8FAFC" stop-opacity="0.55" />
+        <stop offset="100%" stop-color="#E2E8F0" stop-opacity="0" />
       </radialGradient>
-      <linearGradient id="podium-top" x1="0%" y1="0%" x2="100%" y2="100%">
+      <radialGradient id="studio-light-floor" cx="50%" cy="78%" r="60%">
+        <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.55" />
+        <stop offset="60%" stop-color="#E2E8F0" stop-opacity="0.15" />
+        <stop offset="100%" stop-color="#94A3B8" stop-opacity="0" />
+      </radialGradient>
+      <linearGradient id="podium-surface" x1="0%" y1="0%" x2="0%" y2="100%">
         <stop offset="0%" stop-color="#FFFFFF" />
+        <stop offset="55%" stop-color="#F1F5F9" />
         <stop offset="100%" stop-color="#CBD5E1" />
       </linearGradient>
-      <linearGradient id="podium-side" x1="0%" y1="0%" x2="0%" y2="100%">
+      <linearGradient id="podium-front" x1="0%" y1="0%" x2="0%" y2="100%">
         <stop offset="0%" stop-color="#E2E8F0" />
+        <stop offset="35%" stop-color="#CBD5E1" />
         <stop offset="100%" stop-color="#94A3B8" />
       </linearGradient>
-      <filter id="soft-shadow" x="-30%" y="-30%" width="160%" height="160%">
-        <feDropShadow dx="0" dy="18" stdDeviation="16" flood-color="#0F172A" flood-opacity="0.18" />
+      <linearGradient id="podium-edge" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.85" />
+        <stop offset="40%" stop-color="#E2E8F0" stop-opacity="0.6" />
+        <stop offset="100%" stop-color="#94A3B8" stop-opacity="0.5" />
+      </linearGradient>
+      <filter id="bokeh-blur" x="-50%" y="-50%" width="200%" height="200%">
+        <feGaussianBlur stdDeviation="18" />
+      </filter>
+      <filter id="leaf-shadow-blur" x="-30%" y="-30%" width="160%" height="160%">
+        <feGaussianBlur stdDeviation="8" />
+      </filter>
+      <filter id="soft-scene-shadow" x="-30%" y="-30%" width="160%" height="160%">
+        <feDropShadow dx="0" dy="14" stdDeviation="14" flood-color="#0F172A" flood-opacity="0.16" />
       </filter>
     </defs>
   `.trim();
 }
 
-function pearl(x: number, y: number, r: number, opacity = 0.85): string {
+function bokehLights(points: Array<[number, number, number, string, number]>): string {
+  return points
+    .map(
+      ([x, y, r, color, opacity]) =>
+        `<circle cx="${x}" cy="${y}" r="${r}" fill="${color}" fill-opacity="${opacity}" filter="url(#bokeh-blur)" />`,
+    )
+    .join("\n");
+}
+
+function podium3D(cx: number): string {
+  const topY = 1285;
+  const bottomY = 1400;
+  const topW = 760;
+  const bottomW = 620;
+  const x1 = cx - topW / 2;
+  const x2 = cx + topW / 2;
+  const x3 = cx + bottomW / 2;
+  const x4 = cx - bottomW / 2;
   return `
-    <g opacity="${opacity}">
-      <circle cx="${x}" cy="${y}" r="${r}" fill="url(#scene-pearl)" filter="url(#soft-shadow)" />
-      <ellipse cx="${x - r * 0.28}" cy="${y - r * 0.28}" rx="${r * 0.22}" ry="${r * 0.14}" fill="#FFFFFF" fill-opacity="0.7" />
+    <g id="shader-podium" filter="url(#soft-scene-shadow)">
+      <ellipse cx="${cx}" cy="${bottomY + 28}" rx="420" ry="52" fill="#0F172A" fill-opacity="0.16" />
+      <path d="M ${x1} ${topY} L ${x2} ${topY} L ${x3} ${bottomY} L ${x4} ${bottomY} Z" fill="url(#podium-front)" />
+      <ellipse cx="${cx}" cy="${topY}" rx="${topW / 2}" ry="34" fill="url(#podium-surface)" />
+      <ellipse cx="${cx}" cy="${topY - 2}" rx="${topW / 2 - 12}" ry="24" fill="#FFFFFF" fill-opacity="0.55" />
+      <ellipse cx="${cx}" cy="${topY + 2}" rx="${topW / 2 - 30}" ry="14" fill="#FFFFFF" fill-opacity="0.22" />
+      <path d="M ${x1 + 8} ${topY + 6} L ${x2 - 8} ${topY + 6}" stroke="url(#podium-edge)" stroke-width="3" stroke-opacity="0.8" />
+      <path d="M ${x4 + 20} ${bottomY - 10} L ${x3 - 20} ${bottomY - 10}" stroke="#94A3B8" stroke-opacity="0.25" stroke-width="2" />
     </g>
   `;
 }
 
-function hexPodium(width: number, height: number): string {
-  const cx = width / 2;
-  const y = Math.round(height * 0.74);
-  const w1 = 420;
-  const w2 = 320;
-  const w3 = 220;
-  const h = 54;
-  const side = 26;
-  const hex = (wy: number, ww: number, fill: string, stroke = "#CBD5E1") => {
-    const x1 = cx - ww / 2;
-    const x2 = cx + ww / 2;
-    return `
-      <g>
-        <polygon points="${x1},${wy} ${x2},${wy} ${x2 - 40},${wy + h} ${x1 + 40},${wy + h}" fill="${fill}" stroke="${stroke}" stroke-opacity="0.5" />
-        <polygon points="${x1},${wy} ${x1 + 40},${wy + h} ${x1 + 40},${wy + h + side} ${x1},${wy + side}" fill="url(#podium-side)" opacity="0.55" />
-        <polygon points="${x2},${wy} ${x2},${wy + side} ${x2 - 40},${wy + h + side} ${x2 - 40},${wy + h}" fill="url(#podium-side)" opacity="0.35" />
+function botanicalShadows(width: number): string {
+  return `
+    <g id="botanical-shadows" opacity="0.55">
+      <g filter="url(#leaf-shadow-blur)" fill="#14532D">
+        <ellipse cx="90" cy="1220" rx="160" ry="70" transform="rotate(-18 90 1220)" fill-opacity="0.14" />
+        <ellipse cx="${width - 90}" cy="1210" rx="170" ry="74" transform="rotate(18 ${width - 90} 1210)" fill-opacity="0.14" />
+        <ellipse cx="120" cy="980" rx="120" ry="48" transform="rotate(-28 120 980)" fill-opacity="0.10" />
+        <ellipse cx="${width - 120}" cy="990" rx="120" ry="48" transform="rotate(28 ${width - 120} 990)" fill-opacity="0.10" />
       </g>
-    `;
-  };
-  return `
-    <g id="hex-podium" filter="url(#soft-shadow)">
-      <ellipse cx="${cx}" cy="${y + h * 3 + 28}" rx="360" ry="44" fill="#0F172A" fill-opacity="0.10" />
-      ${hex(y, w1, "url(#podium-top)")}
-      ${hex(y - h - 10, w2, "url(#podium-top)", "#E2E8F0")}
-      ${hex(y - (h + 10) * 2, w3, "#FFFFFF", "#E2E8F0")}
-    </g>
-  `;
-}
-
-function palmLeaf(x: number, y: number, scale: number, rotate: number, flip = false): string {
-  const sx = flip ? -scale : scale;
-  return `
-    <g transform="translate(${x},${y}) rotate(${rotate}) scale(${sx},${scale})" opacity="0.9">
-      <path d="M0 0 C 40 -120 120 -180 220 -160 C 140 -120 80 -60 40 20 Z" fill="#166534" fill-opacity="0.22" />
-      <path d="M0 0 C 20 -140 90 -220 200 -240 C 140 -170 70 -90 20 10 Z" fill="#15803D" fill-opacity="0.18" />
-      <path d="M0 0 C 70 -80 160 -100 240 -60 C 150 -50 70 -10 20 30 Z" fill="#14532D" fill-opacity="0.16" />
-      <path d="M0 0 C 10 120 20 240 10 360" stroke="#14532D" stroke-width="6" stroke-opacity="0.18" fill="none" />
+      <g fill="#166534">
+        <path d="M-20 1180 C 80 1030, 170 980, 240 1030 C 150 1080, 90 1140, 40 1260 Z" fill-opacity="0.22" />
+        <path d="M0 1260 C 70 1110, 150 1050, 220 1080 C 150 1140, 90 1200, 40 1320 Z" fill-opacity="0.18" />
+        <path d="M${width + 20} 1180 C ${width - 80} 1030, ${width - 170} 980, ${width - 240} 1030 C ${width - 150} 1080, ${width - 90} 1140, ${width - 40} 1260 Z" fill-opacity="0.22" />
+        <path d="M${width} 1260 C ${width - 70} 1110, ${width - 150} 1050, ${width - 220} 1080 C ${width - 150} 1140, ${width - 90} 1200, ${width - 40} 1320 Z" fill-opacity="0.18" />
+      </g>
     </g>
   `;
 }
 
 function silverPodiumBotanical(width: number, height: number): string {
+  const cx = width / 2;
   return `
-    ${sceneDefs()}
-    <rect width="${width}" height="${height}" fill="url(#scene-silver)" />
-    ${pearl(160, 260, 64, 0.55)}
-    ${pearl(920, 320, 92, 0.5)}
-    ${pearl(860, 620, 46, 0.45)}
-    ${pearl(210, 620, 38, 0.4)}
-    ${pearl(540, 240, 28, 0.35)}
-    ${palmLeaf(40, height * 0.62, 1.05, -8, false)}
-    ${palmLeaf(width - 40, height * 0.62, 1.05, 8, true)}
-    ${hexPodium(width, height)}
+    ${sharedDefs()}
+    <rect width="${width}" height="${height}" fill="#E8EDF2" />
+    <rect width="${width}" height="${height}" fill="url(#studio-light-core)" />
+    <rect width="${width}" height="${height}" fill="url(#studio-light-floor)" />
+    ${bokehLights([
+      [140, 260, 70, "#FFFFFF", 0.18],
+      [920, 320, 90, "#FFFFFF", 0.14],
+      [860, 560, 55, "#E2E8F0", 0.18],
+      [220, 600, 48, "#E2E8F0", 0.16],
+      [540, 220, 40, "#FFFFFF", 0.12],
+    ])}
+    ${botanicalShadows(width)}
+    ${podium3D(cx)}
+    <ellipse cx="${cx}" cy="1220" rx="280" ry="22" fill="#FFFFFF" fill-opacity="0.22" />
   `.trim();
 }
 
 function botanicalArchFrame(width: number, height: number): string {
-  const splitY = Math.round(height * 0.58);
-  const archW = 720;
+  const cx = width / 2;
+  const splitY = Math.round(height * 0.56);
+  const archW = 760;
   const archH = 980;
   const archX = (width - archW) / 2;
-  const archY = 320;
+  const archY = 300;
   const r = archW / 2;
-  const star = (x: number, y: number, s: number) => `
-    <g transform="translate(${x},${y})" fill="#D97706" fill-opacity="0.85">
-      <path d="M0 ${-s} L${s * 0.22} ${-s * 0.22} L${s} 0 L${s * 0.22} ${s * 0.22} L0 ${s} L${-s * 0.22} ${s * 0.22} L${-s} 0 L${-s * 0.22} ${-s * 0.22} Z" />
-    </g>
-  `;
   return `
-    ${sceneDefs()}
-    <rect width="${width}" height="${splitY}" fill="#F7F1E6" />
-    <rect y="${splitY}" width="${width}" height="${height - splitY}" fill="#DCE8D7" />
-    <ellipse cx="${width / 2}" cy="${splitY + 40}" rx="520" ry="120" fill="#94A3B8" fill-opacity="0.08" />
-    <g id="arch-frame">
-      <path d="M ${archX} ${archY + archH} L ${archX} ${archY + r} A ${r} ${r} 0 0 1 ${archX + archW} ${archY + r} L ${archX + archW} ${archY + archH} Z" fill="#FFFFFF" fill-opacity="0.55" stroke="#F8FAFC" stroke-width="3" />
-      <path d="M ${archX + 24} ${archY + archH - 10} L ${archX + 24} ${archY + r + 10} A ${r - 24} ${r - 24} 0 0 1 ${archX + archW - 24} ${archY + r + 10} L ${archX + archW - 24} ${archY + archH - 10} Z" fill="none" stroke="#D97706" stroke-opacity="0.35" stroke-width="2" />
-      ${star(archX + 80, archY + 120, 14)}
-      ${star(archX + archW - 80, archY + 120, 14)}
-      ${star(width / 2, archY - 30, 10)}
-      ${star(archX + 120, archY + archH - 80, 10)}
+    ${sharedDefs()}
+    <rect width="${width}" height="${splitY}" fill="#F4EBDD" />
+    <rect y="${splitY}" width="${width}" height="${height - splitY}" fill="#D7E6D2" />
+    <rect width="${width}" height="${height}" fill="url(#studio-light-core)" opacity="0.9" />
+    <rect width="${width}" height="${height}" fill="url(#studio-light-floor)" opacity="0.8" />
+    ${bokehLights([
+      [180, 280, 60, "#FFFFFF", 0.12],
+      [900, 300, 70, "#FFF7ED", 0.10],
+      [540, 240, 50, "#FFFFFF", 0.10],
+    ])}
+    <g id="arch-scene">
+      <path d="M ${archX} ${archY + archH} L ${archX} ${archY + r} A ${r} ${r} 0 0 1 ${archX + archW} ${archY + r} L ${archX + archW} ${archY + archH} Z" fill="#FFFFFF" fill-opacity="0.22" stroke="#FFFFFF" stroke-opacity="0.4" stroke-width="2" />
+      <path d="M ${archX + 30} ${archY + archH - 8} L ${archX + 30} ${archY + r + 10} A ${r - 30} ${r - 30} 0 0 1 ${archX + archW - 30} ${archY + r + 10} L ${archX + archW - 30} ${archY + archH - 8} Z" fill="none" stroke="#D97706" stroke-opacity="0.22" stroke-width="2" />
     </g>
+    ${botanicalShadows(width)}
+    ${podium3D(cx)}
   `.trim();
 }
 
 function editorialBeautyCard(width: number, height: number): string {
-  const frameX = 110;
-  const frameY = 360;
-  const frameW = width - 220;
-  const frameH = 980;
-  const pattern = `
-    <g stroke="#CBD5E1" stroke-opacity="0.22" fill="none">
-      <path d="M80 220 C 160 140, 240 140, 320 220" />
-      <path d="M760 260 C 840 180, 920 180, 1000 260" />
-      <circle cx="180" cy="420" r="22" />
-      <circle cx="900" cy="520" r="18" />
-      <path d="M120 1500 q 60 -40 120 0 t 120 0" />
-      <path d="M720 1540 q 60 -40 120 0 t 120 0" />
-    </g>
-  `;
+  const cx = width / 2;
   return `
-    ${sceneDefs()}
-    <rect width="${width}" height="${height}" fill="#F8F4EE" />
-    <rect width="${width}" height="${height}" fill="url(#scene-silver)" opacity="0.25" />
-    ${pattern}
-    <g id="editorial-frame" filter="url(#soft-shadow)">
-      <rect x="${frameX}" y="${frameY}" width="${frameW}" height="${frameH}" rx="36" fill="#FFFFFF" fill-opacity="0.72" stroke="#E2E8F0" stroke-width="2" />
-      <rect x="${frameX + 26}" y="${frameY + 26}" width="${frameW - 52}" height="${frameH - 52}" rx="28" fill="none" stroke="#CBD5E1" stroke-opacity="0.6" stroke-width="1.5" />
+    ${sharedDefs()}
+    <rect width="${width}" height="${height}" fill="#F7F2EA" />
+    <rect width="${width}" height="${height}" fill="url(#studio-light-core)" />
+    <rect width="${width}" height="${height}" fill="url(#studio-light-floor)" opacity="0.8" />
+    ${bokehLights([
+      [160, 300, 55, "#FFFFFF", 0.14],
+      [920, 340, 65, "#E2E8F0", 0.12],
+      [540, 210, 45, "#FFFFFF", 0.10],
+    ])}
+    <g opacity="0.22" stroke="#94A3B8" fill="none">
+      <path d="M90 240 C 170 150, 250 150, 330 240" />
+      <path d="M750 280 C 830 190, 910 190, 990 280" />
+      <circle cx="180" cy="520" r="22" />
+      <circle cx="900" cy="560" r="18" />
     </g>
+    <rect x="120" y="360" width="${width - 240}" height="980" rx="40" fill="#FFFFFF" fill-opacity="0.20" stroke="#E2E8F0" stroke-opacity="0.5" />
+    ${botanicalShadows(width)}
+    ${podium3D(cx)}
   `.trim();
 }
 
@@ -216,7 +232,7 @@ export function resolveBackground(request: BackgroundRequest): BackgroundLayer {
       template,
       markup: `
         <image href="${escapeXml(sceneImageUrl)}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="xMidYMid slice" />
-        <rect width="${width}" height="${height}" fill="#FFFFFF" fill-opacity="0.06" />
+        <rect width="${width}" height="${height}" fill="#FFFFFF" fill-opacity="0.04" />
       `.trim(),
     };
   }
