@@ -86,12 +86,9 @@ const requestSchema = z
 
 const MS_PER_DAY = 86_400_000;
 
-const SHARP_QUALITY_SUFFIX =
-  "sharp focus, crisp edges, architectural 3D product photography stage, 8k resolution, high detail, no blur, no bokeh background";
-
 const VARIANT_SCENE_PROMPTS: Record<1 | 2, string> = {
-  1: `Photorealistic luxury cosmetic product photography stage, minimalist 3D white and brushed-silver hexagonal podium in the lower center, crisp green tropical palm leaves framing the bottom corners, subtle 3D matte silver spheres, bright clean studio lighting, empty podium top, no bottles, no text, no logos, vertical 9:16, ${SHARP_QUALITY_SUFFIX}`,
-  2: `Architectural cream and soft sage-green 3D arch niche skincare studio background, crisp natural sunlight window shadows, clean stone display plinth at bottom, subtle botanical leaves, empty stage, no products, no text, vertical 9:16, ${SHARP_QUALITY_SUFFIX}`,
+  1: "Photorealistic luxury cosmetic product photography studio background, soft light silver-grey wall with subtle diagonal botanical leaf shadows, minimalist 3D white marble and brushed silver hexagonal podium centered in lower third, lush green palm fronds and eucalyptus leaves framing bottom left and right corners, small glossy silver-pearl spheres floating softly in background, bright clean studio lighting, empty podium top surface, no bottle, no text, no logos, vertical 9:16, sharp focus",
+  2: `Architectural cream and soft sage-green 3D arch niche skincare studio background, crisp natural sunlight window shadows, clean stone display plinth at bottom, subtle botanical leaves, empty stage, no products, no text, vertical 9:16, sharp focus, crisp edges, architectural 3D product photography stage, 8k resolution, high detail, no blur, no bokeh background`,
 };
 
 const BUNDLED_STAGE_FALLBACKS: Record<1 | 2, string> = {

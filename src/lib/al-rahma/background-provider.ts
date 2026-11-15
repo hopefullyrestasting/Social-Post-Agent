@@ -90,24 +90,24 @@ function bokehLights(points: Array<[number, number, number, string, number]>): s
 }
 
 function podium3D(cx: number): string {
-  // Complement Phase 9 dominant hero stage: packshot bottom at 1170, overlay podium ~1145..1215
-  const topY = 1145;
-  const bottomY = 1215;
-  const topW = 780;
-  const bottomW = 640;
+  // Complement approved studio aesthetic: packshot bottom seated at 1230 on podium top surface
+  const topY = 1200;
+  const bottomY = 1278;
+  const topW = 760;
+  const bottomW = 620;
   const x1 = cx - topW / 2;
   const x2 = cx + topW / 2;
   const x3 = cx + bottomW / 2;
   const x4 = cx - bottomW / 2;
   return `
     <g id="shader-podium" filter="url(#soft-scene-shadow)">
-      <ellipse cx="${cx}" cy="${bottomY + 30}" rx="430" ry="54" fill="#0F172A" fill-opacity="0.14" />
+      <ellipse cx="${cx}" cy="${bottomY + 34}" rx="430" ry="56" fill="#0F172A" fill-opacity="0.12" />
       <path d="M ${x1} ${topY} L ${x2} ${topY} L ${x3} ${bottomY} L ${x4} ${bottomY} Z" fill="url(#podium-front)" />
       <ellipse cx="${cx}" cy="${topY}" rx="${topW / 2}" ry="34" fill="url(#podium-surface)" />
-      <ellipse cx="${cx}" cy="${topY - 2}" rx="${topW / 2 - 12}" ry="24" fill="#FFFFFF" fill-opacity="0.55" />
-      <ellipse cx="${cx}" cy="${topY + 2}" rx="${topW / 2 - 30}" ry="14" fill="#FFFFFF" fill-opacity="0.22" />
-      <path d="M ${x1 + 8} ${topY + 6} L ${x2 - 8} ${topY + 6}" stroke="url(#podium-edge)" stroke-width="3" stroke-opacity="0.8" />
-      <path d="M ${x4 + 20} ${bottomY - 10} L ${x3 - 20} ${bottomY - 10}" stroke="#94A3B8" stroke-opacity="0.25" stroke-width="2" />
+      <ellipse cx="${cx}" cy="${topY - 2}" rx="${topW / 2 - 14}" ry="24" fill="#FFFFFF" fill-opacity="0.52" />
+      <ellipse cx="${cx}" cy="${topY + 2}" rx="${topW / 2 - 32}" ry="14" fill="#FFFFFF" fill-opacity="0.20" />
+      <path d="M ${x1 + 8} ${topY + 6} L ${x2 - 8} ${topY + 6}" stroke="url(#podium-edge)" stroke-width="3" stroke-opacity="0.75" />
+      <path d="M ${x4 + 20} ${bottomY - 10} L ${x3 - 20} ${bottomY - 10}" stroke="#94A3B8" stroke-opacity="0.22" stroke-width="2" />
     </g>
   `;
 }
@@ -139,15 +139,15 @@ function silverPodiumBotanical(width: number, height: number): string {
     <rect width="${width}" height="${height}" fill="url(#studio-light-core)" />
     <rect width="${width}" height="${height}" fill="url(#studio-light-floor)" />
     ${bokehLights([
-      [140, 260, 70, "#FFFFFF", 0.18],
-      [920, 320, 90, "#FFFFFF", 0.14],
-      [860, 560, 55, "#E2E8F0", 0.18],
-      [220, 600, 48, "#E2E8F0", 0.16],
-      [540, 220, 40, "#FFFFFF", 0.12],
+      [140, 260, 70, "#FFFFFF", 0.16],
+      [920, 320, 90, "#FFFFFF", 0.13],
+      [860, 560, 55, "#E2E8F0", 0.16],
+      [220, 600, 48, "#E2E8F0", 0.14],
+      [540, 220, 40, "#FFFFFF", 0.10],
     ])}
     ${botanicalShadows(width)}
     ${podium3D(cx)}
-    <ellipse cx="${cx}" cy="1095" rx="280" ry="22" fill="#FFFFFF" fill-opacity="0.18" />
+    <ellipse cx="${cx}" cy="1168" rx="280" ry="22" fill="#FFFFFF" fill-opacity="0.16" />
   `.trim();
 }
 
