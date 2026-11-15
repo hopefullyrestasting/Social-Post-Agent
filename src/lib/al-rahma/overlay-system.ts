@@ -15,6 +15,12 @@ export interface OverlayOptions {
   template?: DesignerTemplate;
   /** Pre-generated AI scene (data URI or URL) for the pure background stage. */
   sceneImageUrl?: string | null;
+  /**
+   * Full staged image (background + product already composed, e.g. Nano Banana).
+   * When provided, used as the scene background and the packshot bottle is not
+   * duplicated; typography/UI layers are rendered on top.
+   */
+  stagedImageUrl?: string | null;
   /** Uploaded brand logo (URL or data URI) shown in the top brand badge. */
   brandLogoUrl?: string | null;
   productImageUrl?: string | null;
@@ -131,7 +137,24 @@ function featurePill(x: number, y: number, text: string): string {
   `;
 }
 
-function heroPackshot(width: number, productUrl: string | null | undefined): string {
+function heroPackshot(
+  width: number,
+  productUrl: string | null | undefined,
+  options?: { staged?: boolean },
+): string {
+  // Side Feature Pills y=820..910 (always rendered as typography/UI overlay)
+  const badges = `
+    <g id="feature-pills">
+      ${featurePill(width - 64 - 286, 820, "تركيبة طبيعية")}
+      ${featurePill(64, 840, "جودة مضمونة")}
+    </g>
+  `;
+
+  // When a full staged image (background+product) is provided, do not duplicate the bottle.
+  if (options?.staged) {
+    return badges;
+  }
+
   // Hero packshot y=460..1240, h=740 w=580 x=250 y=490, bottom seated at 1230
   const cx = width / 2;
   const packshotX = 250;
@@ -161,14 +184,6 @@ function heroPackshot(width: number, productUrl: string | null | undefined): str
       </g>
     `;
   }
-
-  // Side Feature Pills y=820..910
-  const badges = `
-    <g id="feature-pills">
-      ${featurePill(width - 64 - 286, 820, "تركيبة طبيعية")}
-      ${featurePill(64, 840, "جودة مضمونة")}
-    </g>
-  `;
 
   return `${packshot}${badges}`;
 }
@@ -330,6 +345,7 @@ export class OverlaySystem {
     const availability = (opts.availabilityText ?? "").trim();
     const promotion = opts.promotion ?? null;
     const occasion = opts.occasion ?? null;
+    const stagedImageUrl = opts.stagedImageUrl?.trim() || null;
     const productUrl = opts.productImageUrl?.trim() || null;
 
     const background =
@@ -338,7 +354,7 @@ export class OverlaySystem {
         width,
         height,
         template,
-        sceneImageUrl: opts.sceneImageUrl ?? null,
+        sceneImageUrl: stagedImageUrl ?? opts.sceneImageUrl ?? null,
       });
 
     // Promo badge sits above sales copy card when active (keeps card position stable)
@@ -351,7 +367,7 @@ export class OverlaySystem {
         ${opts.showLogo === false ? "" : headerPill(width, opts.brandLogoUrl)}
         ${occasion ? occasionRibbon(width, occasion) : ""}
         ${productTitle(width, headline)}
-        ${heroPackshot(width, productUrl)}
+        ${heroPackshot(width, productUrl, { staged: Boolean(stagedImageUrl) })}
         ${promotion ? promoBadge(width, promoY, promotion) : ""}
         ${benefit ? salesCopyCard(width, benefit) : ""}
         ${availability ? availabilityPill(width, 1518, availability) : ""}

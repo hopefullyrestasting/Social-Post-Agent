@@ -28,6 +28,11 @@ export interface ProductionRequest {
   template?: DesignerTemplate;
   /** Pre-generated AI studio scene image (data URI or URL). */
   sceneImageUrl?: string | null;
+  /**
+   * Full staged image (background + authentic product composed, e.g. Nano Banana).
+   * When provided, used as the scene and the packshot is not duplicated.
+   */
+  stagedImageUrl?: string | null;
   /** Uploaded brand logo (URL or data URI) rendered in the top brand badge. */
   brandLogoUrl?: string | null;
   width?: number;
@@ -40,9 +45,11 @@ export interface ProductionRequest {
   today?: string;
 }
 
-export type ProductionVariantsRequest = Omit<ProductionRequest, "variant" | "template" | "sceneImageUrl"> & {
+export type ProductionVariantsRequest = Omit<ProductionRequest, "variant" | "template" | "sceneImageUrl" | "stagedImageUrl"> & {
   /** Per-variant AI studio scene images (data URI or URL). */
   sceneImageUrls?: Partial<Record<1 | 2, string | null>>;
+  /** Per-variant full staged images (background + product composed). */
+  stagedImageUrls?: Partial<Record<1 | 2, string | null>>;
 };
 
 export interface ProductionResult {
@@ -133,6 +140,7 @@ export class ProductionEngine {
         {
           ...request,
           sceneImageUrl: request.sceneImageUrls?.[variantNumber] ?? null,
+          stagedImageUrl: request.stagedImageUrls?.[variantNumber] ?? null,
         },
         variantNumber,
         template,
@@ -168,18 +176,21 @@ export class ProductionEngine {
     });
 
     const productImageUrl = product.productImageUrl?.trim() || null;
+    const stagedImageUrl = request.stagedImageUrl?.trim() || null;
+    const effectiveSceneImageUrl = stagedImageUrl ?? request.sceneImageUrl ?? null;
     const background = resolveBackground({
       width,
       height,
       template,
-      sceneImageUrl: request.sceneImageUrl ?? null,
+      sceneImageUrl: effectiveSceneImageUrl,
     });
 
     const overlayOptions: OverlayOptions = {
       width,
       height,
       template,
-      sceneImageUrl: request.sceneImageUrl ?? null,
+      sceneImageUrl: effectiveSceneImageUrl,
+      stagedImageUrl,
       brandLogoUrl: request.brandLogoUrl ?? null,
       productImageUrl,
       headline: copy.headline,
@@ -199,7 +210,7 @@ export class ProductionEngine {
     );
 
     const blockers: string[] = [];
-    if (!productImageUrl) {
+    if (!productImageUrl && !stagedImageUrl) {
       blockers.push("صورة المنتج الأصلية (packshot) مطلوبة لتركيب الإعلان.");
     }
     if (promotionEvaluation.status === "invalid") {
