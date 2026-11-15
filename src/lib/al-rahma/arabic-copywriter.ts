@@ -41,6 +41,8 @@ export interface CopyOptions {
   variant?: CopyVariant;
   hookIndex?: number;
   ctaIndex?: number;
+  /** In-window cultural greeting prepended to the post body. */
+  occasionGreeting?: string;
 }
 
 export interface GeneratedArabicCopy {
@@ -57,34 +59,38 @@ export interface GeneratedArabicCopy {
 /**
  * Templates may reference `{{brand}}` and `{{phone}}` only. The values are
  * injected from `AL_RAHMA_BRAND_CONFIG` so no brand identity is hardcoded here.
+ *
+ * Voice: polished, upscale Egyptian commercial Arabic for pharmacies and
+ * personal-care shoppers. Friendly but never vulgar, and never a medical
+ * promise — only verified product facts are stated.
  */
 const HOOKS_BY_ANGLE: Record<PostAngle, [string, string]> = {
   product_information: [
-    "تعرفوا على معلومات المنتج ومصدرها قبل اتخاذ قرار الشراء.",
-    "معلومات المنتج المتاحة تساعدكم على اختيار ما يناسبكم.",
+    "قبل ما تختار، اعرف كل تفاصيل المنتج من مصدرها الموثّق.",
+    "معلومات واضحة عن المنتج تساعدك تختار اللي يناسبك بثقة.",
   ],
   product_features: [
-    "تفاصيل المنتج التالية مأخوذة من المعلومات الموثّقة له.",
-    "راجعوا بيانات المنتج ومصدر معلوماته قبل الاستخدام.",
+    "منتج مختار بعناية… شوف تفاصيله الموثّقة قبل الطلب.",
+    "اعرف خصائص المنتج الحقيقية، بدون مبالغة أو وعود غير مؤكدة.",
   ],
   beauty_routine: [
-    "اختيار منتجات العناية يبدأ من معرفة تفاصيل المنتج.",
-    "تعرّفوا على معلومات المنتج قبل إضافته إلى روتين العناية.",
+    "روتين عناية راقٍ يبدأ باختيار المنتج المناسب لاحتياجاتك.",
+    "خطوة بسيطة في روتينك اليومي تبدأ بمعرفة تفاصيل المنتج.",
   ],
   combo_deal: [
-    "لمعرفة تفاصيل منتجات {{brand}} المتوفرة، تواصلوا معنا.",
-    "اسألوا {{brand}} عن تفاصيل المنتجات المتاحة لدينا.",
+    "تفاصيل منتجات {{brand}} المتاحة عندنا… اسأل وإحنا في الخدمة.",
+    "لو بتدور على منتجات عناية وجمال، {{brand}} هيفيدك بالتفاصيل.",
   ],
 };
 
 const CTA_TEMPLATES: [string, string] = [
-  "للطلب والاستفسار تواصلوا معنا على {{phone}} أو عبر واتساب.",
-  "للاستفسار عن تفاصيل المنتج والتوفر: {{phone}} | واتساب {{brand}}.",
+  "للطلب والاستفسار: كلمنا على {{phone}} أو ابعتلنا رسالة على واتساب.",
+  "تحب تعرف تفاصيل أكتر؟ تواصل معنا على {{phone}} أو واتساب {{brand}}.",
 ];
 
 const CTA_SHORT_TEMPLATES: [string, string] = [
   "اطلب عبر واتساب",
-  "تواصل معنا الآن",
+  "كلمنا على واتساب",
 ];
 
 function renderTemplate(template: string): string {
@@ -148,10 +154,11 @@ export class ArabicCopywriter {
 
     const headline = buildHeadline(product);
     const category = (product.category || "").trim().replaceAll("_", " ");
+    const greeting = (options.occasionGreeting ?? "").trim();
     const facts = clean(product.features).map((feature) => `• ${feature}`);
     const usageFacts = usage.map((item) => `• ${item}`);
     const details = [
-      category ? `التصنيف: ${category}` : "",
+      category ? `القسم: ${category}` : "",
       ...facts,
       ...(usageFacts.length
         ? ["طريقة الاستخدام الموثّقة:", ...usageFacts]
@@ -161,7 +168,7 @@ export class ArabicCopywriter {
         : "",
     ].filter(Boolean);
 
-    const body = [hook, ...details, cta].join("\n\n");
+    const body = [greeting, hook, ...details, cta].filter(Boolean).join("\n\n");
     const specificHashtags = [
       category ? `#${category.replace(/\s+/g, "_")}` : "",
       headline ? `#${headline.split(/\s+/)[0]}` : "",

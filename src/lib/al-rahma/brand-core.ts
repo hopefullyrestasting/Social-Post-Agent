@@ -65,6 +65,31 @@ export interface BrandContact {
   returnPolicy: string;
 }
 
+/**
+ * Commercial rendering rules. Kept inside the brand config so a future client
+ * can swap currency, badge colors and calendar defaults without touching the
+ * composer or the API layer.
+ */
+export interface BrandCommercialConfig {
+  currencyLabel: string;
+  timezone: string;
+  calendar: {
+    countryCode: string;
+    defaultLeadDays: number;
+    maxLeadDays: number;
+  };
+  promoBadge: {
+    backgroundColor: string;
+    accentColor: string;
+    discountColor: string;
+    textColor: string;
+  };
+  occasionRibbon: {
+    backgroundColor: string;
+    textColor: string;
+  };
+}
+
 export interface BrandConfig {
   id: string;
   brandName: string;
@@ -78,6 +103,7 @@ export interface BrandConfig {
   voice: BrandVoice;
   visual: BrandVisualTheme;
   contact: BrandContact;
+  commercial: BrandCommercialConfig;
   hashtags: string[];
 }
 
@@ -158,6 +184,25 @@ export const AL_RAHMA_BRAND_CONFIG: BrandConfig = {
     whatsappUrl: "https://wa.me/201000017548",
     deliveryPromise: "يتم تأكيد تفاصيل التوصيل عند التواصل",
     returnPolicy: "تُحدد سياسة الاستبدال والاسترجاع من إدارة المخزن",
+  },
+  commercial: {
+    currencyLabel: "ج.م",
+    timezone: "Africa/Cairo",
+    calendar: {
+      countryCode: "EG",
+      defaultLeadDays: 2,
+      maxLeadDays: 30,
+    },
+    promoBadge: {
+      backgroundColor: "#FFFFFF",
+      accentColor: "#F59E0B",
+      discountColor: "#DC2626",
+      textColor: "#065f46",
+    },
+    occasionRibbon: {
+      backgroundColor: "#FFFFFF",
+      textColor: "#065f46",
+    },
   },
   hashtags: [
     "#مخزن_الرحمة",

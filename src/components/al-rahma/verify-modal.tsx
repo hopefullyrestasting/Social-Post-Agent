@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { adminWriteHeaders } from "@/lib/al-rahma/admin-key";
 
 type Props = {
   product: { id: string; name_arabic: string };
@@ -85,10 +86,10 @@ export default function VerifyModal({ product, onClose, onSaved }: Props) {
     try {
       const response = await fetch("/api/db/research/ingest", {
         method: "POST",
-        headers: {
+        headers: adminWriteHeaders({
           Accept: "application/json",
           "Content-Type": "application/json",
-        },
+        }),
         body: JSON.stringify(payload),
       });
       const body = (await response.json()) as {
@@ -100,13 +101,20 @@ export default function VerifyModal({ product, onClose, onSaved }: Props) {
 
       if (!response.ok || !body.success) {
         throw new Error(
-          body.detail || body.error || `تعذر حفظ التوثيق (${response.status})`,
+          response.status === 401
+            ? "المفتاح الإداري مطلوب أو غير صحيح. أدخله من أعلى لوحة التحكم."
+            : body.detail || body.error || `تعذر حفظ التوثيق (${response.status})`,
         );
       }
 
+      const previewNote =
+        response.headers.get("X-Auth-Mode") === "unconfigured-preview"
+          ? " · وضع المعاينة: لم يُربط مفتاح الإدارة بعد."
+          : "";
+
       onSaved(
         `تم توثيق ${product.name_arabic}: ${body.claims?.inserted ?? 0} ادعاء جديد، ` +
-          `${body.claims?.skipped ?? 0} مكرر تم تجاهله.`,
+          `${body.claims?.skipped ?? 0} مكرر تم تجاهله.${previewNote}`,
       );
     } catch (submitError) {
       setError(

@@ -1,4 +1,8 @@
 import { GeneratedArabicCopy, ProductDetails } from "./arabic-copywriter";
+import {
+  OccasionGreetingInput,
+  PromotionEvaluation,
+} from "./commercial";
 import { OverlayOptions } from "./overlay-system";
 
 export interface QualityCheckResult {
@@ -16,6 +20,16 @@ export interface QualityGateReport {
   errors: string[];
   warnings: string[];
   timestamp: string;
+}
+
+/**
+ * Commercial inputs already classified by `evaluatePromotion`. Pricing is a
+ * controlled exception: only an active, numerically consistent promotion may
+ * render a price. Anything else reverts to price-free or fails the gate.
+ */
+export interface CommercialContext {
+  promotion?: PromotionEvaluation;
+  occasion?: OccasionGreetingInput | null;
 }
 
 const BANNED_TERMS = [
@@ -55,6 +69,7 @@ export class QualityGate {
     copy: GeneratedArabicCopy,
     product: ProductDetails,
     visual?: OverlayOptions,
+    commercial?: CommercialContext,
   ): QualityGateReport {
     const checks: QualityCheckResult[] = [];
     const errors: string[] = [];
@@ -153,6 +168,50 @@ export class QualityGate {
     });
     if (!noPricing) {
       errors.push("احذف أي أسعار أو خصومات أو إلحاح غير موثّق من النص.");
+    }
+
+    // 6b. Controlled promotion: the only allowed way to show a price.
+    if (commercial?.promotion && commercial.promotion.status !== "none") {
+      const promotion = commercial.promotion;
+      const promotionOk = promotion.status !== "invalid";
+      checks.push({
+        checkName: "Controlled Promotion Pricing",
+        category: "compliance",
+        passed: promotionOk,
+        score: promotionOk ? 100 : 0,
+        message:
+          promotion.status === "active"
+            ? `عرض سعري موثّق من سجل العروض النشط (خصم ${promotion.promotion.discountPercent}%).`
+            : promotion.status === "invalid"
+              ? promotion.reason
+              : promotion.status === "scheduled"
+                ? "العرض لم يبدأ بعد؛ تم الرجوع إلى النمط بدون سعر."
+                : "انتهى العرض؛ تم الرجوع تلقائياً إلى النمط بدون سعر.",
+      });
+      if (!promotionOk) {
+        errors.push(
+          "لا يمكن عرض سعر غير متوافق مع سجل العروض؛ راجع بيانات العرض.",
+        );
+      }
+    }
+
+    // 6c. Cultural greeting must stay a tasteful, in-window greeting.
+    if (commercial?.occasion) {
+      const greeting = commercial.occasion.greeting.trim();
+      const occasionOk =
+        greeting.startsWith("كل عام") && greeting.length <= 120;
+      checks.push({
+        checkName: "Cultural Occasion Greeting",
+        category: "copy",
+        passed: occasionOk,
+        score: occasionOk ? 100 : 40,
+        message: occasionOk
+          ? `تهنئة مناسبة لـ ${commercial.occasion.occasionName} مضافة إلى التصميم.`
+          : "صيغة التهنئة غير مناسبة؛ استخدم تهنئة عربية مهذبة قصيرة.",
+      });
+      if (!occasionOk) {
+        warnings.push("راجع صيغة تهنئة المناسبة قبل النشر.");
+      }
     }
 
     // 7. فحص الكلمات المحظورة والمضللة (Compliance & Spam)

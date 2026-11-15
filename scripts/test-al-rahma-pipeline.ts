@@ -7,7 +7,12 @@ import {
   OverlaySystem,
   ProductionEngine,
   QualityGate,
+  calculatePromoPrice,
+  evaluatePromotion,
+  resolveActivePromotion,
   resolveBackground,
+  resolveUpcomingOccasion,
+  cairoToday,
 } from "../src/lib/al-rahma";
 
 const brand = AL_RAHMA_BRAND_CONFIG;
@@ -46,6 +51,9 @@ assert.equal(brand.visual.format.orientation, "portrait");
 assert.equal(brand.visual.background.style, "clean-white");
 assert.equal(brand.visual.background.baseColor, "#FFFFFF");
 assert.equal(brand.visual.background.mesh.enabled, true);
+assert.equal(brand.commercial.currencyLabel, "ج.م");
+assert.equal(brand.commercial.timezone, "Africa/Cairo");
+assert.equal(brand.commercial.calendar.defaultLeadDays, 2);
 assert.deepEqual(
   JSON.parse(JSON.stringify(brand)),
   brand,
@@ -90,6 +98,16 @@ const studioCopy = ArabicCopywriter.generatePost(
 assert.equal(studioCopy.benefitLine, verifiedProduct.verifiedBenefits[1]);
 assert.notEqual(studioCopy.cta, copy.cta);
 
+const greetedCopy = ArabicCopywriter.generatePost(
+  verifiedProduct,
+  "product_information",
+  { occasionGreeting: "كل عام وأنتم بخير بمناسبة عيد الأم" },
+);
+assert.ok(
+  greetedCopy.fullPostText.includes("كل عام وأنتم بخير بمناسبة عيد الأم"),
+  "Occasion greeting must be injected into the post body.",
+);
+
 // --- Quality gate -----------------------------------------------------------
 
 const quality = QualityGate.evaluate(copy, unverifiedProduct, {
@@ -128,10 +146,81 @@ assert.equal(
   "Pricing or discount language must fail the gate.",
 );
 
+// --- Commercial: active vs expired promotions & 48h calendar ----------------
+
+const fixedToday = "2027-03-20"; // within seeded Eid Al-Fitr lead window (2027-03-18..20)
+const activePromo = {
+  id: "promo-active",
+  product_id: "prod-1",
+  original_price: 200,
+  discount_percent: 25,
+  promo_price: calculatePromoPrice(200, 25),
+  starts_at: "2027-03-18",
+  ends_at: "2027-03-22",
+  is_active: 1,
+};
+const activeEvaluation = evaluatePromotion(activePromo, fixedToday);
+assert.equal(activeEvaluation.status, "active");
+if (activeEvaluation.status === "active") {
+  assert.equal(activeEvaluation.promotion.promoPrice, 150);
+  assert.equal(activeEvaluation.promotion.savings, 50);
+}
+
+const expiredPromo = {
+  ...activePromo,
+  id: "promo-expired",
+  starts_at: "2027-03-01",
+  ends_at: "2027-03-10",
+};
+assert.equal(evaluatePromotion(expiredPromo, fixedToday).status, "expired");
+assert.equal(resolveActivePromotion(expiredPromo, fixedToday), null);
+
+const scheduledPromo = {
+  ...activePromo,
+  id: "promo-scheduled",
+  starts_at: "2027-03-25",
+  ends_at: "2027-03-30",
+};
+assert.equal(evaluatePromotion(scheduledPromo, fixedToday).status, "scheduled");
+
+const invalidPromo = {
+  ...activePromo,
+  id: "promo-invalid",
+  promo_price: 10, // inconsistent with 200 @ 25%
+};
+assert.equal(evaluatePromotion(invalidPromo, fixedToday).status, "invalid");
+
+// 48h (lead_days=2) cultural calendar: 2 days before is included, 3 days is not.
+const occasions = [
+  {
+    id: "cc-eg-eid-al-fitr",
+    country_code: "EG",
+    occasion_name_arabic: "عيد الفطر المبارك",
+    greeting_text_arabic: "كل عام وأنتم بخير بمناسبة عيد الفطر المبارك",
+    occasion_date: "2027-03-20",
+    lead_days: 2,
+    accent_theme: "amber",
+    is_active: 1,
+  },
+];
+const upcoming = resolveUpcomingOccasion(occasions, fixedToday);
+assert.ok(upcoming, "Occasion must be returned on its day.");
+assert.equal(upcoming.occasionName, "عيد الفطر المبارك");
+assert.ok(upcoming.greeting.includes("عيد الفطر المبارك"));
+
+const twoDaysBefore = resolveUpcomingOccasion(occasions, "2027-03-18");
+assert.ok(twoDaysBefore, "Occasion must be returned 2 days before (within lead).");
+
+const threeDaysBefore = resolveUpcomingOccasion(occasions, "2027-03-17");
+assert.equal(threeDaysBefore, null, "Occasion must not trigger outside lead_days.");
+
+assert.match(cairoToday(new Date("2027-03-20T12:00:00Z")), /^\d{4}-\d{2}-\d{2}$/);
+
 // --- Production pipeline: two distinct variants -----------------------------
 
 const variants = ProductionEngine.executeVariants({
   product: verifiedProduct,
+  today: fixedToday,
 });
 assert.equal(variants.length, 2);
 assert.deepEqual(
@@ -163,24 +252,103 @@ for (const result of variants) {
   assert.ok(result.svgOverlay.includes("#FFFFFF"));
   assert.ok(result.svgOverlay.includes("silver-mesh"));
   assert.ok(result.svgOverlay.includes("packshot-shadow"));
+  assert.ok(result.svgOverlay.includes("studio-rim-glow"));
+  assert.ok(result.svgOverlay.includes("contact-shadow"));
   assert.equal(result.qualityReport.passed, true);
+  assert.equal(result.metadata.promotion, null);
+  assert.equal(result.metadata.occasion, null);
   assert.equal(
-    /price|discount|salePrice|خصم|السعر|جنيه/i.test(result.svgOverlay),
+    result.svgOverlay.includes("promo-badge"),
     false,
-    "The composer must not render pricing or discount badges.",
+    "No promo without an active in-window record.",
+  );
+  assert.equal(
+    result.svgOverlay.includes("occasion-ribbon"),
+    false,
+    "No greeting without an in-window occasion.",
   );
 }
 
 assert.ok(variants[0].svgOverlay.includes("studio-glow"));
 assert.ok(variants[1].svgOverlay.includes("studio-accents"));
+assert.ok(variants[1].svgOverlay.includes("multi-bottle-depth"));
 
-const single = ProductionEngine.execute({ product: verifiedProduct });
+const single = ProductionEngine.execute({ product: verifiedProduct, today: fixedToday });
 assert.equal(single.variant, "hero-clean");
 assert.equal(single.success, true);
+
+// Active promo renders a controlled badge and passes the gate.
+const promoVariants = ProductionEngine.executeVariants({
+  product: verifiedProduct,
+  promotion: activePromo,
+  today: fixedToday,
+});
+for (const result of promoVariants) {
+  assert.equal(result.success, true, result.blockers.join(" | "));
+  assert.ok(result.svgOverlay.includes("promo-badge"));
+  assert.ok(result.svgOverlay.includes("150"));
+  assert.ok(result.svgOverlay.includes("200"));
+  assert.ok(result.svgOverlay.includes("خصم 25%"));
+  assert.equal(result.qualityReport.passed, true);
+  assert.ok(result.metadata.promotion);
+  assert.equal(result.metadata.promotion?.promoPrice, 150);
+  assert.ok(
+    result.qualityReport.checks.some(
+      (c) => c.checkName === "Controlled Promotion Pricing" && c.passed,
+    ),
+  );
+}
+
+// Expired promo: auto-revert to non-priced mode.
+const expiredVariants = ProductionEngine.executeVariants({
+  product: verifiedProduct,
+  promotion: expiredPromo,
+  today: fixedToday,
+});
+for (const result of expiredVariants) {
+  assert.equal(result.success, true, result.blockers.join(" | "));
+  assert.equal(result.svgOverlay.includes("promo-badge"), false);
+  assert.equal(result.metadata.promotion, null);
+}
+
+// Invalid promo: hard-blocks so hallucinated numbers never render.
+const invalidVariants = ProductionEngine.executeVariants({
+  product: verifiedProduct,
+  promotion: invalidPromo,
+  today: fixedToday,
+});
+for (const result of invalidVariants) {
+  assert.equal(result.success, false);
+  assert.ok(result.blockers.some((b) => b.includes("السعر")));
+  assert.equal(result.svgOverlay.includes("promo-badge"), false);
+}
+
+// 48h occasion greeting ribbon in-window.
+const occasionInput = {
+  id: "cc-eg-eid-al-fitr",
+  occasionName: "عيد الفطر المبارك",
+  greeting: "كل عام وأنتم بخير بمناسبة عيد الفطر المبارك",
+  occasionDate: "2027-03-20",
+  daysUntil: 0,
+  accentTheme: "amber",
+};
+const occasionVariants = ProductionEngine.executeVariants({
+  product: verifiedProduct,
+  occasion: occasionInput,
+  today: fixedToday,
+});
+for (const result of occasionVariants) {
+  assert.equal(result.success, true, result.blockers.join(" | "));
+  assert.ok(result.svgOverlay.includes("occasion-ribbon"));
+  assert.ok(result.svgOverlay.includes("عيد الفطر المبارك"));
+  assert.ok(result.copy.fullPostText.includes("كل عام وأنتم بخير"));
+  assert.ok(result.metadata.occasion);
+}
 
 // Missing authentic packshot blocks production instead of inventing an image.
 const blocked = ProductionEngine.executeVariants({
   product: { ...verifiedProduct, productImageUrl: null },
+  today: fixedToday,
 });
 assert.equal(blocked.every((result) => !result.success), true);
 assert.equal(blocked[0].success, false);
@@ -224,6 +392,8 @@ const overlay = OverlaySystem.generateOverlaySvg({
 assert.ok(overlay.includes(brand.brandName));
 assert.ok(overlay.includes(brand.contact.phone));
 assert.ok(overlay.includes(verifiedProduct.verifiedBenefits[0]));
+assert.ok(overlay.includes("studio-rim-glow"));
+assert.ok(overlay.includes("contact-shadow"));
 assert.equal(overlay.includes("price-card"), false);
 assert.equal(overlay.includes("discount-badge"), false);
 
@@ -272,5 +442,5 @@ assert.deepEqual(
 );
 
 console.log(
-  "Al Rahma pipeline tests passed: BrandConfig contract, price-free deterministic copy, verified-source gate, 2-variant white/mesh composer, packshot blocking, and single-source brand identity.",
+  "Al Rahma pipeline tests passed: BrandConfig, deterministic copy, verified-source gate, active/expired promo rules, 48h cultural greeting trigger, 2-variant white/mesh composer with depth+lighting, packshot blocking, and single-source brand identity.",
 );

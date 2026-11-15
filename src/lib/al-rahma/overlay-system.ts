@@ -5,6 +5,10 @@ import {
   BackgroundProviderId,
   resolveBackground,
 } from "./background-provider";
+import {
+  OccasionGreetingInput,
+  ValidPromotion,
+} from "./commercial";
 import { escapeXml, wrapText } from "./svg-utils";
 
 export type { AdVariant } from "./background-provider";
@@ -23,6 +27,10 @@ export interface OverlayOptions {
   showFooterBar?: boolean;
   background?: BackgroundLayer;
   backgroundProvider?: BackgroundProviderId;
+  /** Already validated as active and in-window. Never raw user input. */
+  promotion?: ValidPromotion | null;
+  /** Already validated by the API (48h cultural window). */
+  occasion?: OccasionGreetingInput | null;
 }
 
 const BRAND = AL_RAHMA_BRAND_CONFIG;
@@ -153,10 +161,141 @@ function studioAccents(): string {
   `;
 }
 
+/**
+ * Radial studio rim glow placed behind the packshot. The gradient peaks close
+ * to its outer edge so the product reads as if it were lit from a soft box.
+ */
+function studioLighting(variant: AdVariant): string {
+  const emerald = BRAND.visual.primaryColors.emerald;
+  const silver = BRAND.visual.background.mesh.color;
+  const cy = variant === "hero-clean" ? 852 : 884;
+
+  return `
+    <g id="studio-rim-glow" fill="none">
+      <ellipse cx="540" cy="${cy}" rx="372" ry="452" fill="url(#studio-rim-gradient)" />
+      <circle cx="540" cy="${cy}" r="304" stroke="${emerald}" stroke-opacity="0.12" stroke-width="2.5" />
+      <ellipse cx="540" cy="${cy + 20}" rx="238" ry="300" stroke="${silver}" stroke-opacity="0.5" stroke-width="1.5" />
+    </g>
+  `;
+}
+
+/** Grounded elliptical contact shadow beneath the bottle base. */
+function contactShadow(
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+): string {
+  return `
+    <ellipse id="contact-shadow" cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="url(#contact-shadow-fill)" filter="url(#contact-shadow-blur)" />
+  `;
+}
+
+/**
+ * Variant 2 gets a layered, angled secondary packshot behind the hero. It is
+ * the same authentic image (never regenerated), just scaled, rotated and
+ * softened so the composition has real studio depth.
+ */
+function depthLayer(url: string | null | undefined): string {
+  if (!url) return "";
+
+  const emerald = BRAND.visual.primaryColors.emerald;
+  const silver = BRAND.visual.background.mesh.color;
+
+  return `
+    <g id="multi-bottle-depth">
+      <rect x="116" y="420" width="848" height="936" rx="52" fill="none" stroke="${emerald}" stroke-opacity="0.14" stroke-width="2" />
+      <rect x="150" y="454" width="780" height="868" rx="42" fill="none" stroke="${silver}" stroke-opacity="0.6" stroke-width="1.5" />
+      <g opacity="0.24" filter="url(#depth-blur)" transform="rotate(11 726 762)">
+        <image href="${escapeXml(url)}" x="548" y="496" width="424" height="528" preserveAspectRatio="xMidYMid meet" />
+      </g>
+      <path d="M 96 1210 L 96 1352 L 238 1352" fill="none" stroke="${emerald}" stroke-opacity="0.22" stroke-width="3" />
+    </g>
+  `;
+}
+
+function resolveAccent(theme?: string | null): string {
+  const palette = BRAND.visual.primaryColors;
+  switch ((theme ?? "").toLowerCase()) {
+    case "amber":
+      return palette.amber;
+    case "rose":
+      return "#E11D48";
+    case "silver":
+      return "#64748B";
+    case "emerald":
+    default:
+      return palette.emerald;
+  }
+}
+
+/** 48h cultural greeting ribbon (`كل عام وأنتم بخير بمناسبة ...`). */
+function occasionRibbon(
+  width: number,
+  occasion: OccasionGreetingInput,
+): string {
+  const ribbonWidth = Math.min(920, width - 80);
+  const x = (width - ribbonWidth) / 2;
+  const y = 140;
+  const height = 58;
+  const accent = resolveAccent(occasion.accentTheme);
+  const text = wrapText(occasion.greeting, 52, 1)[0] ?? occasion.greeting;
+  const fontSize = occasion.greeting.length > 46 ? 21 : 24;
+
+  return `
+    <g id="occasion-ribbon" transform="translate(${x}, ${y})">
+      <rect width="${ribbonWidth}" height="${height}" rx="${height / 2}" fill="${BRAND.commercial.occasionRibbon.backgroundColor}" fill-opacity="0.95" stroke="${accent}" stroke-width="2" />
+      <circle cx="34" cy="${height / 2}" r="9" fill="${accent}" />
+      <path d="M ${ribbonWidth - 46} ${height / 2 - 10} L ${ribbonWidth - 32} ${height / 2} L ${ribbonWidth - 46} ${height / 2 + 10} Z" fill="${accent}" fill-opacity="0.75" />
+      <text x="${ribbonWidth / 2}" y="38" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="${fontSize}" font-weight="800" fill="${BRAND.commercial.occasionRibbon.textColor}" text-anchor="middle">${escapeXml(text)}</text>
+    </g>
+  `;
+}
+
+function formatPriceValue(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2);
+}
+
+/**
+ * Elegant, fully server-validated promotion card: original price, discount
+ * percentage and final price. Only rendered when a real active promotion row
+ * exists; expired or hallucinated records never reach this function.
+ */
+function promoBadge(
+  width: number,
+  y: number,
+  promotion: ValidPromotion,
+): string {
+  const badgeWidth = Math.min(660, width - 96);
+  const x = (width - badgeWidth) / 2;
+  const height = 168;
+  const config = BRAND.commercial;
+  const currency = config.currencyLabel;
+  const slate = BRAND.visual.primaryColors.slate;
+
+  return `
+    <g id="promo-badge" transform="translate(${x}, ${y})">
+      <rect width="${badgeWidth}" height="${height}" rx="28" fill="${config.promoBadge.backgroundColor}" stroke="${config.promoBadge.accentColor}" stroke-width="2.5" />
+      <rect x="24" y="0" width="${badgeWidth - 48}" height="5" rx="2.5" fill="${config.promoBadge.accentColor}" />
+      <g transform="translate(30, 30)">
+        <rect width="184" height="54" rx="27" fill="${config.promoBadge.discountColor}" />
+        <text x="92" y="35" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="23" font-weight="900" fill="#FFFFFF" text-anchor="middle">خصم ${promotion.discountPercent}%</text>
+      </g>
+      <text x="${badgeWidth - 34}" y="44" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="17" font-weight="700" fill="${slate}" fill-opacity="0.65" text-anchor="end">السعر بعد الخصم</text>
+      <text x="${badgeWidth - 34}" y="104" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="54" font-weight="900" fill="${config.promoBadge.textColor}" text-anchor="end">${escapeXml(formatPriceValue(promotion.promoPrice))} ${escapeXml(currency)}</text>
+      <text x="30" y="116" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="22" font-weight="700" fill="${slate}" fill-opacity="0.8" text-anchor="start" text-decoration="line-through">${escapeXml(formatPriceValue(promotion.originalPrice))} ${escapeXml(currency)}</text>
+      <text x="30" y="145" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="15" font-weight="600" fill="${slate}" fill-opacity="0.55" text-anchor="start">السعر قبل الخصم</text>
+    </g>
+  `;
+}
+
 export class OverlaySystem {
   /**
    * Clean white + subtle silver-mesh WhatsApp Status composer.
-   * No pricing, discounts, or generative packaging.
+   *
+   * Pricing is drawn only from an active, validated promotion row; the
+   * cultural greeting ribbon is drawn only when the caller supplies an
+   * in-window occasion. Packaging is always the authentic packshot.
    */
   public static generateOverlaySvg(opts: OverlayOptions = {}): string {
     const width = opts.width ?? BRAND.visual.format.width;
@@ -167,6 +306,9 @@ export class OverlaySystem {
     const cta = (opts.ctaText ?? "").trim();
     const availability = (opts.availabilityText ?? "").trim();
     const footerText = opts.footerText ?? DEFAULT_FOOTER_TEXT;
+    const promotion = opts.promotion ?? null;
+    const occasion = opts.occasion ?? null;
+    const productUrl = opts.productImageUrl?.trim() || null;
 
     const background =
       opts.background ??
@@ -174,6 +316,8 @@ export class OverlaySystem {
 
     const slate = BRAND.visual.primaryColors.slate;
     const darkEmerald = BRAND.visual.primaryColors.darkEmerald;
+    const emerald = BRAND.visual.primaryColors.emerald;
+    const silver = BRAND.visual.background.mesh.color;
     const white = BRAND.visual.secondaryColors.white;
 
     const headlineLines = wrapText(headline, variant === "hero-clean" ? 24 : 22, 2);
@@ -189,6 +333,24 @@ export class OverlaySystem {
         <filter id="packshot-shadow" x="-35%" y="-35%" width="170%" height="180%">
           <feDropShadow dx="0" dy="26" stdDeviation="22" flood-color="#0F172A" flood-opacity="0.20" />
         </filter>
+        <filter id="contact-shadow-blur" x="-40%" y="-160%" width="180%" height="420%">
+          <feGaussianBlur stdDeviation="16" />
+        </filter>
+        <filter id="depth-blur" x="-25%" y="-25%" width="150%" height="150%">
+          <feGaussianBlur stdDeviation="7" />
+        </filter>
+        <radialGradient id="contact-shadow-fill" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#0F172A" stop-opacity="0.34" />
+          <stop offset="68%" stop-color="#0F172A" stop-opacity="0.13" />
+          <stop offset="100%" stop-color="#0F172A" stop-opacity="0" />
+        </radialGradient>
+        <radialGradient id="studio-rim-gradient" cx="50%" cy="48%" r="56%">
+          <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0" />
+          <stop offset="58%" stop-color="${emerald}" stop-opacity="0.04" />
+          <stop offset="82%" stop-color="${emerald}" stop-opacity="0.13" />
+          <stop offset="94%" stop-color="${silver}" stop-opacity="0.10" />
+          <stop offset="100%" stop-color="${silver}" stop-opacity="0" />
+        </radialGradient>
       </defs>
     `;
 
@@ -201,31 +363,66 @@ export class OverlaySystem {
 
     const hero =
       variant === "hero-clean"
-        ? packshot(opts.productImageUrl, {
+        ? `
+          ${contactShadow(540, 1312, 292, 42)}
+          ${packshot(productUrl, {
             x: 150,
             y: 400,
             width: 780,
             height: 900,
-          })
-        : packshot(
-            opts.productImageUrl,
+          })}
+        `
+        : `
+          ${depthLayer(productUrl)}
+          ${contactShadow(540, 1338, 312, 46)}
+          ${packshot(
+            productUrl,
             { x: 180, y: 470, width: 720, height: 850 },
             "rotate(-7 540 895)",
-          );
+          )}
+        `;
+
+    const promoHero = Boolean(promotion);
+    const promoY = variant === "hero-clean" ? 1360 : 1362;
+    const availabilityY = promoHero
+      ? variant === "hero-clean"
+        ? 1548
+        : 1550
+      : variant === "hero-clean"
+        ? 1344
+        : 1360;
+    const benefitY = promoHero
+      ? variant === "hero-clean"
+        ? 1620
+        : 1622
+      : variant === "hero-clean"
+        ? availability
+          ? 1482
+          : 1436
+        : 1490;
+    const ctaY = promoHero
+      ? variant === "hero-clean"
+        ? 1692
+        : 1694
+      : variant === "hero-clean"
+        ? 1568
+        : 1584;
 
     const copy =
       variant === "hero-clean"
         ? `
           ${textBlock(headlineLines, { x: width / 2, y: 246, size: 56, fill: slate, weight: 900 })}
-          ${availability ? availabilityPill((width - 330) / 2, 1344, availability) : ""}
-          ${textBlock(benefitLines, { x: width / 2, y: availability ? 1482 : 1436, size: 34, fill: darkEmerald, weight: 700 })}
-          ${cta ? ctaPill((width - 640) / 2, 1568, cta) : ""}
+          ${availability ? availabilityPill((width - 330) / 2, availabilityY, availability) : ""}
+          ${textBlock(benefitLines, { x: width / 2, y: benefitY, size: 34, fill: darkEmerald, weight: 700 })}
+          ${promotion ? promoBadge(width, promoY, promotion) : ""}
+          ${cta ? ctaPill((width - 640) / 2, ctaY, cta) : ""}
         `
         : `
           ${textBlock(headlineLines, { x: width - 72, y: 246, size: 54, fill: slate, weight: 900, anchor: "end" })}
-          ${availability ? availabilityPill(width - 402, 1360, availability) : ""}
-          ${textBlock(benefitLines, { x: width - 72, y: 1490, size: 32, fill: darkEmerald, weight: 700, anchor: "end" })}
-          ${cta ? ctaPill((width - 640) / 2, 1584, cta) : ""}
+          ${availability ? availabilityPill(width - 402, availabilityY, availability) : ""}
+          ${textBlock(benefitLines, { x: width - 72, y: benefitY, size: 32, fill: darkEmerald, weight: 700, anchor: "end" })}
+          ${promotion ? promoBadge(width, promoY, promotion) : ""}
+          ${cta ? ctaPill((width - 640) / 2, ctaY, cta) : ""}
         `;
 
     return `
@@ -233,8 +430,10 @@ export class OverlaySystem {
         ${defs}
         ${backgroundMarkup}
         ${variant === "studio-angle" ? studioAccents() : ""}
+        ${studioLighting(variant)}
         ${logo}
         ${hero}
+        ${occasion ? occasionRibbon(width, occasion) : ""}
         ${copy}
         ${opts.showFooterBar === false ? "" : footerBar(width, height, footerText)}
       </svg>

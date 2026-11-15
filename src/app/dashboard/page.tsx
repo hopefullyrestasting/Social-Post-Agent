@@ -3,7 +3,14 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { AL_RAHMA_BRAND_CONFIG } from "@/lib/al-rahma/brand-core";
+import {
+  buildOccasionGreeting,
+  type OccasionGreetingInput,
+  type PromotionRecord,
+} from "@/lib/al-rahma";
+import { persistAdminKey, readAdminKey } from "@/lib/al-rahma/admin-key";
 import AdPreview from "@/components/al-rahma/ad-preview";
+import BulkImportModal from "@/components/al-rahma/bulk-import-modal";
 import VerifyModal from "@/components/al-rahma/verify-modal";
 
 type Brand = {
@@ -100,6 +107,33 @@ type ResearchClaim = {
   notes: string | null;
 };
 
+type PromotionApiRow = {
+  id: string;
+  product_id: string;
+  product_name_arabic?: string;
+  original_price: number;
+  discount_percent: number;
+  promo_price: number;
+  starts_at: string;
+  ends_at: string;
+  is_active: number;
+  valid?: boolean;
+  status?: string;
+};
+
+type OccasionApiRow = {
+  id: string;
+  country_code: string;
+  occasion_name_arabic: string;
+  greeting_text_arabic: string;
+  occasion_date: string;
+  next_occurrence: string | null;
+  lead_days: number;
+  accent_theme: string | null;
+  is_active: number;
+  days_until: number | null;
+};
+
 type ApiResult<T> =
   | ({ success: true } & T)
   | { success: false; error?: string; detail?: string };
@@ -145,6 +179,45 @@ function stockLabel(status: string | null) {
   if (status === "in_stock") return "متوفر";
   if (status === "out_of_stock") return "غير متوفر";
   return status;
+}
+
+function toPromotionRecord(
+  row: PromotionApiRow | null | undefined,
+): PromotionRecord | null {
+  if (!row) return null;
+  return {
+    id: row.id,
+    product_id: row.product_id,
+    original_price: row.original_price,
+    discount_percent: row.discount_percent,
+    promo_price: row.promo_price,
+    starts_at: row.starts_at,
+    ends_at: row.ends_at,
+    is_active: row.is_active,
+  };
+}
+
+function toOccasionInput(
+  row: OccasionApiRow | null | undefined,
+): OccasionGreetingInput | null {
+  if (!row) return null;
+  return {
+    id: row.id,
+    occasionName: row.occasion_name_arabic,
+    greeting: buildOccasionGreeting({
+      id: row.id,
+      country_code: row.country_code,
+      occasion_name_arabic: row.occasion_name_arabic,
+      greeting_text_arabic: row.greeting_text_arabic,
+      occasion_date: row.occasion_date,
+      lead_days: row.lead_days,
+      accent_theme: row.accent_theme,
+      is_active: row.is_active,
+    }),
+    occasionDate: row.next_occurrence ?? row.occasion_date,
+    daysUntil: row.days_until ?? undefined,
+    accentTheme: row.accent_theme,
+  };
 }
 
 async function requestApi<T>(
@@ -194,6 +267,12 @@ export default function DashboardPage() {
   const [previewResearch, setPreviewResearch] = useState<Research | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState("");
+  const [previewPromotion, setPreviewPromotion] =
+    useState<PromotionRecord | null>(null);
+  const [previewOccasion, setPreviewOccasion] =
+    useState<OccasionGreetingInput | null>(null);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [adminKey, setAdminKey] = useState(() => readAdminKey());
   const [notice, setNotice] = useState("");
 
   useEffect(() => {
@@ -313,20 +392,54 @@ export default function DashboardPage() {
     if (previewProduct?.id === product.id) {
       setPreviewProduct(null);
       setPreviewResearch(null);
+      setPreviewPromotion(null);
+      setPreviewOccasion(null);
       setPreviewError("");
       return;
     }
 
     setPreviewProduct(product);
     setPreviewResearch(null);
+    setPreviewPromotion(null);
+    setPreviewOccasion(null);
     setPreviewError("");
     setPreviewLoading(true);
+    const signal = new AbortController().signal;
+    const productParam = encodeURIComponent(product.id);
+
     try {
-      const result = await requestApi<{ research: Research }>(
-        `/api/db/research?product_id=${encodeURIComponent(product.id)}`,
-        new AbortController().signal,
+      const [researchResult, promotionResult, calendarResult] =
+        await Promise.all([
+          requestApi<{ research: Research }>(
+            `/api/db/research?product_id=${productParam}`,
+            signal,
+          ),
+          requestApi<{ today: string; promos: PromotionApiRow[] }>(
+            `/api/db/promos?product_id=${productParam}`,
+            signal,
+          ).catch(() => null),
+          requestApi<{ today: string; occasions: OccasionApiRow[] }>(
+            "/api/db/calendar",
+            signal,
+          ).catch(() => null),
+        ]);
+
+      setPreviewResearch(researchResult.research);
+
+      const activePromotion = (promotionResult?.promos ?? []).find(
+        (row) =>
+          row.product_id === product.id &&
+          row.status !== "expired" &&
+          row.status !== "scheduled" &&
+          row.status !== "inactive" &&
+          row.valid !== false,
       );
-      setPreviewResearch(result.research);
+      setPreviewPromotion(toPromotionRecord(activePromotion));
+
+      const occasion = (calendarResult?.occasions ?? []).find(
+        (row) => row.next_occurrence !== null,
+      );
+      setPreviewOccasion(toOccasionInput(occasion));
     } catch (error) {
       setPreviewError(
         error instanceof Error ? error.message : "تعذر تجهيز معاينة الإعلان",
@@ -341,6 +454,8 @@ export default function DashboardPage() {
     setNotice(message);
     setPreviewProduct(null);
     setPreviewResearch(null);
+    setPreviewPromotion(null);
+    setPreviewOccasion(null);
     refresh();
   }
 
@@ -367,14 +482,37 @@ export default function DashboardPage() {
               {BRAND.activity}
             </p>
           </div>
-          <a
-            className="rounded-xl bg-emerald-500 px-4 py-3 font-bold text-white transition hover:bg-emerald-400"
-            href={BRAND.contact.whatsappUrl}
-            target="_blank"
-            rel="noreferrer"
-          >
-            واتساب {BRAND.contact.phone}
-          </a>
+          <div className="flex w-full flex-col gap-3 sm:w-auto sm:items-end">
+            <div className="w-full sm:w-96">
+              <label className="text-xs font-semibold text-slate-200">
+                مفتاح الإدارة (X-Admin-Key)
+                <input
+                  type="password"
+                  value={adminKey}
+                  onChange={(event) => {
+                    setAdminKey(event.target.value);
+                    persistAdminKey(event.target.value);
+                  }}
+                  placeholder="اتركه فارغاً في وضع المعاينة"
+                  autoComplete="off"
+                  dir="ltr"
+                  className="mt-1 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder:text-slate-400"
+                />
+              </label>
+              <p className="mt-1 text-xs text-slate-400">
+                يُحفظ في هذا المتصفح فقط ويُرسل مع طلبات الكتابة. عند ربط
+                ADMIN_API_KEY في Cloudflare تصبح الكتابة محمية.
+              </p>
+            </div>
+            <a
+              className="rounded-xl bg-emerald-500 px-4 py-3 font-bold text-white transition hover:bg-emerald-400"
+              href={BRAND.contact.whatsappUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              واتساب {BRAND.contact.phone}
+            </a>
+          </div>
         </div>
       </header>
 
@@ -386,13 +524,25 @@ export default function DashboardPage() {
               مؤشرات المنتجات والكتالوج تُقرأ مباشرة من قاعدة D1
             </p>
           </div>
-          <button
-            type="button"
-            onClick={refresh}
-            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold transition hover:bg-slate-50"
-          >
-            تحديث البيانات ↻
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setNotice("");
+                setBulkOpen(true);
+              }}
+              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-emerald-500"
+            >
+              استيراد جماعي (Bulk JSON)
+            </button>
+            <button
+              type="button"
+              onClick={refresh}
+              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold transition hover:bg-slate-50"
+            >
+              تحديث البيانات ↻
+            </button>
+          </div>
         </div>
 
         {error && (
@@ -740,6 +890,8 @@ export default function DashboardPage() {
                     <AdPreview
                       product={previewProduct}
                       research={previewResearch}
+                      promotion={previewPromotion}
+                      occasion={previewOccasion}
                     />
                   )}
                 </section>
@@ -973,6 +1125,15 @@ export default function DashboardPage() {
           product={verifyProduct}
           onClose={() => setVerifyProduct(null)}
           onSaved={handleVerified}
+        />
+      )}
+      {bulkOpen && (
+        <BulkImportModal
+          onClose={() => setBulkOpen(false)}
+          onSaved={(message) => {
+            setBulkOpen(false);
+            handleVerified(message);
+          }}
         />
       )}
     </main>

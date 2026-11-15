@@ -1,21 +1,21 @@
 import assert from "node:assert/strict";
+import { onRequest as adminMiddleware } from "../functions/api/_middleware";
+import { onRequestGet as getBrands } from "../functions/api/db/brands";
+import { onRequestGet as getProducts } from "../functions/api/db/products";
+import { onRequestGet as getResearch } from "../functions/api/db/research";
+import { onRequestPost as postBulkIngest } from "../functions/api/db/research/bulk-ingest";
+import { onRequestPost as postResearchIngest } from "../functions/api/db/research/ingest";
 import {
-  onRequestGet as getBrands,
-} from "../functions/api/db/brands";
+  onRequestGet as getCalendar,
+  onRequestPost as postCalendar,
+} from "../functions/api/db/calendar";
 import {
-  onRequestGet as getProducts,
-} from "../functions/api/db/products";
-import {
-  onRequestGet as getResearch,
-} from "../functions/api/db/research";
-import {
-  onRequestPost as postResearchIngest,
-} from "../functions/api/db/research/ingest";
-import {
-  onRequestGet as getStats,
-} from "../functions/api/db/stats";
+  onRequestGet as getPromos,
+  onRequestPost as postPromos,
+} from "../functions/api/db/promos";
+import { onRequestGet as getStats } from "../functions/api/db/stats";
 
-type BoundValue = string | number;
+type BoundValue = string | number | null;
 
 class MockStatement {
   values: BoundValue[] = [];
@@ -32,6 +32,8 @@ class MockStatement {
 
   async first<T>(): Promise<T | null> {
     this.database.calls.push({ sql: this.sql, values: this.values });
+
+    // counts
     if (this.sql.includes("COUNT(*)") && this.sql.includes("products")) {
       return { count: 177 } as T;
     }
@@ -47,8 +49,14 @@ class MockStatement {
     if (this.sql.includes("COUNT(*)") && this.sql.includes("creatives")) {
       return { count: 0 } as T;
     }
+
+    // research / ingest product lookups
     if (this.sql.includes("FROM products") && this.sql.includes("WHERE id = ?")) {
       if (this.values[0] !== "product-1") return null;
+      // product + category (bulk) or ingest result
+      if (this.sql.includes("category")) {
+        return { id: "product-1", category: "hair_care" } as T;
+      }
       if (this.sql.includes("verification_status")) {
         return {
           id: "product-1",
@@ -60,6 +68,7 @@ class MockStatement {
       }
       return { id: "product-1", name_arabic: "منتج العناية" } as T;
     }
+
     if (
       this.sql.includes("FROM product_information_sources") &&
       this.sql.includes("source_url = ?")
@@ -72,6 +81,7 @@ class MockStatement {
     ) {
       return null;
     }
+
     if (this.sql.includes("WHERE p.id = ?")) {
       return this.values[0] === "product-1"
         ? ({
@@ -89,11 +99,70 @@ class MockStatement {
           } as T)
         : null;
     }
+
+    // promos
+    if (
+      this.sql.includes("FROM product_promotions") &&
+      this.sql.includes("original_price = ?")
+    ) {
+      return null; // no duplicate existing promo
+    }
+    if (
+      this.sql.includes("FROM product_promotions pp") &&
+      this.sql.includes("WHERE pp.id = ?")
+    ) {
+      return {
+        id: "promo-1",
+        product_id: "product-1",
+        product_name_arabic: "منتج العناية",
+        original_price: 200,
+        discount_percent: 25,
+        promo_price: 150,
+        starts_at: "2026-11-01",
+        ends_at: "2026-11-30",
+        is_active: 1,
+        created_at: 1,
+      } as T;
+    }
+
+    // calendar
+    if (this.sql.includes("FROM cultural_calendar") && this.sql.includes("WHERE id = ?")) {
+      return this.values[0] === "cc-eg-ramadan"
+        ? ({
+            id: "cc-eg-ramadan",
+            country_code: "EG",
+            occasion_name_arabic: "شهر رمضان الكريم",
+            greeting_text_arabic: "كل عام وأنتم بخير بمناسبة شهر رمضان الكريم",
+            occasion_date: "2027-02-18",
+            lead_days: 2,
+            accent_theme: "emerald",
+            is_active: 1,
+          } as T)
+        : null;
+    }
+    if (
+      this.sql.includes("FROM cultural_calendar") &&
+      this.sql.includes("country_code = ?") &&
+      this.sql.includes("occasion_name_arabic = ?")
+    ) {
+      return {
+        id: "cc-eg-new",
+        country_code: this.values[0],
+        occasion_name_arabic: this.values[1],
+        greeting_text_arabic: this.values[2] ?? "تهنئة",
+        occasion_date: this.values[3],
+        lead_days: 2,
+        accent_theme: null,
+        is_active: 1,
+      } as unknown as T;
+    }
+
     return null;
   }
 
   async all<T>(): Promise<{ results: T[] }> {
     this.database.calls.push({ sql: this.sql, values: this.values });
+
     if (this.sql.includes("COUNT(p.id) AS product_count")) {
       return {
         results: [
@@ -189,7 +258,56 @@ class MockStatement {
     if (this.sql.includes("FROM warehouse_stock_checks")) {
       return { results: [] };
     }
+
+    // promos GET
+    if (this.sql.includes("FROM product_promotions pp")) {
+      return {
+        results: [
+          {
+            id: "promo-1",
+            product_id: "product-1",
+            product_name_arabic: "منتج العناية",
+            original_price: 200,
+            discount_percent: 25,
+            promo_price: 150,
+            starts_at: "2020-01-01",
+            ends_at: "2099-12-31",
+            is_active: 1,
+            created_at: 1,
+          } as T,
+        ],
+      };
+    }
+
+    // calendar GET
+    if (this.sql.includes("FROM cultural_calendar")) {
+      return {
+        results: [
+          {
+            id: "cc-eg-mothers-day",
+            country_code: "EG",
+            occasion_name_arabic: "عيد الأم",
+            greeting_text_arabic: "كل عام وأنتم بخير بمناسبة عيد الأم",
+            occasion_date: "2027-03-21",
+            lead_days: 2,
+            accent_theme: "rose",
+            is_active: 1,
+          } as T,
+        ],
+      };
+    }
+
+    // bulk product lookup
+    if (this.sql.includes("SELECT id, category FROM products WHERE id IN")) {
+      return { results: [{ id: "product-1", category: "hair_care" } as T] };
+    }
+
     return { results: [] };
+  }
+
+  async run(): Promise<{ success: boolean }> {
+    this.database.calls.push({ sql: this.sql, values: this.values });
+    return { success: true };
   }
 }
 
@@ -212,10 +330,11 @@ function context(
   database: MockDatabase,
   url: string,
   init?: RequestInit,
+  envExtra: Record<string, unknown> = {},
 ) {
   return {
     request: new Request(url, init),
-    env: { DB: database as unknown as D1Database },
+    env: { DB: database as unknown as D1Database, ...envExtra },
   } as unknown as Parameters<typeof getProducts>[0];
 }
 
@@ -224,6 +343,7 @@ async function json(response: Response) {
 }
 
 async function run() {
+  // --- Existing read endpoints ------------------------------------------------
   const database = new MockDatabase();
   const filteredResponse = await getProducts(
     context(
@@ -330,7 +450,6 @@ async function run() {
   assert.equal(missingProductResponse.status, 404);
 
   // --- POST /api/db/research/ingest -----------------------------------------
-
   const ingestPayload = {
     product_id: "product-1",
     source_name: "Official source",
@@ -369,21 +488,15 @@ async function run() {
     2,
     "Duplicate claim in the payload must be skipped.",
   );
-  assert.equal(
-    (ingest.claims as { skipped: number }).skipped,
-    1,
-  );
+  assert.equal((ingest.claims as { skipped: number }).skipped, 1);
   assert.equal(ingest.warehouseStockCheckRecorded, true);
 
   const ingestSql = ingestDatabase.calls.map((call) => call.sql);
   assert.ok(
-    ingestSql.some((sql) =>
-      sql.includes("INSERT INTO product_information_sources"),
-    ),
+    ingestSql.some((sql) => sql.includes("INSERT INTO product_information_sources")),
   );
   assert.equal(
-    ingestSql.filter((sql) => sql.includes("INSERT INTO product_research_claims"))
-      .length,
+    ingestSql.filter((sql) => sql.includes("INSERT INTO product_research_claims")).length,
     2,
   );
   assert.ok(
@@ -394,13 +507,9 @@ async function run() {
     ),
     "Previous primary assets must be demoted, not deleted.",
   );
+  assert.ok(ingestSql.some((sql) => sql.includes("INSERT INTO product_assets")));
   assert.ok(
-    ingestSql.some((sql) => sql.includes("INSERT INTO product_assets")),
-  );
-  assert.ok(
-    ingestSql.some((sql) =>
-      sql.includes("INSERT INTO warehouse_stock_checks"),
-    ),
+    ingestSql.some((sql) => sql.includes("INSERT INTO warehouse_stock_checks")),
   );
   const productUpdate = ingestDatabase.calls.find((call) =>
     call.sql.includes("UPDATE products"),
@@ -455,8 +564,188 @@ async function run() {
   );
   assert.equal(missingIngestProductResponse.status, 404);
 
+  // --- Admin auth middleware -------------------------------------------------
+  // GET passes through
+  const getCtx = {
+    request: new Request("https://example.test/api/db/products"),
+    env: { DB: new MockDatabase() },
+    next: async () => new Response(JSON.stringify({ success: true }), { status: 200 }),
+  } as any;
+  const getPass = await adminMiddleware(getCtx);
+  assert.equal(getPass.status, 200);
+  assert.equal(getPass.headers.get("X-Auth-Mode"), null);
+
+  // Unconfigured preview: write allowed + warning header
+  const unconfiguredCtx = {
+    request: new Request("https://example.test/api/db/research/ingest", { method: "POST" }),
+    env: { DB: new MockDatabase() },
+    next: async () => new Response(JSON.stringify({ success: true }), { status: 200 }),
+  } as any;
+  const unconfigured = await adminMiddleware(unconfiguredCtx);
+  assert.equal(unconfigured.status, 200);
+  assert.equal(unconfigured.headers.get("X-Auth-Mode"), "unconfigured-preview");
+
+  // Configured but wrong/missing key => 401
+  const badKeyCtx = {
+    request: new Request("https://example.test/api/db/research/ingest", {
+      method: "POST",
+      headers: { "X-Admin-Key": "wrong" },
+    }),
+    env: { DB: new MockDatabase(), ADMIN_API_KEY: "secret-key" },
+    next: async () => new Response(JSON.stringify({ success: true }), { status: 200 }),
+  } as any;
+  const denied = await adminMiddleware(badKeyCtx);
+  assert.equal(denied.status, 401);
+  const deniedBody = await json(denied);
+  assert.equal(deniedBody.success, false);
+  assert.equal(denied.headers.get("X-Auth-Mode"), "configured");
+
+  const missingKeyCtx = {
+    request: new Request("https://example.test/api/db/research/ingest", { method: "POST" }),
+    env: { DB: new MockDatabase(), ADMIN_API_KEY: "secret-key" },
+    next: async () => new Response(JSON.stringify({ success: true }), { status: 200 }),
+  } as any;
+  const deniedMissing = await adminMiddleware(missingKeyCtx);
+  assert.equal(deniedMissing.status, 401);
+
+  // Configured and correct key => passes through
+  const okKeyCtx = {
+    request: new Request("https://example.test/api/db/research/ingest", {
+      method: "POST",
+      headers: { "X-Admin-Key": "secret-key" },
+    }),
+    env: { DB: new MockDatabase(), ADMIN_API_KEY: "secret-key" },
+    next: async () => new Response(JSON.stringify({ success: true }), { status: 200 }),
+  } as any;
+  const allowed = await adminMiddleware(okKeyCtx);
+  assert.equal(allowed.status, 200);
+
+  // --- Promos ----------------------------------------------------------------
+  const promosDb = new MockDatabase();
+  const promosGet = await getPromos(
+    context(promosDb, "https://example.test/api/db/promos?product_id=product-1"),
+  );
+  const promosBody = await json(promosGet);
+  assert.equal(promosGet.status, 200);
+  assert.equal(promosBody.success, true);
+  assert.ok(Array.isArray(promosBody.promos));
+
+  const promoPostDb = new MockDatabase();
+  const promoPost = await postPromos(
+    context(
+      promoPostDb,
+      "https://example.test/api/db/promos",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          product_id: "product-1",
+          original_price: 200,
+          discount_percent: 25,
+          starts_at: "2026-11-01",
+          ends_at: "2026-11-30",
+        }),
+      },
+    ),
+  );
+  const promoBody = await json(promoPost);
+  assert.equal(promoPost.status, 200);
+  assert.equal(promoBody.success, true);
+  const promoSql = promoPostDb.calls.map((c) => c.sql);
+  assert.ok(
+    promoSql.some((sql) => sql.includes("UPDATE product_promotions SET is_active = 0")),
+    "Previous active promos must be deactivated, not deleted.",
+  );
+  assert.ok(
+    promoSql.some((sql) => sql.includes("INSERT INTO product_promotions")),
+  );
+
+  // promo validation: bad dates
+  const badPromo = await postPromos(
+    context(new MockDatabase(), "https://example.test/api/db/promos", {
+      method: "POST",
+      body: JSON.stringify({
+        product_id: "product-1",
+        original_price: 200,
+        discount_percent: 25,
+        starts_at: "2026-12-01",
+        ends_at: "2026-11-01",
+      }),
+    }),
+  );
+  assert.equal(badPromo.status, 400);
+
+  // --- Calendar --------------------------------------------------------------
+  const calendarGet = await getCalendar(
+    context(new MockDatabase(), "https://example.test/api/db/calendar"),
+  );
+  const calendarBody = await json(calendarGet);
+  assert.equal(calendarGet.status, 200);
+  assert.equal(calendarBody.success, true);
+  assert.ok(Array.isArray(calendarBody.occasions));
+
+  const toggleDb = new MockDatabase();
+  const toggleRes = await postCalendar(
+    context(toggleDb, "https://example.test/api/db/calendar", {
+      method: "POST",
+      body: JSON.stringify({ action: "toggle", id: "cc-eg-ramadan", is_active: false }),
+    }),
+  );
+  assert.equal(toggleRes.status, 200);
+  assert.ok(
+    toggleDb.calls.some((c) => c.sql.includes("UPDATE cultural_calendar SET is_active")),
+  );
+
+  const notFoundToggle = await postCalendar(
+    context(new MockDatabase(), "https://example.test/api/db/calendar", {
+      method: "POST",
+      body: JSON.stringify({ action: "toggle", id: "missing", is_active: false }),
+    }),
+  );
+  assert.equal(notFoundToggle.status, 404);
+
+  // --- Bulk ingest -----------------------------------------------------------
+  const bulkDb = new MockDatabase();
+  const bulkRes = await postBulkIngest(
+    context(bulkDb, "https://example.test/api/db/research/bulk-ingest", {
+      method: "POST",
+      body: JSON.stringify({
+        records: [
+          {
+            ...ingestPayload,
+            verified_claims: [{ claim_type: "benefit", claim_text: "Bulk benefit" }],
+          },
+        ],
+      }),
+    }),
+  );
+  const bulkBody = await json(bulkRes);
+  assert.equal(bulkRes.status, 200);
+  assert.equal(bulkBody.success, true);
+  assert.equal(bulkBody.total, 1);
+  assert.equal(bulkBody.failed, 0);
+
+  // reject empty / oversized
+  const emptyBulk = await postBulkIngest(
+    context(new MockDatabase(), "https://example.test/api/db/research/bulk-ingest", {
+      method: "POST",
+      body: JSON.stringify({ records: [] }),
+    }),
+  );
+  assert.equal(emptyBulk.status, 400);
+
+  // reject missing product in bulk
+  const missingBulk = await postBulkIngest(
+    context(new MockDatabase(), "https://example.test/api/db/research/bulk-ingest", {
+      method: "POST",
+      body: JSON.stringify({
+        records: [{ ...ingestPayload, product_id: "missing" }],
+      }),
+    }),
+  );
+  assert.equal(missingBulk.status, 404);
+
   console.log(
-    "D1 API tests passed: pagination, filters, input validation, stats, brands, product research, and verified research ingestion.",
+    "D1 API tests passed: pagination, filters, validation, stats, brands, research, ingest, admin auth 401/unconfigured-preview, promos, 48h calendar, and bulk ingest.",
   );
 }
 

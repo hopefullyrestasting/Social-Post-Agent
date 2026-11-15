@@ -3,7 +3,9 @@
 import { useMemo } from "react";
 import {
   ProductionEngine,
+  type OccasionGreetingInput,
   type ProductDetails,
+  type PromotionRecord,
   type WarehouseStockStatus,
 } from "@/lib/al-rahma";
 
@@ -26,6 +28,8 @@ export type AdPreviewProduct = {
 type Props = {
   product: AdPreviewProduct;
   research: AdPreviewResearch;
+  promotion?: PromotionRecord | null;
+  occasion?: OccasionGreetingInput | null;
 };
 
 const VARIANT_TITLES: Record<string, string> = {
@@ -45,7 +49,12 @@ function stockStatus(value: string | null): WarehouseStockStatus {
   return "unknown";
 }
 
-export default function AdPreview({ product, research }: Props) {
+export default function AdPreview({
+  product,
+  research,
+  promotion,
+  occasion,
+}: Props) {
   const results = useMemo(() => {
     const primary =
       research.referenceImages.find((image) => image.is_primary === 1) ??
@@ -67,8 +76,12 @@ export default function AdPreview({ product, research }: Props) {
       warehouseStockStatus: stockStatus(research.latestStockStatus),
     };
 
-    return ProductionEngine.executeVariants({ product: details });
-  }, [product, research]);
+    return ProductionEngine.executeVariants({
+      product: details,
+      promotion,
+      occasion,
+    });
+  }, [product, research, promotion, occasion]);
 
   return (
     <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -156,6 +169,25 @@ export default function AdPreview({ product, research }: Props) {
             </article>
           );
         })}
+      </div>
+
+      <div className="mt-3 space-y-1 text-xs text-slate-600">
+        {results[0]?.metadata.promotion ? (
+          <p>
+            <b>عرض سعري موثّق:</b> خصم{" "}
+            {results[0].metadata.promotion.discountPercent}% ·{" "}
+            {results[0].metadata.promotion.promoPrice} ج.م بدلاً من{" "}
+            {results[0].metadata.promotion.originalPrice} ج.م · حتى{" "}
+            {results[0].metadata.promotion.endsAt}
+          </p>
+        ) : (
+          <p>لا يوجد عرض سعري نشط لهذا المنتج؛ النسختان بدون أسعار.</p>
+        )}
+        {results[0]?.metadata.occasion && (
+          <p>
+            <b>تهنئة المناسبة:</b> {results[0].metadata.occasion.greeting}
+          </p>
+        )}
       </div>
     </div>
   );

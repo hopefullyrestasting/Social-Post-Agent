@@ -11,6 +11,14 @@ import {
   BackgroundProviderId,
   resolveBackground,
 } from "./background-provider";
+import {
+  evaluatePromotion,
+  normalizeOccasionInput,
+  OccasionGreetingInput,
+  PromotionRecord,
+  ValidPromotion,
+} from "./commercial";
+import { cairoToday, isIsoDate } from "./dates";
 import { OverlayOptions, OverlaySystem } from "./overlay-system";
 import { QualityGate, QualityGateReport } from "./quality-gate";
 
@@ -20,6 +28,12 @@ export interface ProductionRequest {
   backgroundProvider?: BackgroundProviderId;
   width?: number;
   height?: number;
+  /** Raw promotion row; validated and windowed inside the engine. */
+  promotion?: PromotionRecord | null;
+  /** In-window cultural occasion resolved by the calendar API. */
+  occasion?: OccasionGreetingInput | null;
+  /** Override "today" for deterministic previews and tests. */
+  today?: string;
 }
 
 export type ProductionVariantsRequest = Omit<ProductionRequest, "variant">;
@@ -52,6 +66,20 @@ export interface ProductionResult {
     sourceUrl: string | null;
     verifiedClaims: string[];
     warehouseStockStatus: string;
+    promotion: {
+      id: string;
+      discountPercent: number;
+      originalPrice: number;
+      promoPrice: number;
+      startsAt: string;
+      endsAt: string;
+    } | null;
+    occasion: {
+      id: string;
+      occasionName: string;
+      greeting: string;
+      occasionDate: string;
+    } | null;
   };
 }
 
@@ -107,9 +135,21 @@ export class ProductionEngine {
     const variantNumber: 1 | 2 = variant === "hero-clean" ? 1 : 2;
     const angle = resolveAngle(variant, product);
 
+    const today =
+      request.today && isIsoDate(request.today)
+        ? request.today
+        : cairoToday(new Date(), AL_RAHMA_BRAND_CONFIG.commercial.timezone);
+    const promotionEvaluation = evaluatePromotion(request.promotion, today);
+    const activePromotion: ValidPromotion | null =
+      promotionEvaluation.status === "active"
+        ? promotionEvaluation.promotion
+        : null;
+    const occasion = normalizeOccasionInput(request.occasion);
+
     const copy = ArabicCopywriter.generatePost(product, angle, {
       variant,
       ctaIndex: variantNumber - 1,
+      occasionGreeting: occasion?.greeting,
     });
 
     const productImageUrl = product.productImageUrl?.trim() || null;
@@ -130,13 +170,23 @@ export class ProductionEngine {
       availabilityText: availabilityText(product.warehouseStockStatus),
       background,
       backgroundProvider: request.backgroundProvider,
+      promotion: activePromotion,
+      occasion,
     };
 
-    const qualityReport = QualityGate.evaluate(copy, product, overlayOptions);
+    const qualityReport = QualityGate.evaluate(
+      copy,
+      product,
+      overlayOptions,
+      { promotion: promotionEvaluation, occasion },
+    );
 
     const blockers: string[] = [];
     if (!productImageUrl) {
       blockers.push("صورة المنتج الأصلية (packshot) مطلوبة لتركيب الإعلان.");
+    }
+    if (promotionEvaluation.status === "invalid") {
+      blockers.push(promotionEvaluation.reason);
     }
 
     const svgOverlay = OverlaySystem.generateOverlaySvg(overlayOptions);
@@ -178,6 +228,24 @@ export class ProductionEngine {
         sourceUrl: product.sourceUrl?.trim() || null,
         verifiedClaims,
         warehouseStockStatus: product.warehouseStockStatus ?? "unknown",
+        promotion: activePromotion
+          ? {
+              id: activePromotion.id,
+              discountPercent: activePromotion.discountPercent,
+              originalPrice: activePromotion.originalPrice,
+              promoPrice: activePromotion.promoPrice,
+              startsAt: activePromotion.startsAt,
+              endsAt: activePromotion.endsAt,
+            }
+          : null,
+        occasion: occasion
+          ? {
+              id: occasion.id,
+              occasionName: occasion.occasionName,
+              greeting: occasion.greeting,
+              occasionDate: occasion.occasionDate,
+            }
+          : null,
       },
     };
   }
