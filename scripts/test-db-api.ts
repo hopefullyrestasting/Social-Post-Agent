@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { onRequest as adminMiddleware } from "../functions/api/_middleware";
 import { onRequestGet as getBrands } from "../functions/api/db/brands";
+import { onRequestGet as getCampaigns } from "../functions/api/db/campaigns";
+import { onRequestPost as runCampaign } from "../functions/api/db/campaigns/run";
 import { onRequestGet as getProducts } from "../functions/api/db/products";
 import { onRequestGet as getResearch } from "../functions/api/db/research";
 import { onRequestPost as postBulkIngest } from "../functions/api/db/research/bulk-ingest";
@@ -340,6 +342,239 @@ function context(
 
 async function json(response: Response) {
   return (await response.json()) as Record<string, unknown>;
+}
+
+class CampaignStatement {
+  values: BoundValue[] = [];
+  constructor(
+    readonly sql: string,
+    private readonly database: CampaignDatabase,
+  ) {}
+
+  bind(...values: BoundValue[]) {
+    this.values = values;
+    return this;
+  }
+
+  async first<T>(): Promise<T | null> {
+    this.database.calls.push({ sql: this.sql, values: this.values });
+    if (this.sql.includes("FROM product_promotions") && this.sql.includes("product_id = ?")) {
+      return null;
+    }
+    return null;
+  }
+
+  async all<T>(): Promise<{ results: T[] }> {
+    this.database.calls.push({ sql: this.sql, values: this.values });
+
+    // campaign run eligible selection
+    if (
+      this.sql.includes("FROM products p") &&
+      this.sql.includes("JOIN product_assets pa") &&
+      this.sql.includes("p.verification_status = 'verified'")
+    ) {
+      return { results: this.database.eligibleProducts as T[] };
+    }
+
+    // loadActiveOccasion calendar rows
+    if (this.sql.includes("FROM cultural_calendar") && this.sql.includes("country_code = 'EG'")) {
+      return { results: [] };
+    }
+
+    // research sources / claims
+    if (this.sql.includes("FROM product_information_sources")) {
+      return { results: [] };
+    }
+    if (this.sql.includes("FROM product_research_claims")) {
+      return { results: [] };
+    }
+
+    // campaigns GET
+    if (this.sql.includes("FROM campaigns") && this.sql.includes("ORDER BY created_at DESC")) {
+      return {
+        results: [
+          {
+            id: "camp-1",
+            campaign_date: "2026-11-15",
+            status: "completed",
+            selected_product_ids: '["p1","p2"]',
+            total_products: 2,
+            total_images: 4,
+            started_at: 1,
+            completed_at: 2,
+            error_summary: null,
+            created_at: 2,
+          } as T,
+        ],
+      };
+    }
+    if (this.sql.includes("FROM creatives c") && this.sql.includes("WHERE c.campaign_id IN")) {
+      return {
+        results: [
+          {
+            id: "cr-1",
+            product_id: "p1",
+            campaign_id: "camp-1",
+            variant_number: 1,
+            image_url: "data:image/svg+xml;charset=utf-8,%3Csvg%3E%3C/svg%3E",
+            storage_key: null,
+            style_id: "al-rahma/clean-white-silver-mesh",
+            headline_arabic: "عنوان",
+            copy_arabic: "نص",
+            quality_status: "passed",
+            quality_notes: "{}",
+            created_at: 2,
+            product_name_arabic: "منتج 1",
+            brand_arabic: "فاتيكا",
+            brand_slug: "vatika",
+          } as T,
+        ],
+      };
+    }
+
+    return { results: [] };
+  }
+
+  async run(): Promise<{ success: boolean }> {
+    this.database.calls.push({ sql: this.sql, values: this.values });
+    return { success: true };
+  }
+}
+
+class CampaignDatabase {
+  calls: { sql: string; values: BoundValue[] }[] = [];
+  eligibleProducts: Record<string, unknown>[] = [];
+
+  prepare(sql: string) {
+    return new CampaignStatement(sql, this);
+  }
+
+  async batch(statements: CampaignStatement[]) {
+    for (const statement of statements) {
+      this.calls.push({ sql: statement.sql, values: statement.values });
+    }
+    return statements.map(() => ({ success: true }));
+  }
+}
+
+async function testCampaignEndpoints() {
+  // GET /api/db/campaigns lists campaigns with creatives
+  const listDb = new CampaignDatabase();
+  const listRes = await getCampaigns(
+    context(listDb as unknown as MockDatabase, "https://example.test/api/db/campaigns?limit=10"),
+  );
+  const listBody = await json(listRes);
+  assert.equal(listRes.status, 200);
+  assert.equal(listBody.success, true);
+  assert.equal((listBody.campaigns as unknown[]).length, 1);
+  const firstCampaign = (listBody.campaigns as { creatives: unknown[] }[])[0];
+  assert.equal(firstCampaign.creatives.length, 1);
+
+  // POST /api/db/campaigns/run: 3 eligible products => 6 creatives, cooldown ordering query
+  const runDb = new CampaignDatabase();
+  runDb.eligibleProducts = [
+    {
+      id: "p-never",
+      name_arabic: "منتج لم يُعلن",
+      name_english: null,
+      category: "hair_care",
+      verification_status: "verified",
+      warehouse_stock_status: "in_stock",
+      last_advertised_at: null,
+      image_url: "https://example.test/p-never.png",
+      image_source: "https://example.test/source-never",
+      brand_arabic: "فاتيكا",
+      brand_slug: "vatika",
+    },
+    {
+      id: "p-old",
+      name_arabic: "منتج قديم الإعلان",
+      name_english: null,
+      category: "hair_care",
+      verification_status: "verified",
+      warehouse_stock_status: "in_stock",
+      last_advertised_at: Date.now() - 10 * 86_400_000,
+      image_url: "https://example.test/p-old.png",
+      image_source: "https://example.test/source-old",
+      brand_arabic: "مينك",
+      brand_slug: "mink",
+    },
+    {
+      id: "p-recent",
+      name_arabic: "منتج حديث الإعلان",
+      name_english: null,
+      category: "hair_care",
+      verification_status: "verified",
+      warehouse_stock_status: "in_stock",
+      last_advertised_at: Date.now() - 2 * 86_400_000,
+      image_url: "https://example.test/p-recent.png",
+      image_source: "https://example.test/source-recent",
+      brand_arabic: "عساف",
+      brand_slug: "assaf",
+    },
+  ];
+
+  const runRes = await runCampaign(
+    context(
+      runDb as unknown as MockDatabase,
+      "https://example.test/api/db/campaigns/run",
+      { method: "POST", body: JSON.stringify({}) },
+    ),
+  );
+  const runBody = await json(runRes);
+  assert.equal(runRes.status, 200, JSON.stringify(runBody));
+  assert.equal(runBody.success, true);
+  const campaign = runBody.campaign as { total_products: number; total_images: number };
+  assert.equal(campaign.total_products, 3);
+  assert.equal(campaign.total_images, 6, "2 variants per product must be generated.");
+  assert.ok(
+    String(runBody.message).includes("3"),
+    "Response should report available count when fewer than 5.",
+  );
+
+  const creatives = runBody.creatives as { variant_number: number; product_id: string }[];
+  assert.equal(creatives.length, 6);
+  for (const pid of ["p-never", "p-old", "p-recent"]) {
+    const productCreatives = creatives.filter((c) => c.product_id === pid);
+    assert.equal(productCreatives.length, 2, `product ${pid} must have 2 variants`);
+    assert.deepEqual(
+      productCreatives.map((c) => c.variant_number).sort(),
+      [1, 2],
+    );
+  }
+
+  // Selection query must prioritize not-advertised-in-last-7-days (NULL or <= sevenDaysAgo)
+  const selectCall = runDb.calls.find(
+    (c) => c.sql.includes("FROM products p") && c.sql.includes("JOIN product_assets pa"),
+  );
+  assert.ok(selectCall, "eligible products query must run");
+  assert.ok(selectCall.sql.includes("p.last_advertised_at IS NULL"));
+  assert.ok(selectCall.sql.includes("WHEN p.last_advertised_at <= ? THEN 0"));
+
+  // Persistence: campaign insert, 6 creative inserts, 3 last_advertised_at updates
+  const campaignInserts = runDb.calls.filter((c) => c.sql.includes("INSERT INTO campaigns"));
+  assert.equal(campaignInserts.length, 1);
+  const creativeInserts = runDb.calls.filter((c) => c.sql.includes("INSERT INTO creatives"));
+  assert.equal(creativeInserts.length, 6);
+  const productUpdates = runDb.calls.filter((c) =>
+    c.sql.includes("UPDATE products SET last_advertised_at"),
+  );
+  assert.equal(productUpdates.length, 3);
+
+  // POST /api/db/campaigns/run with no eligible products -> empty campaign
+  const emptyDb = new CampaignDatabase();
+  emptyDb.eligibleProducts = [];
+  const emptyRes = await runCampaign(
+    context(
+      emptyDb as unknown as MockDatabase,
+      "https://example.test/api/db/campaigns/run",
+      { method: "POST", body: JSON.stringify({}) },
+    ),
+  );
+  const emptyBody = await json(emptyRes);
+  assert.equal(emptyRes.status, 200);
+  assert.equal((emptyBody.campaign as { status: string }).status, "empty");
+  assert.equal((emptyBody.creatives as unknown[]).length, 0);
 }
 
 async function run() {
@@ -744,8 +979,11 @@ async function run() {
   );
   assert.equal(missingBulk.status, 404);
 
+  // --- Campaigns -------------------------------------------------------------
+  await testCampaignEndpoints();
+
   console.log(
-    "D1 API tests passed: pagination, filters, validation, stats, brands, research, ingest, admin auth 401/unconfigured-preview, promos, 48h calendar, and bulk ingest.",
+    "D1 API tests passed: pagination, filters, validation, stats, brands, research, ingest, admin auth 401/unconfigured-preview, promos, 48h calendar, bulk ingest, and campaign batch run/persistence.",
   );
 }
 

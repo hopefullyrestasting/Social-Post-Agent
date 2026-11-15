@@ -11,6 +11,7 @@ import {
 import { persistAdminKey, readAdminKey } from "@/lib/al-rahma/admin-key";
 import AdPreview from "@/components/al-rahma/ad-preview";
 import BulkImportModal from "@/components/al-rahma/bulk-import-modal";
+import CampaignGallery from "@/components/al-rahma/campaign-gallery";
 import VerifyModal from "@/components/al-rahma/verify-modal";
 
 type Brand = {
@@ -579,6 +580,8 @@ export default function DashboardPage() {
             </div>
           ))}
         </section>
+
+        <CampaignGallery />
 
         <section className="rounded-2xl border border-slate-200 bg-white p-5">
           <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
