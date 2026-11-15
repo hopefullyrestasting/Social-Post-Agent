@@ -8,7 +8,7 @@ import {
   type OccasionGreetingInput,
   type PromotionRecord,
 } from "@/lib/al-rahma";
-import { persistAdminKey, readAdminKey } from "@/lib/al-rahma/admin-key";
+import { adminWriteHeaders, persistAdminKey, readAdminKey } from "@/lib/al-rahma/admin-key";
 import AdPreview from "@/components/al-rahma/ad-preview";
 import BulkImportModal from "@/components/al-rahma/bulk-import-modal";
 import CampaignGallery from "@/components/al-rahma/campaign-gallery";
@@ -275,6 +275,9 @@ export default function DashboardPage() {
   const [bulkOpen, setBulkOpen] = useState(false);
   const [adminKey, setAdminKey] = useState(() => readAdminKey());
   const [notice, setNotice] = useState("");
+  const [brandLogoUrl, setBrandLogoUrl] = useState<string | null>(null);
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [logoMessage, setLogoMessage] = useState("");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -300,6 +303,67 @@ export default function DashboardPage() {
 
     return () => controller.abort();
   }, [refreshKey]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/db/settings", {
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    })
+      .then((r) => r.json() as Promise<{ success?: boolean; settings?: { brand_logo_url?: string | null } }>)
+      .then((body) => {
+        if (body && body.success) {
+          setBrandLogoUrl(body.settings?.brand_logo_url ?? null);
+        }
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [refreshKey]);
+
+  async function handleBrandLogoUpload(file: File) {
+    setLogoMessage("");
+    if (!file) return;
+    if (file.type !== "image/png") {
+      setLogoMessage("يرجى رفع شعار بصيغة PNG فقط.");
+      return;
+    }
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("read failed"));
+      reader.readAsDataURL(file);
+    });
+    if (dataUrl.length > 500 * 1024) {
+      setLogoMessage("حجم الشعار كبير. الحد الأقصى 500KB بصيغة PNG.");
+      return;
+    }
+    setLogoUploading(true);
+    try {
+      const response = await fetch("/api/db/settings", {
+        method: "POST",
+        headers: adminWriteHeaders({
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        }),
+        body: JSON.stringify({ brand_logo_url: dataUrl }),
+      });
+      const body = (await response.json()) as { success?: boolean; error?: string; settings?: { brand_logo_url?: string | null } };
+      if (!response.ok || !body.success) {
+        throw new Error(
+          response.status === 401
+            ? "المفتاح الإداري مطلوب لحفظ الشعار."
+            : body.error || "تعذر حفظ شعار الشركة.",
+        );
+      }
+      setBrandLogoUrl(body.settings?.brand_logo_url ?? dataUrl);
+      setLogoMessage("تم حفظ شعار الشركة وسيظهر في الإعلانات الجديدة.");
+      setNotice("تم حفظ شعار الشركة بنجاح.");
+    } catch (err) {
+      setLogoMessage(err instanceof Error ? err.message : "تعذر حفظ شعار الشركة.");
+    } finally {
+      setLogoUploading(false);
+    }
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -504,6 +568,32 @@ export default function DashboardPage() {
                 يُحفظ في هذا المتصفح فقط ويُرسل مع طلبات الكتابة. عند ربط
                 ADMIN_API_KEY في Cloudflare تصبح الكتابة محمية.
               </p>
+            </div>
+            <div className="w-full sm:w-96 rounded-xl border border-white/15 bg-white/10 p-3">
+              <p className="text-xs font-bold text-slate-100">رفع شعار الشركة (Logo)</p>
+              <div className="mt-2 flex items-center gap-3">
+                {brandLogoUrl ? (
+                  <img src={brandLogoUrl} alt="شعار الشركة" className="h-12 w-12 rounded-md bg-white object-contain p-1" />
+                ) : (
+                  <div className="flex h-12 w-12 items-center justify-center rounded-md bg-white/20 text-[10px] text-slate-200">لا يوجد</div>
+                )}
+                <label className="inline-flex cursor-pointer items-center rounded-lg bg-white px-3 py-2 text-xs font-bold text-slate-900 hover:bg-slate-100">
+                  {logoUploading ? "جارٍ الرفع..." : "رفع شعار الشركة (Logo)"}
+                  <input
+                    type="file"
+                    accept="image/png"
+                    className="hidden"
+                    disabled={logoUploading}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) void handleBrandLogoUpload(file);
+                      e.currentTarget.value = "";
+                    }}
+                  />
+                </label>
+              </div>
+              {logoMessage && <p className="mt-2 text-xs text-emerald-200">{logoMessage}</p>}
+              <p className="mt-1 text-[11px] text-slate-300">PNG بحد أقصى 500KB — يُحفظ مرة واحدة ويظهر في كل إعلان.</p>
             </div>
             <a
               className="rounded-xl bg-emerald-500 px-4 py-3 font-bold text-white transition hover:bg-emerald-400"

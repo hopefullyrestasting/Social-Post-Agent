@@ -28,6 +28,8 @@ export interface ProductionRequest {
   template?: DesignerTemplate;
   /** Pre-generated AI studio scene image (data URI or URL). */
   sceneImageUrl?: string | null;
+  /** Uploaded brand logo (URL or data URI) rendered in the top brand badge. */
+  brandLogoUrl?: string | null;
   width?: number;
   height?: number;
   /** Raw promotion row; validated and windowed inside the engine. */
@@ -38,7 +40,10 @@ export interface ProductionRequest {
   today?: string;
 }
 
-export type ProductionVariantsRequest = Omit<ProductionRequest, "variant" | "template">;
+export type ProductionVariantsRequest = Omit<ProductionRequest, "variant" | "template" | "sceneImageUrl"> & {
+  /** Per-variant AI studio scene images (data URI or URL). */
+  sceneImageUrls?: Partial<Record<1 | 2, string | null>>;
+};
 
 export interface ProductionResult {
   success: boolean;
@@ -124,7 +129,14 @@ export class ProductionEngine {
       { variantNumber: 2, template: templateForVariant(2, seed) },
     ];
     return templates.map(({ variantNumber, template }) =>
-      ProductionEngine.build(request, variantNumber, template),
+      ProductionEngine.build(
+        {
+          ...request,
+          sceneImageUrl: request.sceneImageUrls?.[variantNumber] ?? null,
+        },
+        variantNumber,
+        template,
+      ),
     );
   }
 
@@ -168,6 +180,7 @@ export class ProductionEngine {
       height,
       template,
       sceneImageUrl: request.sceneImageUrl ?? null,
+      brandLogoUrl: request.brandLogoUrl ?? null,
       productImageUrl,
       headline: copy.headline,
       benefitLine: copy.benefitLine,

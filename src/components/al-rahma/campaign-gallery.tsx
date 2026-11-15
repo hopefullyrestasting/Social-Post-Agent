@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { adminWriteHeaders } from "@/lib/al-rahma/admin-key";
 import {
+  creativeFilename,
   downloadCreativePng,
   downloadCreativesZip,
+  getCreativePngDataUrl,
   getCreativeSvg,
   type ExportCreative,
 } from "@/lib/al-rahma/export";
@@ -75,13 +77,121 @@ function groupByProduct(creatives: CampaignCreative[]) {
   return Array.from(groups.entries());
 }
 
+function CreativeCard({
+  creative,
+  label,
+  onError,
+}: {
+  creative: CampaignCreative;
+  label: string;
+  onError: (message: string) => void;
+}) {
+  const svg = creativeSvgMarkup(creative);
+  const [pngUrl, setPngUrl] = useState<string | null>(null);
+  const [rendering, setRendering] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [renderError, setRenderError] = useState("");
+
+  useEffect(() => {
+    if (!svg) return;
+    let active = true;
+    void Promise.resolve().then(() => {
+      if (!active) return;
+      setRendering(true);
+      setRenderError("");
+      setPngUrl(null);
+    });
+    getCreativePngDataUrl(creative)
+      .then((url: string | null) => {
+        if (!active) return;
+        setPngUrl(url);
+        if (!url) setRenderError("تعذر تجهيز المعاينة كصورة PNG.");
+      })
+      .catch(() => {
+        if (!active) return;
+        setRenderError("تعذر تجهيز المعاينة كصورة PNG.");
+      })
+      .finally(() => {
+        if (active) setRendering(false);
+      });
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [creative.id, svg]);
+
+  async function handleDownload() {
+    if (!svg) return;
+    setDownloading(true);
+    try {
+      await downloadCreativePng(creative);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "تعذر تنزيل الصورة.");
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  const passed = creative.quality_status === "passed" || creative.success;
+
+  return (
+    <article className="rounded-xl border border-slate-200 bg-white p-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-extrabold">{label}</p>
+        <span
+          className={`rounded-full px-2 py-1 text-xs font-bold ${
+            passed ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-800"
+          }`}
+        >
+          {passed ? "جاهز للنشر" : "يحتاج مراجعة"}
+        </span>
+      </div>
+
+      {pngUrl ? (
+        <img
+          src={pngUrl}
+          alt={`${creative.headline_arabic || creative.product_name_arabic || "إعلان"} — ${label}`}
+          width={1080}
+          height={1920}
+          loading="lazy"
+          className="block h-auto w-full overflow-hidden rounded-lg border border-slate-200 bg-white"
+        />
+      ) : svg ? (
+        <div className="flex aspect-[9/16] w-full items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50 text-sm text-slate-600">
+          {rendering ? "جارٍ تجهيز الصورة كاملة (قص الخلفية وتركيب الملصق)..." : renderError || "المعاينة غير متاحة."}
+        </div>
+      ) : (
+        <p className="text-sm text-slate-500">معاينة غير متاحة.</p>
+      )}
+
+      {creative.headline_arabic && (
+        <p className="mt-2 text-xs text-slate-600">{creative.headline_arabic}</p>
+      )}
+
+      <div className="mt-3">
+        <button
+          type="button"
+          onClick={() => void handleDownload()}
+          disabled={downloading || !svg}
+          className="w-full rounded-lg bg-emerald-600 px-4 py-3 text-sm font-extrabold text-white shadow-sm transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {downloading ? "جارٍ تجهيز التحميل..." : "تحميل الصورة كاملة (PNG)"}
+        </button>
+        <p className="mt-1 text-center text-[11px] text-slate-500">
+          1080×1920 — {creativeFilename(creative)}
+        </p>
+      </div>
+    </article>
+  );
+}
+
 export default function CampaignGallery() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [downloading, setDownloading] = useState<string>("");
+  const [downloadingZip, setDownloadingZip] = useState<string>("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -170,22 +280,9 @@ export default function CampaignGallery() {
     }
   }
 
-  async function handleDownloadPng(creative: CampaignCreative) {
-    const key = creative.id;
-    setDownloading(key);
-    setError("");
-    try {
-      await downloadCreativePng(creative);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "تعذر تنزيل PNG.");
-    } finally {
-      setDownloading("");
-    }
-  }
-
   async function handleDownloadZip(campaign: Campaign) {
     const key = `zip-${campaign.id}`;
-    setDownloading(key);
+    setDownloadingZip(key);
     setError("");
     try {
       await downloadCreativesZip(
@@ -195,7 +292,7 @@ export default function CampaignGallery() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "تعذر تنزيل ملف ZIP.");
     } finally {
-      setDownloading("");
+      setDownloadingZip("");
     }
   }
 
@@ -212,7 +309,7 @@ export default function CampaignGallery() {
           <h3 className="text-lg font-extrabold">معرض الحملات وتوليد دفعة اليوم</h3>
           <p className="mt-1 text-sm text-slate-500">
             توليد يدوي لدفعة يومية: حتى 5 منتجات موثّقة × نسختين (10 إعلانات 1080×1920)
-            جاهزة للحالة وواتساب. لا يوجد تشغيل تلقائي (Cron).
+            بخلفيات استوديو AI وتركيب قصّ العبوة والهوية. لا يوجد تشغيل تلقائي (Cron).
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -276,13 +373,13 @@ export default function CampaignGallery() {
                   type="button"
                   onClick={() => void handleDownloadZip(latest)}
                   disabled={
-                    downloading === `zip-${latest.id}` || latest.creatives.length === 0
+                    downloadingZip === `zip-${latest.id}` || latest.creatives.length === 0
                   }
-                  className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white transition hover:bg-slate-800 disabled:opacity-50"
+                  className="rounded-lg bg-slate-900 px-5 py-3 text-sm font-extrabold text-white transition hover:bg-slate-800 disabled:opacity-50"
                 >
-                  {downloading === `zip-${latest.id}`
+                  {downloadingZip === `zip-${latest.id}`
                     ? "جارٍ تجهيز ZIP..."
-                    : `تنزيل الكل كملف ZIP (${latest.creatives.length})`}
+                    : `تحميل الكل (ZIP) — ${latest.creatives.length} إعلان`}
                 </button>
               </div>
 
@@ -308,7 +405,6 @@ export default function CampaignGallery() {
                       </div>
                       <div className="grid gap-4 lg:grid-cols-2">
                         {group.items.map((creative) => {
-                          const svg = creativeSvgMarkup(creative);
                           const templateKey = String(
                             creative.variant ??
                               creative.template ??
@@ -320,50 +416,12 @@ export default function CampaignGallery() {
                             VARIANT_LABELS[String(creative.variant_number ?? "")] ||
                             `نسخة ${creative.variant_number ?? "?"}`;
                           return (
-                            <article
+                            <CreativeCard
                               key={creative.id}
-                              className="rounded-xl border border-slate-200 p-3"
-                            >
-                              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                                <p className="text-sm font-extrabold">{label}</p>
-                                <span
-                                  className={`rounded-full px-2 py-1 text-xs font-bold ${
-                                    creative.quality_status === "passed" || creative.success
-                                      ? "bg-emerald-50 text-emerald-800"
-                                      : "bg-amber-50 text-amber-800"
-                                  }`}
-                                >
-                                  {creative.quality_status === "passed" || creative.success
-                                    ? "جاهز للنشر"
-                                    : "يحتاج مراجعة"}
-                                </span>
-                              </div>
-                              {svg ? (
-                                <div
-                                  className="overflow-hidden rounded-lg border border-slate-200 bg-white [&>svg]:block [&>svg]:h-auto [&>svg]:w-full"
-                                  dangerouslySetInnerHTML={{ __html: svg }}
-                                />
-                              ) : (
-                                <p className="text-sm text-slate-500">معاينة غير متاحة.</p>
-                              )}
-                              <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
-                                <button
-                                  type="button"
-                                  onClick={() => void handleDownloadPng(creative)}
-                                  disabled={downloading === creative.id || !svg}
-                                  className="font-bold text-emerald-700 underline disabled:opacity-50"
-                                >
-                                  {downloading === creative.id
-                                    ? "جارٍ التحويل..."
-                                    : "تنزيل PNG (1080×1920)"}
-                                </button>
-                                {creative.headline_arabic && (
-                                  <span className="text-slate-600">
-                                    {creative.headline_arabic}
-                                  </span>
-                                )}
-                              </div>
-                            </article>
+                              creative={creative}
+                              label={label}
+                              onError={setError}
+                            />
                           );
                         })}
                       </div>
@@ -394,12 +452,12 @@ export default function CampaignGallery() {
                       type="button"
                       onClick={() => void handleDownloadZip(campaign)}
                       disabled={
-                        downloading === `zip-${campaign.id}` ||
+                        downloadingZip === `zip-${campaign.id}` ||
                         campaign.creatives.length === 0
                       }
                       className="font-bold text-emerald-700 underline disabled:opacity-50"
                     >
-                      {downloading === `zip-${campaign.id}` ? "..." : "تنزيل ZIP"}
+                      {downloadingZip === `zip-${campaign.id}` ? "..." : "تحميل الكل (ZIP)"}
                     </button>
                   </li>
                 ))}
