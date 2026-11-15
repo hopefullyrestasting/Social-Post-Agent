@@ -1,4 +1,5 @@
 import { ArabicCopywriter, ProductDetails, GeneratedArabicCopy, PostAngle } from "./arabic-copywriter";
+import { AL_RAHMA_BRAND_CONFIG } from "./brand-core";
 import { OverlaySystem, OverlayOptions } from "./overlay-system";
 import { QualityGate, QualityGateReport } from "./quality-gate";
 
@@ -28,14 +29,14 @@ export interface ProductionResult {
 
 export class ProductionEngine {
   /**
-   * تشغيل خط الإنتاج الكامل لبوست "مخزن الرحمة" (Pure Client-Side SVG Pipeline)
+   * تشغيل خط الإنتاج الكامل للبوست (Pure Client-Side SVG Pipeline)
    */
   public static execute(request: ProductionRequest): ProductionResult {
     const {
       product,
       angle = "flash_sale",
-      width = 1080,
-      height = 1080,
+      width = AL_RAHMA_BRAND_CONFIG.visual.format.width,
+      height = AL_RAHMA_BRAND_CONFIG.visual.format.height,
       customPillText,
     } = request;
     const salePrice = product.salePrice ?? 0;

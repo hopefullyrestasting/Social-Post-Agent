@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
+import { AL_RAHMA_BRAND_CONFIG } from "@/lib/al-rahma/brand-core";
 
 type Brand = {
   id: string;
@@ -102,8 +103,7 @@ type ApiResult<T> =
   | { success: false; error?: string; detail?: string };
 
 const PAGE_SIZE = 50;
-const PHONE = "01000017548";
-const WHATSAPP_URL = "https://wa.me/20100017548";
+const BRAND = AL_RAHMA_BRAND_CONFIG;
 
 const verificationLabels: Record<string, string> = {
   verified: "موثّق",
@@ -316,20 +316,21 @@ export default function DashboardPage() {
       <header className="bg-[#071d3b] text-white">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-5 py-5">
           <div>
-            <p className="text-sm text-cyan-200">نظام إدارة منتجات مخزن الرحمة</p>
-            <h1 className="mt-1 text-2xl font-black">مخزن الرحمة</h1>
+            <p className="text-sm text-cyan-200">
+              نظام إدارة منتجات {BRAND.brandName}
+            </p>
+            <h1 className="mt-1 text-2xl font-black">{BRAND.brandName}</h1>
             <p className="mt-1 max-w-3xl text-sm text-slate-300">
-              مستحضرات التجميل والعناية بالشعر والبشرة والعناية الشخصية والعطور
-              والمستلزمات الطبية
+              {BRAND.activity}
             </p>
           </div>
           <a
             className="rounded-xl bg-emerald-500 px-4 py-3 font-bold text-white transition hover:bg-emerald-400"
-            href={WHATSAPP_URL}
+            href={BRAND.contact.whatsappUrl}
             target="_blank"
             rel="noreferrer"
           >
-            واتساب {PHONE}
+            واتساب {BRAND.contact.phone}
           </a>
         </div>
       </header>
@@ -869,8 +870,7 @@ export default function DashboardPage() {
         </section>
 
         <p className="text-center text-xs text-slate-500">
-          مخزن الرحمة للأدوية والمستلزمات الطبية ومستحضرات التجميل · للطلب
-          والاستفسار: {PHONE}
+          {BRAND.legalName} · للطلب والاستفسار: {BRAND.contact.phone}
         </p>
       </div>
     </main>

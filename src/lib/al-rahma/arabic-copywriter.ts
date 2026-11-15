@@ -1,4 +1,4 @@
-import { AL_RAHMA_BRAND_CORE } from "./brand-core";
+import { AL_RAHMA_BRAND_CONFIG } from "./brand-core";
 
 export type PostAngle =
   | "flash_sale"
@@ -31,9 +31,13 @@ export interface GeneratedArabicCopy {
   fullPostText: string;
 }
 
+/**
+ * Templates may reference `{{brand}}` and `{{phone}}` only. The values are
+ * injected from `AL_RAHMA_BRAND_CONFIG` so no brand identity is hardcoded here.
+ */
 const HOOKS_BY_ANGLE: Record<PostAngle, string[]> = {
   flash_sale: [
-    "للاستفسار عن السعر والعروض المتاحة، تواصلوا مع مخزن الرحمة.",
+    "للاستفسار عن السعر والعروض المتاحة، تواصلوا مع {{brand}}.",
     "اكتشفوا تفاصيل المنتج واسألوا عن السعر الحالي.",
   ],
   product_features: [
@@ -45,8 +49,8 @@ const HOOKS_BY_ANGLE: Record<PostAngle, string[]> = {
     "تعرّفوا على معلومات المنتج قبل إضافته إلى روتين العناية.",
   ],
   combo_deal: [
-    "للاستفسار عن العروض المتاحة على منتجات مخزن الرحمة، تواصلوا معنا.",
-    "اسألوا مخزن الرحمة عن تفاصيل المنتجات والعروض الحالية.",
+    "للاستفسار عن العروض المتاحة على منتجات {{brand}}، تواصلوا معنا.",
+    "اسألوا {{brand}} عن تفاصيل المنتجات والعروض الحالية.",
   ],
   product_information: [
     "تعرفوا على معلومات المنتج ومصدرها قبل اتخاذ قرار الشراء.",
@@ -54,10 +58,21 @@ const HOOKS_BY_ANGLE: Record<PostAngle, string[]> = {
   ],
 };
 
-const CTA_OPTIONS = [
-  "للطلب والاستفسار تواصلوا معنا على 01000017548 أو عبر واتساب.",
-  "للاستفسار عن السعر والتوفر: 01000017548 | واتساب مخزن الرحمة.",
+const CTA_TEMPLATES = [
+  "للطلب والاستفسار تواصلوا معنا على {{phone}} أو عبر واتساب.",
+  "للاستفسار عن السعر والتوفر: {{phone}} | واتساب {{brand}}.",
 ];
+
+function renderTemplate(template: string): string {
+  const values: Record<string, string> = {
+    brand: AL_RAHMA_BRAND_CONFIG.brandName,
+    phone: AL_RAHMA_BRAND_CONFIG.contact.phone,
+  };
+
+  return template.replace(/\{\{(\w+)\}\}/g, (match, key: string) =>
+    key in values ? values[key] : match,
+  );
+}
 
 export class ArabicCopywriter {
   public static generatePost(
@@ -66,7 +81,7 @@ export class ArabicCopywriter {
   ): GeneratedArabicCopy {
     const currency = product.currency || "ج.م";
     const hooks = HOOKS_BY_ANGLE[angle];
-    const hook = hooks[Math.floor(Math.random() * hooks.length)];
+    const hook = renderTemplate(hooks[Math.floor(Math.random() * hooks.length)]);
     const salePrice = product.salePrice;
     const hasSalePrice =
       salePrice !== undefined && Number.isFinite(salePrice) && salePrice > 0;
@@ -85,7 +100,9 @@ export class ArabicCopywriter {
         : `السعر: ${salePrice} ${currency}`
       : "";
     const headline = product.badgeText || product.title;
-    const cta = CTA_OPTIONS[Math.floor(Math.random() * CTA_OPTIONS.length)];
+    const cta = renderTemplate(
+      CTA_TEMPLATES[Math.floor(Math.random() * CTA_TEMPLATES.length)],
+    );
     const facts = product.features
       .map((feature) => feature.trim())
       .filter(Boolean)
@@ -109,7 +126,7 @@ export class ArabicCopywriter {
         : "",
     ].filter(Boolean);
     const hashtags = Array.from(
-      new Set([...specificHashtags, ...AL_RAHMA_BRAND_CORE.defaultHashtags]),
+      new Set([...specificHashtags, ...AL_RAHMA_BRAND_CONFIG.hashtags]),
     );
     const fullPostText = `${headline}\n\n${body}\n\n${hashtags.join(" ")}`;
 

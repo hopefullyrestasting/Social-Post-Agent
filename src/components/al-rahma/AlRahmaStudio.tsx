@@ -1,4 +1,4 @@
-import { AL_RAHMA_BRAND_CORE } from "@/lib/al-rahma/brand-core";
+import { AL_RAHMA_BRAND_CONFIG } from "@/lib/al-rahma/brand-core";
 
 export function AlRahmaStudio() {
   return (
@@ -17,7 +17,7 @@ export function AlRahmaStudio() {
         استكمال التحقق والإعداد، يجب أن تعتمد الحملة على بيانات المنتج الموثّقة
         فقط.
       </p>
-      <p className="mt-4 font-bold">{AL_RAHMA_BRAND_CORE.brandName}</p>
+      <p className="mt-4 font-bold">{AL_RAHMA_BRAND_CONFIG.brandName}</p>
     </section>
   );
 }
