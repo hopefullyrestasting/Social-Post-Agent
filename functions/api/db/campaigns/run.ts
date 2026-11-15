@@ -8,6 +8,7 @@ import {
   type PromotionRecord,
 } from "../../../../src/lib/al-rahma";
 import { removePackshotBackgroundServer } from "../../ai/remove-bg";
+import { stageProductWithNanoBanana } from "../../ai/nano-banana-stage";
 
 /**
  * POST /api/db/campaigns/run (protected by admin middleware)
@@ -24,6 +25,7 @@ interface Env {
     run: (model: string, input: Record<string, unknown>) => Promise<unknown>;
   };
   REMOVE_BG_API_KEY?: string;
+  GEMINI_API_KEY?: string;
 }
 
 interface EligibleProductRow {
@@ -467,13 +469,28 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         loadResearch(env, product.id),
       ]);
 
-      // Server-side packshot cutout (keeps browser lightweight). Fallback to original URL on failure.
+      // Try Nano Banana photorealistic staging first when GEMINI_API_KEY is configured.
+      // Fallback: server-side BRIA cutout + bundled/FLUX studio scene pipeline.
       let productImageUrl = product.image_url;
-      try {
-        const cutout = await removePackshotBackgroundServer(env, product.image_url);
-        if (cutout) productImageUrl = cutout;
-      } catch (error) {
-        console.error("Server-side packshot cutout failed, using original image.", error);
+      let staged1: string | null = null;
+      let staged2: string | null = null;
+
+      if (env.GEMINI_API_KEY?.trim()) {
+        try {
+          staged1 = await stageProductWithNanoBanana(env, product.image_url, "silver-podium-botanical");
+          staged2 = staged1; // reuse successful staged composition for both variants
+        } catch (error) {
+          console.error("Nano Banana staging failed, falling back to cutout+scene pipeline.", error);
+        }
+      }
+
+      if (!staged1 && !staged2) {
+        try {
+          const cutout = await removePackshotBackgroundServer(env, product.image_url);
+          if (cutout) productImageUrl = cutout;
+        } catch (error) {
+          console.error("Server-side packshot cutout failed, using original image.", error);
+        }
       }
 
       const details: ProductDetails = {
@@ -483,7 +500,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         verificationStatus: product.verification_status,
         verifiedBenefits: research.verifiedBenefits,
         verifiedUsage: research.verifiedUsage,
-        productImageUrl,
+        // Keep authentic source URL for provenance/quality checks; staged image avoids duplicate bottle rendering.
+        productImageUrl: staged1 || staged2 ? product.image_url : productImageUrl,
         warehouseStockStatus: (product.warehouse_stock_status ?? "unknown") as
           | "in_stock"
           | "out_of_stock"
@@ -503,6 +521,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         today,
         brandLogoUrl,
         sceneImageUrls: { 1: scene1, 2: scene2 },
+        stagedImageUrls: { 1: staged1, 2: staged2 },
       });
 
       for (const variant of variants) {
