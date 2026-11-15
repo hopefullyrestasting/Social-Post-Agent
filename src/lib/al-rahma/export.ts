@@ -104,7 +104,7 @@ function trimAlphaBoundingBox(canvas: HTMLCanvasElement): HTMLCanvasElement {
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const a = data[(y * w + x) * 4 + 3];
-      if (a > 20) {
+      if (a > 15) {
         if (x < minX) minX = x;
         if (y < minY) minY = y;
         if (x > maxX) maxX = x;
@@ -130,127 +130,14 @@ function trimAlphaBoundingBox(canvas: HTMLCanvasElement): HTMLCanvasElement {
   return trimmed;
 }
 
-async function naiveCutoutFallback(dataUrl: string): Promise<string> {
-  try {
-    const img = await loadImage(dataUrl);
-    const w = img.naturalWidth || img.width;
-    const h = img.naturalHeight || img.height;
-    if (!w || !h) return dataUrl;
-
-    const canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    if (!ctx) return dataUrl;
-    ctx.drawImage(img, 0, 0);
-    const imageData = ctx.getImageData(0, 0, w, h);
-    const { data } = imageData;
-
-    const idx = (x: number, y: number) => (y * w + x) * 4;
-    const isNearWhite = (i: number) => {
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
-      const a = data[i + 3];
-      if (a < 10) return true;
-      const max = Math.max(r, g, b);
-      const min = Math.min(r, g, b);
-      return max >= 242 && min >= 228 && max - min <= 18;
-    };
-
-    const corners = [
-      idx(0, 0),
-      idx(w - 1, 0),
-      idx(0, h - 1),
-      idx(w - 1, h - 1),
-      idx(Math.floor(w / 2), 0),
-      idx(Math.floor(w / 2), h - 1),
-      idx(0, Math.floor(h / 2)),
-      idx(w - 1, Math.floor(h / 2)),
-    ];
-    const cornerWhite = corners.filter((i) => isNearWhite(i)).length;
-    if (cornerWhite < 4) return dataUrl;
-
-    const visited = new Uint8Array(w * h);
-    const queue: number[] = [];
-    const pushIfBg = (x: number, y: number) => {
-      if (x < 0 || y < 0 || x >= w || y >= h) return;
-      const p = y * w + x;
-      if (visited[p]) return;
-      if (!isNearWhite(idx(x, y))) return;
-      visited[p] = 1;
-      queue.push(p);
-    };
-
-    for (let x = 0; x < w; x++) {
-      pushIfBg(x, 0);
-      pushIfBg(x, h - 1);
-    }
-    for (let y = 0; y < h; y++) {
-      pushIfBg(0, y);
-      pushIfBg(w - 1, y);
-    }
-
-    let head = 0;
-    while (head < queue.length) {
-      const p = queue[head++];
-      const x = p % w;
-      const y = (p / w) | 0;
-      pushIfBg(x + 1, y);
-      pushIfBg(x - 1, y);
-      pushIfBg(x, y + 1);
-      pushIfBg(x, y - 1);
-    }
-
-    let removed = 0;
-    for (let i = 0; i < visited.length; i++) if (visited[i]) removed++;
-    if (removed < w * h * 0.02) return dataUrl;
-
-    const isBg = (x: number, y: number) => {
-      if (x < 0 || y < 0 || x >= w || y >= h) return true;
-      return visited[y * w + x] === 1;
-    };
-
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
-        const p = y * w + x;
-        const i = p * 4;
-        if (visited[p]) {
-          data[i + 3] = 0;
-          continue;
-        }
-        let adj = 0;
-        if (isBg(x + 1, y)) adj++;
-        if (isBg(x - 1, y)) adj++;
-        if (isBg(x, y + 1)) adj++;
-        if (isBg(x, y - 1)) adj++;
-        if (isBg(x + 1, y + 1)) adj++;
-        if (isBg(x - 1, y - 1)) adj++;
-        if (isBg(x + 1, y - 1)) adj++;
-        if (isBg(x - 1, y + 1)) adj++;
-        if (adj > 0) {
-          const r = data[i];
-          const g = data[i + 1];
-          const b = data[i + 2];
-          const brightness = (r + g + b) / 3;
-          const factor = brightness > 230 ? Math.max(0.35, 1 - adj * 0.12) : Math.max(0.6, 1 - adj * 0.06);
-          data[i + 3] = Math.round(data[i + 3] * factor);
-        }
-      }
-    }
-
-    ctx.putImageData(imageData, 0, 0);
-    const trimmed = trimAlphaBoundingBox(canvas);
-    return trimmed.toDataURL("image/png");
-  } catch {
-    return dataUrl;
-  }
-}
+// Removed aggressive client-side white flood-fill/threshold stripping.
+// White bottles must never be eaten; server-side BRIA cutouts provide transparency.
 
 /**
- * Lightweight client-side packshot cleanup: pure Canvas alpha bbox trim and a
- * naive white-background fallback for non-transparent sources. No external AI
- * model downloads. Server-side cutouts are preferred during campaign generation.
+ * Lightweight client-side packshot handling: ONLY safe alpha-channel bounding-box
+ * auto-trim (alpha > 15 + 4px padding) when transparency exists.
+ * No white-color flood-fill/threshold stripping, so white bottles/caps/highlights
+ * are preserved 100%. Server-side BRIA cutouts provide transparency.
  */
 async function cutoutProductPackshot(dataUrl: string): Promise<string> {
   try {
@@ -262,27 +149,32 @@ async function cutoutProductPackshot(dataUrl: string): Promise<string> {
     const h = img.naturalHeight || img.height;
     if (!w || !h) return dataUrl;
 
-    // If the image already has meaningful transparency, just trim alpha bbox.
-    const probe = document.createElement("canvas");
-    probe.width = w;
-    probe.height = h;
-    const pctx = probe.getContext("2d", { willReadFrequently: true });
-    if (pctx) {
-      pctx.drawImage(img, 0, 0);
-      const sample = pctx.getImageData(0, 0, w, h).data;
-      let transparent = 0;
-      for (let i = 3; i < sample.length; i += 4 * 97) {
-        if (sample[i] < 250) transparent++;
-      }
-      if (transparent > 0) {
-        const trimmed = trimAlphaBoundingBox(probe);
-        return trimmed.toDataURL("image/png");
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return dataUrl;
+    ctx.drawImage(img, 0, 0);
+
+    const sample = ctx.getImageData(0, 0, w, h).data;
+    let hasTransparency = false;
+    for (let i = 3; i < sample.length; i += 4 * 97) {
+      if (sample[i] < 250) {
+        hasTransparency = true;
+        break;
       }
     }
+
+    if (!hasTransparency) {
+      // Preserve 100% of original pixels/colors (critical for white bottles).
+      return dataUrl;
+    }
+
+    const trimmed = trimAlphaBoundingBox(canvas);
+    return trimmed.toDataURL("image/png");
   } catch {
-    // fall through to naive fallback
+    return dataUrl;
   }
-  return await naiveCutoutFallback(dataUrl);
 }
 
 // Backward-compatible alias used by inlineExternalImages/fetch path
