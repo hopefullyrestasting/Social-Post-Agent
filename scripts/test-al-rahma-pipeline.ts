@@ -72,19 +72,31 @@ function assertWordRange(text: string, min: number, max: number, label: string) 
   assert.ok(count >= min && count <= max, `${label} must be ${min}-${max} words, got ${count}: "${text}"`);
 }
 
-assertWordRange(copy.benefitLine, 4, 9, "Sales copy (variant 1)");
+assertWordRange(copy.benefitLine, 4, 8, "Sales copy (variant 1)");
 assert.equal(/خصم|تخفيض|السعر|ج\.م|EGP/.test(copy.fullPostText), false);
 
 const copyAgain = ArabicCopywriter.generatePost(unverifiedProduct, "product_information", { variant: 1 });
 assert.deepEqual(copyAgain, copy, "Copy must be deterministic so creatives are reproducible.");
 
 const copyV2 = ArabicCopywriter.generatePost(unverifiedProduct, "product_information", { variant: 2 });
-assertWordRange(copyV2.benefitLine, 4, 9, "Sales copy (variant 2)");
+assertWordRange(copyV2.benefitLine, 4, 8, "Sales copy (variant 2)");
 
 const verifiedCopy1 = ArabicCopywriter.generatePost(verifiedProduct, "product_information", { variant: 1 });
 const verifiedCopy2 = ArabicCopywriter.generatePost(verifiedProduct, "beauty_routine", { variant: 2 });
-assertWordRange(verifiedCopy1.benefitLine, 4, 9, "Verified sales copy (variant 1)");
-assertWordRange(verifiedCopy2.benefitLine, 4, 9, "Verified sales copy (variant 2)");
+assertWordRange(verifiedCopy1.benefitLine, 4, 8, "Verified sales copy (variant 1)");
+assertWordRange(verifiedCopy2.benefitLine, 4, 8, "Verified sales copy (variant 2)");
+for (const usage of verifiedProduct.verifiedUsage) {
+  assert.equal(
+    verifiedCopy1.benefitLine.includes(usage),
+    false,
+    "Variant 1 sales copy must never include usage instructions.",
+  );
+  assert.equal(
+    verifiedCopy2.benefitLine.includes(usage),
+    false,
+    "Variant 2 sales copy must never include usage instructions.",
+  );
+}
 
 const greetedCopy = ArabicCopywriter.generatePost(verifiedProduct, "product_information", {
   variant: 1,
@@ -106,7 +118,7 @@ const verifiedQuality = QualityGate.evaluate(verifiedCopy1, verifiedProduct, { w
 assert.equal(verifiedQuality.passed, true, verifiedQuality.errors.join(" | ") || "verified creative must pass");
 assert.ok(
   verifiedQuality.checks.some((c) => c.checkName === "Sales Copy Length" && c.passed),
-  "Sales copy length check must pass for 4-9 words.",
+  "Sales copy length check must pass for 4-8 words.",
 );
 
 const badLengthCopy = { ...verifiedCopy1, benefitLine: "كلمة" };
@@ -114,7 +126,7 @@ const badLengthQuality = QualityGate.evaluate(badLengthCopy, verifiedProduct, { 
 assert.equal(badLengthQuality.passed, false);
 assert.ok(
   badLengthQuality.checks.some((c) => c.checkName === "Sales Copy Length" && !c.passed),
-  "Sales copy outside 4-9 words must fail.",
+  "Sales copy outside 4-8 words must fail.",
 );
 
 const pricingCopy = {
@@ -210,8 +222,8 @@ assert.ok(
 );
 assert.equal(variants[0].angle, "product_information");
 assert.equal(variants[1].angle, "beauty_routine");
-assertWordRange(variants[0].copy.benefitLine, 4, 9, "Engine variant 1 benefit line");
-assertWordRange(variants[1].copy.benefitLine, 4, 9, "Engine variant 2 benefit line");
+assertWordRange(variants[0].copy.benefitLine, 4, 8, "Engine variant 1 benefit line");
+assertWordRange(variants[1].copy.benefitLine, 4, 8, "Engine variant 2 benefit line");
 assert.notEqual(variants[0].svgOverlay, variants[1].svgOverlay, "Variants must differ in layout.");
 
 for (const result of variants) {
@@ -220,15 +232,18 @@ for (const result of variants) {
   assert.equal(result.background.provider, "deterministic-studio");
   assert.deepEqual(result.metadata.dimensions, { width: 1080, height: 1920 });
   assert.ok(result.svgOverlay.includes(verifiedProduct.productImageUrl));
-  assert.ok(result.svgOverlay.includes(brand.contact.phone), "Phone must render.");
   assert.ok(result.svgOverlay.includes(brand.contact.phone), "Exact phone number must render.");
-  assert.ok(result.svgOverlay.includes(brand.contact.label), "Contact label must render.");
+  assert.ok(result.svgOverlay.includes("\u200Fللتواصل:"), "Contact label must render with proper RTL formatting.");
+  assert.equal(result.svgOverlay.includes("..."), false, "No truncation ellipsis allowed in rendered SVG.");
+  assert.equal(result.svgOverlay.includes("…"), false, "No unicode ellipsis allowed in rendered SVG.");
   assert.ok(result.svgOverlay.includes("متاح توصيل"), "Header/subtitle must include متاح توصيل.");
   assert.ok(result.svgOverlay.includes("#FFFFFF"));
   assert.ok(result.svgOverlay.includes('data-template="'), "Template marker must be present.");
   assert.ok(result.svgOverlay.includes('data-packshot="true"'), "Packshot must be marked for cutout compositing.");
+  assert.ok(result.svgOverlay.includes('height="660"'), "Hero packshot must be rendered at 660px height.");
+  assert.ok(result.svgOverlay.includes('y="690"'), "Hero packshot must be grounded at bottom y=1350 (y=690 for 660px height).");
   assert.ok(result.svgOverlay.includes("#25D366") || result.svgOverlay.includes("25D366"), "Contact block must include WhatsApp icon.");
-  assert.ok(result.svgOverlay.includes("stroke-linecap=\"round\""), "Contact block must include phone icon stroke.");
+  assert.ok(result.svgOverlay.includes("#065F46") || result.svgOverlay.includes("065F46"), "Contact/footer must include bold emerald styling.");
   assert.equal(result.qualityReport.passed, true);
   assert.equal(result.metadata.promotion, null);
   assert.equal(result.metadata.occasion, null);
@@ -236,7 +251,7 @@ for (const result of variants) {
   assert.equal(result.svgOverlay.includes("occasion-ribbon"), false, "No greeting without an in-window occasion.");
 }
 
-assert.ok(variants[0].svgOverlay.includes("silver-podium-botanical") || variants[0].svgOverlay.includes("hex-podium") || variants[0].svgOverlay.includes("podium"));
+assert.ok(variants[0].svgOverlay.includes("studio-podium") || variants[0].svgOverlay.includes("shader-podium") || variants[0].svgOverlay.includes("podium"), "Variant 1 must include a studio podium stage.");
 
 const single = ProductionEngine.execute({ product: verifiedProduct, today: fixedToday });
 assert.equal(single.variant, "silver-podium-botanical");
@@ -339,14 +354,17 @@ const overlay = OverlaySystem.generateOverlaySvg({
 });
 assert.ok(overlay.includes(brand.brandName));
 assert.ok(overlay.includes(brand.contact.phone));
-assert.ok(overlay.includes("للتواصل :"));
+assert.ok(overlay.includes("\u200Fللتواصل:"));
 assert.ok(overlay.includes("متاح توصيل"));
 assert.ok(overlay.includes("ترطيب") && overlay.includes("عميق"), "Benefit line text must render in overlay.");
 assert.ok(overlay.includes('data-packshot="true"'));
+assert.ok(overlay.includes('height="660"'));
+assert.ok(overlay.includes('y="690"'));
+assert.equal(overlay.includes("..."), false);
 
 const defaultOverlay = OverlaySystem.generateOverlaySvg({ width: 1080, height: 1920 });
 assert.ok(defaultOverlay.includes(brand.contact.phone));
-assert.ok(defaultOverlay.includes("للتواصل :"));
+assert.ok(defaultOverlay.includes("\u200Fللتواصل:"));
 
 // --- Single-source guard ----------------------------------------------------
 
@@ -383,5 +401,5 @@ assert.deepEqual(
 );
 
 console.log(
-  "Al Rahma pipeline tests passed: BrandConfig, 4-9 word copy, 3 designer templates, contact/header rules, quality gate, promos, 48h cultural greeting, packshot blocking, and single-source brand identity.",
+  "Al Rahma pipeline tests passed: BrandConfig, 4-8 benefit-only copy (no usage, no ellipsis), 3 designer templates, RTL contact/footer, hero packshot grounding, quality gate, promos, 48h cultural greeting, and single-source brand identity.",
 );

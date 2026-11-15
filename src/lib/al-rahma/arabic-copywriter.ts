@@ -8,7 +8,7 @@ import { AL_RAHMA_BRAND_CONFIG } from "./brand-core";
  * - Benefits/usage lines are only rendered from claims the caller already
  *   verified against a source (see `product-research-verifier`).
  * - Sales copy shown on creative is short, punchy Egyptian commercial Arabic,
- *   strictly 4 to 9 words.
+ *   strictly 4 to 8 words.
  * - Output is deterministic so the same product + variant always produces the
  *   same creative (no `Math.random`).
  */
@@ -122,20 +122,28 @@ function deriveSalesCopy(
   product: ProductDetails,
   variant: CopyVariant,
 ): string {
+  // Sales copy MUST come only from verified benefit claims or category/value propositions.
+  // Never use usage instructions.
   const benefits = clean(product.verifiedBenefits);
-  const usage = clean(product.verifiedUsage);
   const category = categoryLabel(product.category);
-  const name = (product.badgeText || product.title || "").trim().split(/\s+/).slice(0, 2).join(" ");
+  const name = (product.badgeText || product.title || "")
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .join(" ");
 
   const candidates = [
     benefits[0] ?? "",
-    benefits[1] ?? usage[0] ?? "",
+    benefits[1] ?? benefits[0] ?? "",
+    `جودة ${category} مميزة`,
     `${name} ${category}`.trim(),
     `عناية مميزة من ${AL_RAHMA_BRAND_CONFIG.brandName}`,
-  ].map((s) => s.trim()).filter(Boolean);
+  ]
+    .map((item) => item.trim())
+    .filter(Boolean);
 
-  const picked = candidates[variant - 1] ?? candidates[0] ?? category;
-  return clampWords(picked, 4, 9);
+  const picked = candidates[variant - 1] ?? candidates[0] ?? `جودة ${category} مميزة`;
+  return clampWords(picked, 4, 8);
 }
 
 function buildHeadline(product: ProductDetails): string {
@@ -193,7 +201,7 @@ export class ArabicCopywriter {
     const fullPostText = `${headline}\n\n${body}\n\n${hashtags.join(" ")}`;
 
     // Safety: ensure benefitLine is 4-9 words
-    const finalBenefit = clampWords(benefitLine, 4, 9);
+    const finalBenefit = clampWords(benefitLine, 4, 8);
 
     return {
       headline,

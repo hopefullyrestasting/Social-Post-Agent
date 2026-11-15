@@ -104,9 +104,9 @@ export class QualityGate {
     });
     if (!hasCta) errors.push("يجب إضافة دعوة واضحة للتواصل (CTA).");
 
-    // 3b. Sales copy length (4-9 words)
+        // 3b. Sales copy length (4-8 words, benefit-only copy)
     const benefitWords = copy.benefitLine.trim().split(/\s+/).filter(Boolean).length;
-    const benefitOk = benefitWords >= 4 && benefitWords <= 9;
+    const benefitOk = benefitWords >= 4 && benefitWords <= 8;
     checks.push({
       checkName: "Sales Copy Length",
       category: "copy",
@@ -114,9 +114,9 @@ export class QualityGate {
       score: benefitOk ? 100 : 40,
       message: benefitOk
         ? `جملة البيع مناسبة (${benefitWords} كلمات)`
-        : `جملة البيع يجب أن تكون من 4 إلى 9 كلمات (${benefitWords})`,
+        : `جملة البيع يجب أن تكون من 4 إلى 8 كلمات (${benefitWords})`,
     });
-    if (!benefitOk) errors.push("جملة البيع يجب أن تكون قصيرة من 4 إلى 9 كلمات.");
+    if (!benefitOk) errors.push("جملة البيع يجب أن تكون قصيرة من 4 إلى 8 كلمات.");
 
     // 4. Verified source
     const hasVerifiedSource =

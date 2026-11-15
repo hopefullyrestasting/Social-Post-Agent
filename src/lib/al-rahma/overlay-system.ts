@@ -5,7 +5,7 @@ import {
   resolveBackground,
 } from "./background-provider";
 import { OccasionGreetingInput, ValidPromotion } from "./commercial";
-import { escapeXml, wrapText } from "./svg-utils";
+import { escapeXml, wrapText, wrapTextNoTruncate } from "./svg-utils";
 
 export type { DesignerTemplate } from "./background-provider";
 
@@ -19,7 +19,7 @@ export interface OverlayOptions {
   brandLogoUrl?: string | null;
   productImageUrl?: string | null;
   headline?: string;
-  /** Prominent sales copy (4-9 words). */
+  /** Prominent sales copy (4-8 words, benefit-only). */
   benefitLine?: string;
   ctaText?: string;
   availabilityText?: string;
@@ -35,11 +35,11 @@ export interface OverlayOptions {
 
 const BRAND = AL_RAHMA_BRAND_CONFIG;
 const SUBTITLE = "مستحضرات تجميل ومستلزمات الصيدليات - متاح توصيل";
-const CONTACT_LABEL = "للتواصل :";
+const CONTACT_LABEL = "\u200Fللتواصل:";
 
-function phoneIcon(x: number, y: number): string {
+function phoneIcon(x: number, y: number, color = "#065F46"): string {
   return `
-    <g transform="translate(${x}, ${y})" stroke="#0F172A" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <g transform="translate(${x}, ${y})" stroke="${color}" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round">
       <path d="M22 16.92v3a2 2 0 0 1-2.18 2A19.8 19.8 0 0 1 11.19 19a19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.78.62 2.63a2 2 0 0 1-.45 2.11L8 9.91a16 16 0 0 0 6 6l1.45-1.28a2 2 0 0 1 2.11-.45c.85.29 1.73.5 2.63.62A2 2 0 0 1 22 16.92z" fill="#FFFFFF" fill-opacity="0.98"/>
       <path d="M14 2a6 6 0 0 1 6 6" />
       <path d="M14 6a2 2 0 0 1 2 2" />
@@ -56,47 +56,54 @@ function whatsappIcon(x: number, y: number): string {
   `;
 }
 
-function brandHeader(width: number, brandLogoUrl?: string | null): string {
-  const y = 44;
-  const cardW = 900;
-  const cardH = 132;
-  const x = (width - cardW) / 2;
-  const subtitle = SUBTITLE;
-  const logo = brandLogoUrl?.trim() || null;
-
-  const badge = logo
-    ? `<image href="${escapeXml(logo)}" x="18" y="16" width="100" height="100" preserveAspectRatio="xMidYMid meet" />
-       <rect x="18" y="16" width="100" height="100" rx="20" fill="none" stroke="#059669" stroke-width="2" />`
-    : `<circle cx="68" cy="66" r="34" fill="#059669" />
-       <path d="M50 66 L63 78 L86 52" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />`;
-
+function commonDefs(): string {
   return `
-    <g id="brand-header" transform="translate(${x}, ${y})">
-      <rect width="${cardW}" height="${cardH}" rx="28" fill="#0F172A" fill-opacity="0.94" />
-      <rect width="${cardW}" height="${cardH}" rx="28" fill="none" stroke="#059669" stroke-width="2.5" />
-      ${badge}
-      <text x="136" y="58" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="40" font-weight="800" fill="#FFFFFF" text-anchor="start">${escapeXml(BRAND.brandName)}</text>
-      <text x="${cardW / 2}" y="106" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="30" font-weight="700" fill="#F8FAFC" text-anchor="middle">${escapeXml(subtitle)}</text>
-    </g>
+    <defs>
+      <linearGradient id="header-glass" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#064E3B" stop-opacity="0.92" />
+        <stop offset="100%" stop-color="#065F46" stop-opacity="0.88" />
+      </linearGradient>
+      <filter id="glass-blur" x="-10%" y="-20%" width="120%" height="140%">
+        <feGaussianBlur in="SourceGraphic" stdDeviation="0.2" />
+      </filter>
+      <filter id="soft-drop" x="-30%" y="-30%" width="160%" height="180%">
+        <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#0F172A" flood-opacity="0.18" />
+      </filter>
+      <filter id="packshot-rim" x="-20%" y="-20%" width="140%" height="140%">
+        <feDropShadow dx="0" dy="0" stdDeviation="10" flood-color="#FFFFFF" flood-opacity="0.35" />
+      </filter>
+      <filter id="shadow-blur-strong" x="-40%" y="-160%" width="180%" height="420%">
+        <feGaussianBlur stdDeviation="18" />
+      </filter>
+      <filter id="shadow-blur-soft" x="-40%" y="-160%" width="180%" height="420%">
+        <feGaussianBlur stdDeviation="10" />
+      </filter>
+    </defs>
   `;
 }
 
-function contactBlock(width: number, height: number): string {
-  const barH = 156;
-  const y = height - barH;
-  const phone = BRAND.contact.phone;
-  const label = CONTACT_LABEL;
+function brandHeader(width: number, brandLogoUrl?: string | null): string {
+  // Top header y = 60..210
+  const y = 60;
+  const h = 150;
+  const w = 940;
+  const x = (width - w) / 2;
+  const logo = brandLogoUrl?.trim() || null;
+
+  const badge = logo
+    ? `<image href="${escapeXml(logo)}" x="18" y="20" width="110" height="110" preserveAspectRatio="xMidYMid meet" />
+       <rect x="18" y="20" width="110" height="110" rx="22" fill="none" stroke="#A7F3D0" stroke-width="2" />`
+    : `<circle cx="73" cy="75" r="38" fill="#059669" />
+       <path d="M52 75 L67 90 L94 58" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />`;
+
   return `
-    <g id="contact-block">
-      <rect x="0" y="${y}" width="${width}" height="${barH}" fill="#065F46" />
-      <rect x="0" y="${y}" width="${width}" height="5" fill="#F59E0B" />
-      <text x="${width / 2}" y="${y + 50}" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="36" font-weight="800" fill="#FFFFFF" text-anchor="middle">${escapeXml(label)}</text>
-      <g transform="translate(${width / 2 - 260}, ${y + 72})">
-        <rect x="0" y="0" width="520" height="68" rx="34" fill="#FFFFFF" fill-opacity="0.98" />
-        ${phoneIcon(40, 22)}
-        <text x="260" y="46" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="42" font-weight="900" fill="#0F172A" text-anchor="middle" direction="ltr">${escapeXml(phone)}</text>
-        ${whatsappIcon(456, 22)}
-      </g>
+    <g id="brand-header" transform="translate(${x}, ${y})">
+      <rect width="${w}" height="${h}" rx="30" fill="url(#header-glass)" />
+      <rect width="${w}" height="${h}" rx="30" fill="#FFFFFF" fill-opacity="0.08" />
+      <rect width="${w}" height="${h}" rx="30" fill="none" stroke="#D1FAE5" stroke-opacity="0.35" stroke-width="1.5" />
+      ${badge}
+      <text x="148" y="62" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="42" font-weight="800" fill="#FFFFFF" text-anchor="start">${escapeXml(BRAND.brandName)}</text>
+      <text x="${w / 2}" y="118" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="28" font-weight="700" fill="#ECFDF5" text-anchor="middle">${escapeXml(SUBTITLE)}</text>
     </g>
   `;
 }
@@ -120,7 +127,7 @@ function textBlockTspans(
     fill,
     weight = 700,
     anchor = "middle",
-    lineHeight = Math.round(size * 1.35),
+    lineHeight = Math.round(size * 1.32),
   } = options;
   if (lines.length === 0) return "";
   const tspans = lines
@@ -129,24 +136,151 @@ function textBlockTspans(
         `<tspan x="${x}" dy="${index === 0 ? 0 : lineHeight}">${escapeXml(line)}</tspan>`,
     )
     .join("");
-  return `<text x="${x}" y="${y}" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="${size}" font-weight="${weight}" fill="${fill}" text-anchor="${anchor}">${tspans}</text>`;
+  return `<text x="${x}" y="${y}" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="${size}" font-weight="${weight}" fill="${fill}" text-anchor="${anchor}" direction="rtl">${tspans}</text>`;
 }
 
-function availabilityPill(x: number, y: number, text: string): string {
+function heroHeadline(width: number, headline: string): string {
+  // Hero headline y = 260..410, max 2 lines, 48-54px, no truncation
+  const x = width / 2;
+  const { lines, charsPerLine } = wrapTextNoTruncate(headline, 24, 2, 12);
+  const size = Math.max(48, Math.min(54, 48 + Math.max(0, 24 - charsPerLine)));
+  const lineHeight = Math.round(size * 1.32);
+  const blockH = size + (lines.length - 1) * lineHeight;
+  const top = 270;
+  const bottomLimit = 400;
+  const y = Math.min(top + size, bottomLimit - Math.max(0, blockH - size));
+  return textBlockTspans(lines, {
+    x,
+    y,
+    size,
+    fill: "#0F172A",
+    weight: 800,
+    anchor: "middle",
+    lineHeight,
+  });
+}
+
+function podiumAndPackshot(
+  width: number,
+  productUrl: string | null | undefined,
+): string {
+  const cx = width / 2;
+  const podiumTopY = 1285;
+  const podiumBottomY = 1400;
+  const podiumW = 760;
+  const podiumX = (width - podiumW) / 2;
+  const packshotH = 660;
+  const packshotBottom = 1350;
+  const packshotY = packshotBottom - packshotH; // 690
+  const packshotW = 560;
+  const packshotX = (width - packshotW) / 2;
+
+  const podium = `
+    <g id="studio-podium">
+      <ellipse cx="${cx}" cy="${podiumBottomY + 30}" rx="420" ry="54" fill="#0F172A" fill-opacity="0.18" filter="url(#shadow-blur-strong)" />
+      <ellipse cx="${cx}" cy="${podiumTopY + 78}" rx="360" ry="44" fill="#334155" fill-opacity="0.18" filter="url(#shadow-blur-soft)" />
+      <path d="M ${podiumX} ${podiumTopY} L ${podiumX + podiumW} ${podiumTopY} L ${podiumX + podiumW - 70} ${podiumBottomY} L ${podiumX + 70} ${podiumBottomY} Z" fill="url(#podium-front)" opacity="0.98" />
+      <ellipse cx="${cx}" cy="${podiumTopY}" rx="${podiumW / 2}" ry="34" fill="url(#podium-surface)" />
+      <ellipse cx="${cx}" cy="${podiumTopY - 2}" rx="${podiumW / 2 - 10}" ry="24" fill="#FFFFFF" fill-opacity="0.45" />
+      <ellipse cx="${cx}" cy="${podiumTopY + 56}" rx="${podiumW / 2 - 60}" ry="18" fill="#FFFFFF" fill-opacity="0.10" />
+    </g>
+  `;
+
+  let packshot: string;
+  if (!productUrl) {
+    packshot = `
+      <g id="packshot-missing">
+        <rect x="${packshotX}" y="${packshotY}" width="${packshotW}" height="${packshotH}" rx="28" fill="none" stroke="#94A3B8" stroke-width="3" stroke-dasharray="14 12" />
+        <text x="${cx}" y="${packshotY + packshotH / 2}" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="28" font-weight="700" fill="#64748B" text-anchor="middle">الصورة الأصلية غير متاحة</text>
+      </g>
+    `;
+  } else {
+    packshot = `
+      <g id="packshot-hero">
+        <ellipse id="packshot-rim-glow" cx="${cx}" cy="${packshotY + packshotH * 0.45}" rx="210" ry="300" fill="#FFFFFF" fill-opacity="0.18" filter="url(#packshot-rim)" />
+        <ellipse id="packshot-contact-shadow" cx="${cx}" cy="${packshotBottom - 6}" rx="170" ry="26" fill="#0F172A" fill-opacity="0.28" filter="url(#shadow-blur-soft)" />
+        <ellipse id="packshot-contact-shadow-core" cx="${cx}" cy="${packshotBottom - 8}" rx="95" ry="12" fill="#020617" fill-opacity="0.22" />
+        <g id="packshot" data-packshot="true" filter="url(#soft-drop)">
+          <image data-packshot="true" href="${escapeXml(productUrl)}" x="${packshotX}" y="${packshotY}" width="${packshotW}" height="${packshotH}" preserveAspectRatio="xMidYMid meet" />
+        </g>
+      </g>
+    `;
+  }
+
+  // Side frosted-glass benefit badges
+  const badge = (x: number, y: number, label: string, align: "start" | "end") => {
+    const w = 250;
+    const h = 58;
+    const bx = align === "end" ? x - w : x;
+    return `
+      <g transform="translate(${bx}, ${y})">
+        <rect width="${w}" height="${h}" rx="29" fill="#FFFFFF" fill-opacity="0.72" stroke="#D1FAE5" stroke-width="1.5" />
+        <rect width="${w}" height="${h}" rx="29" fill="#ECFDF5" fill-opacity="0.35" />
+        <circle cx="${align === "end" ? w - 26 : 26}" cy="${h / 2}" r="7" fill="#059669" />
+        <text x="${w / 2}" y="37" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="22" font-weight="700" fill="#065F46" text-anchor="middle">${escapeXml(label)}</text>
+      </g>
+    `;
+  };
+
+  const badges = `
+    <g id="benefit-badges">
+      ${badge(70, 820, "تركيبة طبيعية", "start")}
+      ${badge(width - 70, 900, "جودة مضمونة", "end")}
+    </g>
+  `;
+
+  return `${podium}${packshot}${badges}`;
+}
+
+function salesCopyGlassCard(width: number, text: string, hasPromo: boolean): string {
+  // Sales copy glass card y ~ 1430..1560
+  const y = hasPromo ? 1505 : 1435;
+  const h = 110;
+  const w = 860;
+  const x = (width - w) / 2;
+  const { lines } = wrapTextNoTruncate(text, 28, 2, 14);
+  const fontSize = lines.length > 1 ? 38 : 42;
+  const lineHeight = Math.round(fontSize * 1.3);
+  const firstY = lines.length > 1 ? y + 48 : y + 64;
+
   return `
-    <g transform="translate(${x}, ${y})">
-      <rect width="360" height="56" rx="28" fill="#FFFFFF" fill-opacity="0.96" stroke="#059669" stroke-width="2" />
+    <g id="sales-copy-card" filter="url(#soft-drop)">
+      <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="30" fill="#FFFFFF" fill-opacity="0.78" />
+      <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="30" fill="#F8FAFC" fill-opacity="0.35" />
+      <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="30" fill="none" stroke="#E2E8F0" stroke-opacity="0.9" stroke-width="1.5" />
+      ${textBlockTspans(lines, {
+        x: width / 2,
+        y: firstY,
+        size: fontSize,
+        fill: "#065F46",
+        weight: 800,
+        anchor: "middle",
+        lineHeight,
+      })}
+    </g>
+  `;
+}
+
+function availabilityPill(width: number, y: number, text: string): string {
+  const w = 360;
+  const h = 56;
+  const x = (width - w) / 2;
+  return `
+    <g id="availability-pill" transform="translate(${x}, ${y})">
+      <rect width="${w}" height="${h}" rx="28" fill="#FFFFFF" fill-opacity="0.96" stroke="#059669" stroke-width="2" />
       <circle cx="34" cy="28" r="8" fill="#059669" />
       <text x="58" y="36" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="23" font-weight="700" fill="#065F46" text-anchor="start">${escapeXml(text)}</text>
     </g>
   `;
 }
 
-function ctaPill(x: number, y: number, text: string): string {
+function ctaPill(width: number, y: number, text: string): string {
+  const w = 520;
+  const x = (width - w) / 2;
   return `
     <g transform="translate(${x}, ${y})">
-      <rect width="520" height="74" rx="37" fill="#059669" />
-      <text x="260" y="48" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="30" font-weight="800" fill="#FFFFFF" text-anchor="middle">${escapeXml(text)}</text>
+      <rect width="${w}" height="74" rx="37" fill="#059669" />
+      <text x="${w / 2}" y="48" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="30" font-weight="800" fill="#FFFFFF" text-anchor="middle">${escapeXml(text)}</text>
     </g>
   `;
 }
@@ -169,15 +303,15 @@ function resolveAccent(theme?: string | null): string {
 function occasionRibbon(width: number, occasion: OccasionGreetingInput): string {
   const ribbonWidth = Math.min(920, width - 80);
   const x = (width - ribbonWidth) / 2;
-  const y = 188;
-  const height = 56;
+  const y = 218;
+  const height = 54;
   const accent = resolveAccent(occasion.accentTheme);
   const text = wrapText(occasion.greeting, 52, 1)[0] ?? occasion.greeting;
   return `
     <g id="occasion-ribbon" transform="translate(${x}, ${y})">
       <rect width="${ribbonWidth}" height="${height}" rx="${height / 2}" fill="#FFFFFF" fill-opacity="0.96" stroke="${accent}" stroke-width="2" />
       <circle cx="32" cy="${height / 2}" r="8" fill="${accent}" />
-      <text x="${ribbonWidth / 2}" y="37" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="23" font-weight="800" fill="#065F46" text-anchor="middle">${escapeXml(text)}</text>
+      <text x="${ribbonWidth / 2}" y="36" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="22" font-weight="800" fill="#065F46" text-anchor="middle">${escapeXml(text)}</text>
     </g>
   `;
 }
@@ -189,128 +323,38 @@ function formatPriceValue(value: number): string {
 function promoBadge(width: number, y: number, promotion: ValidPromotion): string {
   const badgeWidth = Math.min(660, width - 96);
   const x = (width - badgeWidth) / 2;
-  const height = 160;
+  const height = 150;
   const currency = BRAND.commercial.currencyLabel;
   return `
     <g id="promo-badge" transform="translate(${x}, ${y})">
       <rect width="${badgeWidth}" height="${height}" rx="28" fill="#FFFFFF" stroke="#F59E0B" stroke-width="2.5" />
-      <g transform="translate(28, 28)">
+      <g transform="translate(28, 24)">
         <rect width="176" height="52" rx="26" fill="#DC2626" />
         <text x="88" y="34" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="22" font-weight="900" fill="#FFFFFF" text-anchor="middle">خصم ${promotion.discountPercent}%</text>
       </g>
-      <text x="${badgeWidth - 30}" y="98" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="52" font-weight="900" fill="#065F46" text-anchor="end">${escapeXml(formatPriceValue(promotion.promoPrice))} ${escapeXml(currency)}</text>
-      <text x="28" y="112" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="22" font-weight="700" fill="#334155" fill-opacity="0.75" text-anchor="start" text-decoration="line-through">${escapeXml(formatPriceValue(promotion.originalPrice))} ${escapeXml(currency)}</text>
+      <text x="${badgeWidth - 30}" y="92" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="50" font-weight="900" fill="#065F46" text-anchor="end">${escapeXml(formatPriceValue(promotion.promoPrice))} ${escapeXml(currency)}</text>
+      <text x="28" y="106" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="22" font-weight="700" fill="#334155" fill-opacity="0.75" text-anchor="start" text-decoration="line-through">${escapeXml(formatPriceValue(promotion.originalPrice))} ${escapeXml(currency)}</text>
     </g>
   `;
 }
 
-function packshotImage(
-  url: string | null | undefined,
-  box: { x: number; y: number; width: number; height: number },
-  rotateDeg = 0,
-): string {
-  if (!url) {
-    return `
-      <g id="packshot-missing">
-        <rect x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" rx="28" fill="none" stroke="#94A3B8" stroke-width="3" stroke-dasharray="14 12" />
-        <text x="${box.x + box.width / 2}" y="${box.y + box.height / 2}" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="28" font-weight="700" fill="#64748B" text-anchor="middle">الصورة الأصلية غير متاحة</text>
+function contactBlock(width: number, height: number): string {
+  // Bottom contact bar y = 1710..1920
+  const y = 1710;
+  const barH = height - y;
+  const phone = BRAND.contact.phone;
+  return `
+    <g id="contact-block">
+      <rect x="0" y="${y}" width="${width}" height="${barH}" fill="#065F46" />
+      <rect x="0" y="${y}" width="${width}" height="6" fill="#059669" />
+      <text x="${width / 2}" y="${y + 54}" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="38" font-weight="800" fill="#FFFFFF" text-anchor="middle" direction="rtl">${escapeXml(CONTACT_LABEL)}</text>
+      <g id="contact-pill" transform="translate(${width / 2 - 290}, ${y + 78})">
+        <rect x="0" y="0" width="580" height="86" rx="43" fill="#FFFFFF" fill-opacity="0.98" />
+        ${phoneIcon(34, 28, "#065F46")}
+        <text x="290" y="56" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="48" font-weight="900" fill="#0F172A" text-anchor="middle" direction="ltr">${escapeXml(phone)}</text>
+        ${whatsappIcon(516, 31)}
       </g>
-    `;
-  }
-  const cx = box.x + box.width / 2;
-  const cy = box.y + box.height / 2;
-  const transform = rotateDeg ? ` transform="rotate(${rotateDeg} ${cx} ${cy})"` : "";
-  return `
-    <g id="packshot" data-packshot="true"${transform} filter="url(#packshot-shadow)">
-      <image data-packshot="true" href="${escapeXml(url)}" x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" preserveAspectRatio="xMidYMid meet" />
     </g>
-  `;
-}
-
-function shadowEllipse(cx: number, cy: number, rx: number, ry: number): string {
-  return `<ellipse id="contact-shadow" cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="#0F172A" fill-opacity="0.22" filter="url(#shadow-blur)" />`;
-}
-
-function commonDefs(): string {
-  return `
-    <defs>
-      <filter id="packshot-shadow" x="-30%" y="-30%" width="160%" height="170%">
-        <feDropShadow dx="0" dy="26" stdDeviation="18" flood-color="#0F172A" flood-opacity="0.28" />
-      </filter>
-      <filter id="shadow-blur" x="-40%" y="-160%" width="180%" height="420%">
-        <feGaussianBlur stdDeviation="16" />
-      </filter>
-    </defs>
-  `;
-}
-
-function layoutForTemplate(
-  template: DesignerTemplate,
-  opts: {
-    width: number;
-    height: number;
-    productUrl: string | null;
-    headlineLines: string[];
-    benefitLines: string[];
-    availability: string;
-    cta: string;
-    promotion: ValidPromotion | null;
-  },
-): string {
-  const { width, productUrl, headlineLines, benefitLines, availability, cta, promotion } = opts;
-  const headlineColor = "#0F172A"; // bold charcoal/dark
-  const benefitColor = "#065F46"; // dark emerald
-  const centerX = width / 2;
-
-  // Keep all text within max-width 880px centered at x=540
-  if (template === "silver-podium-botanical") {
-    const promoY = 1340;
-    const headlineY = 300;
-    const benefitY = promotion ? 1530 : 1410;
-    const availY = promotion ? 1620 : 1505;
-    const ctaY = 1685;
-    return `
-      ${shadowEllipse(centerX, 1330, 320, 48)}
-      ${packshotImage(productUrl, { x: 170, y: 430, width: 740, height: 880 })}
-      ${textBlockTspans(headlineLines, { x: centerX, y: headlineY, size: 54, fill: headlineColor, weight: 800, anchor: "middle", lineHeight: 72 })}
-      ${textBlockTspans(benefitLines, { x: centerX, y: benefitY, size: 40, fill: benefitColor, weight: 700, anchor: "middle", lineHeight: 56 })}
-      ${promotion ? promoBadge(width, promoY, promotion) : ""}
-      ${availability ? availabilityPill((width - 360) / 2, availY, availability) : ""}
-      ${cta ? ctaPill((width - 520) / 2, ctaY, cta) : ""}
-    `;
-  }
-
-  if (template === "botanical-arch-frame") {
-    const promoY = 1385;
-    const headlineY = 300;
-    const benefitY = promotion ? 1570 : 1465;
-    const availY = promotion ? 1650 : 1555;
-    const ctaY = 1690;
-    return `
-      ${shadowEllipse(centerX, 1310, 270, 42)}
-      ${packshotImage(productUrl, { x: 220, y: 440, width: 640, height: 840 })}
-      ${textBlockTspans(headlineLines, { x: centerX, y: headlineY, size: 54, fill: headlineColor, weight: 800, anchor: "middle", lineHeight: 72 })}
-      ${promotion ? promoBadge(width, promoY, promotion) : ""}
-      ${textBlockTspans(benefitLines, { x: centerX, y: benefitY, size: 40, fill: benefitColor, weight: 700, anchor: "middle", lineHeight: 56 })}
-      ${availability ? availabilityPill((width - 360) / 2, availY, availability) : ""}
-      ${cta ? ctaPill((width - 520) / 2, ctaY, cta) : ""}
-    `;
-  }
-
-  // editorial-beauty-card
-  const promoY = 1365;
-  const headlineY = 300;
-  const benefitY = promotion ? 1545 : 1420;
-  const availY = promotion ? 1630 : 1510;
-  const ctaY = 1690;
-  return `
-    ${shadowEllipse(centerX, 1315, 280, 42)}
-    ${packshotImage(productUrl, { x: 230, y: 440, width: 620, height: 840 })}
-    ${textBlockTspans(headlineLines, { x: centerX, y: headlineY, size: 54, fill: headlineColor, weight: 800, anchor: "middle", lineHeight: 72 })}
-    ${textBlockTspans(benefitLines, { x: centerX, y: benefitY, size: 40, fill: benefitColor, weight: 700, anchor: "middle", lineHeight: 56 })}
-    ${promotion ? promoBadge(width, promoY, promotion) : ""}
-    ${availability ? availabilityPill((width - 360) / 2, availY, availability) : ""}
-    ${cta ? ctaPill((width - 520) / 2, ctaY, cta) : ""}
   `;
 }
 
@@ -336,9 +380,10 @@ export class OverlaySystem {
         sceneImageUrl: opts.sceneImageUrl ?? null,
       });
 
-    // max-width ~880px centered at x=540 => ~22-24 chars/line for 54px Arabic, keep safe
-    const headlineLines = wrapText(headline, 22, 3);
-    const benefitLines = wrapText(benefit, 24, 2);
+    const promoY = 1365;
+    const salesHasPromo = Boolean(promotion);
+    const availY = salesHasPromo ? 1665 : 1575;
+    const ctaY = 1645;
 
     return `
       <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" role="img" aria-label="${escapeXml(BRAND.brandName)}">
@@ -346,16 +391,12 @@ export class OverlaySystem {
         <g id="scene-background" data-template="${template}">${background.markup}</g>
         ${opts.showLogo === false ? "" : brandHeader(width, opts.brandLogoUrl)}
         ${occasion ? occasionRibbon(width, occasion) : ""}
-        ${layoutForTemplate(template, {
-          width,
-          height,
-          productUrl,
-          headlineLines,
-          benefitLines,
-          availability,
-          cta,
-          promotion,
-        })}
+        ${heroHeadline(width, headline)}
+        ${podiumAndPackshot(width, productUrl)}
+        ${promotion ? promoBadge(width, promoY, promotion) : ""}
+        ${benefit ? salesCopyGlassCard(width, benefit, salesHasPromo) : ""}
+        ${availability ? availabilityPill(width, availY, availability) : ""}
+        ${!salesHasPromo && cta ? ctaPill(width, ctaY, cta) : ""}
         ${opts.showFooterBar === false ? "" : contactBlock(width, height)}
       </svg>
     `.trim();
