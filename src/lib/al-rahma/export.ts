@@ -47,20 +47,51 @@ export function getCreativeSvg(creative: ExportCreative): string | null {
   return null;
 }
 
-async function fetchAsDataUrl(url: string): Promise<string | null> {
-  try {
-    const response = await fetch(url, { mode: "cors", credentials: "omit" });
-    if (!response.ok) return null;
-    const blob = await response.blob();
-    return await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result));
-      reader.onerror = () => reject(new Error("read failed"));
-      reader.readAsDataURL(blob);
-    });
-  } catch {
-    return null;
+function toProxyUrl(url: string): string {
+  if (!/^https?:\/\//i.test(url)) return url;
+
+  // Data/blob URLs are already safe; same-origin resources do not need proxying.
+  if (typeof window !== "undefined") {
+    try {
+      const resolved = new URL(url, window.location.href);
+      if (resolved.origin === window.location.origin) {
+        return resolved.toString();
+      }
+    } catch {
+      // fall through to proxy
+    }
   }
+
+  return `/api/proxy-image?url=${encodeURIComponent(url)}`;
+}
+
+async function fetchAsDataUrl(url: string): Promise<string | null> {
+  const candidates = /^https?:\/\//i.test(url)
+    ? [toProxyUrl(url), url]
+    : [url];
+  const uniqueCandidates = Array.from(new Set(candidates));
+
+  for (const candidate of uniqueCandidates) {
+    try {
+      const response = await fetch(candidate, {
+        mode: "cors",
+        credentials: "omit",
+      });
+      if (!response.ok) continue;
+      const blob = await response.blob();
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error("read failed"));
+        reader.readAsDataURL(blob);
+      });
+      return dataUrl;
+    } catch {
+      // try next candidate (proxy first, then direct as fallback)
+    }
+  }
+
+  return null;
 }
 
 async function inlineExternalImages(svg: string): Promise<string> {
