@@ -89,8 +89,6 @@ const requestSchema = z
   .strict()
   .optional();
 
-const MS_PER_DAY = 86_400_000;
-
 const VARIANT_SCENE_PROMPTS: Record<1 | 2, string> = {
   1: "Photorealistic luxury cosmetic product photography studio background, soft light silver-grey wall with subtle diagonal botanical leaf shadows, minimalist 3D white marble and brushed silver hexagonal podium centered in lower third, lush green palm fronds and eucalyptus leaves framing bottom left and right corners, small glossy silver-pearl spheres floating softly in background, bright clean studio lighting, empty podium top surface, no bottle, no text, no logos, vertical 9:16, sharp focus",
   2: `Architectural cream and soft sage-green 3D arch niche skincare studio background, crisp natural sunlight window shadows, clean stone display plinth at bottom, subtle botanical leaves, empty stage, no products, no text, vertical 9:16, sharp focus, crisp edges, architectural 3D product photography stage, 8k resolution, high detail, no blur, no bokeh background`,
@@ -383,10 +381,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const limit = parsed.data?.limit ?? 5;
   const today = cairoToday();
   const now = Date.now();
-  const sevenDaysAgo = now - 7 * MS_PER_DAY;
 
   try {
-    // Eligible: verified product with a verified primary reference image.
+    // Eligible: verified product with a verified primary reference image, randomized every run.
     const eligible = await env.DB.prepare(
       `SELECT p.id, p.name_arabic, p.name_english, p.category,
               p.verification_status, p.warehouse_stock_status, p.last_advertised_at,
@@ -402,17 +399,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         AND pa.image_url IS NOT NULL
         AND TRIM(pa.image_url) != ''
        WHERE p.verification_status = 'verified'
-       ORDER BY
-         CASE
-           WHEN p.last_advertised_at IS NULL THEN 0
-           WHEN p.last_advertised_at <= ? THEN 0
-           ELSE 1
-         END,
-         COALESCE(p.last_advertised_at, 0) ASC,
-         p.updated_at DESC
+       ORDER BY RANDOM()
        LIMIT ?`,
     )
-      .bind(sevenDaysAgo, limit)
+      .bind(limit)
       .all<EligibleProductRow>();
 
     const products = eligible.results;
@@ -482,6 +472,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
             env,
             product.image_url,
             "silver-podium-botanical",
+            {
+              brand: product.brand_arabic,
+              category: product.category,
+              name: product.name_arabic,
+              benefits: research.verifiedBenefits,
+            },
           );
           staged1 = staged.image;
           staged2 = staged.image; // reuse successful staged composition for both variants
@@ -587,6 +583,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           style_id: variant.styleId,
           headline_arabic: variant.copy.headline,
           copy_arabic: variant.copy.fullPostText,
+          socialCaption: variant.copy.socialCaption,
           quality_status: qualityStatus,
           quality_notes: qualityNotes,
           image_url: variant.svgDataUri,

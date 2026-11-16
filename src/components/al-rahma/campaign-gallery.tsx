@@ -17,6 +17,7 @@ type CampaignCreative = ExportCreative & {
   template?: string;
   headline_arabic?: string | null;
   copy_arabic?: string | null;
+  socialCaption?: string | null;
   quality_status?: string | null;
   brand_arabic?: string | null;
   brand_slug?: string | null;
@@ -90,6 +91,8 @@ function CreativeCard({
   const [pngUrl, setPngUrl] = useState<string | null>(null);
   const [rendering, setRendering] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [copying, setCopying] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [renderError, setRenderError] = useState("");
 
   useEffect(() => {
@@ -132,6 +135,38 @@ function CreativeCard({
     }
   }
 
+  async function handleCopyCaption() {
+    const caption = (creative.socialCaption || creative.copy_arabic || "").trim();
+    if (!caption) {
+      onError("لا يوجد نص بوست جاهز للنسخ لهذا الإعلان.");
+      return;
+    }
+    setCopying(true);
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(caption);
+      } else if (typeof document !== "undefined") {
+        const ta = document.createElement("textarea");
+        ta.value = caption;
+        ta.setAttribute("readonly", "true");
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      } else {
+        throw new Error("clipboard unavailable");
+      }
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "تعذر نسخ نص البوست.");
+    } finally {
+      setCopying(false);
+    }
+  }
+
   const passed = creative.quality_status === "passed" || creative.success;
 
   return (
@@ -168,7 +203,15 @@ function CreativeCard({
         <p className="mt-2 text-xs text-slate-600">{creative.headline_arabic}</p>
       )}
 
-      <div className="mt-3">
+      <div className="mt-3 space-y-2">
+        <button
+          type="button"
+          onClick={() => void handleCopyCaption()}
+          disabled={copying || !(creative.socialCaption || creative.copy_arabic)}
+          className="w-full rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-extrabold text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {copying ? "جارٍ النسخ..." : copied ? "تم نسخ نص البوست ✓" : "نسخ نص البوست"}
+        </button>
         <button
           type="button"
           onClick={() => void handleDownload()}

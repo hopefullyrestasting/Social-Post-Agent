@@ -534,7 +534,7 @@ async function testCampaignEndpoints() {
     "Response should report available count when fewer than 5.",
   );
 
-  const creatives = runBody.creatives as { variant_number: number; product_id: string }[];
+  const creatives = runBody.creatives as { variant_number: number; product_id: string; socialCaption?: string }[];
   assert.equal(creatives.length, 6);
   for (const pid of ["p-never", "p-old", "p-recent"]) {
     const productCreatives = creatives.filter((c) => c.product_id === pid);
@@ -545,13 +545,13 @@ async function testCampaignEndpoints() {
     );
   }
 
-  // Selection query must prioritize not-advertised-in-last-7-days (NULL or <= sevenDaysAgo)
+  // Selection query must randomize eligible products every run
   const selectCall = runDb.calls.find(
     (c) => c.sql.includes("FROM products p") && c.sql.includes("JOIN product_assets pa"),
   );
   assert.ok(selectCall, "eligible products query must run");
-  assert.ok(selectCall.sql.includes("p.last_advertised_at IS NULL"));
-  assert.ok(selectCall.sql.includes("WHEN p.last_advertised_at <= ? THEN 0"));
+  assert.ok(selectCall.sql.includes("ORDER BY RANDOM()"), "Campaign selection must use ORDER BY RANDOM()");
+  assert.equal(selectCall.sql.includes("last_advertised_at IS NULL"), false, "Random selection must not prioritize last_advertised_at cooldown ordering.");
 
   // Persistence: campaign insert, 6 creative inserts, 3 last_advertised_at updates
   const campaignInserts = runDb.calls.filter((c) => c.sql.includes("INSERT INTO campaigns"));
@@ -999,7 +999,7 @@ async function run() {
   assert.equal(exportSource.includes("@imgly/background-removal"), false, "Client export must not import @imgly/background-removal.");
 
   console.log(
-    "D1 API tests passed: pagination, filters, validation, stats, brands, research, ingest, admin auth 401/unconfigured-preview, promos, 48h calendar, bulk ingest, and campaign batch run/persistence.",
+    "D1 API tests passed: pagination, filters, validation, stats, brands, research, ingest, admin auth 401/unconfigured-preview, promos, 48h calendar, bulk ingest, campaign random selection, socialCaption, and batch run/persistence.",
   );
 }
 

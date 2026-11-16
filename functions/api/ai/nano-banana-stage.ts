@@ -17,6 +17,13 @@ export type NanoBananaStageProvider = "nano-banana" | "studio-fallback";
 
 type TemplateId = "silver-podium-botanical" | "botanical-arch-frame" | "editorial-beauty-card";
 
+export interface NanoBananaArtDirection {
+  brand?: string | null;
+  category?: string | null;
+  name?: string | null;
+  benefits?: string[] | null;
+}
+
 const MAX_BYTES = 10 * 1024 * 1024; // 10 MB
 
 const ALLOWED_IMAGE_TYPES = new Set([
@@ -29,8 +36,49 @@ const ALLOWED_IMAGE_TYPES = new Set([
 const MODEL_PRIMARY = "gemini-2.5-flash-image";
 const MODEL_FALLBACK = "gemini-2.0-flash-exp-image-generation";
 
-const STAGING_PROMPT =
-  "Place this exact product bottle untouched—preserving every original label word, graphic, cap shape, and color—standing centered on top of a minimalist 3D white marble and brushed silver hexagonal podium in the lower third of a 9:16 vertical studio frame. Soft light silver-grey studio wall with subtle diagonal botanical leaf shadows, lush green palm and eucalyptus leaves framing bottom corners, small glossy silver-pearl spheres floating softly, realistic contact shadow under the bottle, studio ambient rim lighting, NO text, NO watermarks, NO added logos.";
+const STRICT_STAGING_SUFFIX =
+  'Commercial beauty advertisement photography featuring the exact product bottle/packaging from the reference image standing large and dominant in the center-middle of a 9:16 vertical frame. Strictly preserve the original product shape, cap, proportions, colors, and label typography 100% untouched and undistorted. Keep the top 25% and bottom 28% clean, softly lit, uncluttered negative space for Arabic editorial typography. No text, no watermarks, no random letters anywhere.';
+
+type StageStyle = "haircare-botanical" | "luxury-perfume" | "skincare-spa" | "default";
+
+function normalizeText(value: string | null | undefined): string {
+  return (value ?? "").trim().toLowerCase();
+}
+
+function detectStageStyle(context: NanoBananaArtDirection): StageStyle {
+  const haystack = [context.brand, context.category, context.name, ...(context.benefits ?? [])]
+    .map((v) => normalizeText(v))
+    .join(" ");
+
+  const haircare = ["hair", "haircare", "shampoo", "conditioner", "oil", "kids", "child", "baby", "vatika", "penduline", "mink", "شعر", "زيت", "زيوت", "شامبو", "بلسم", "أطفال", "اطفال"];
+  const perfume = ["perfume", "oud", "oudh", "luxury", "fragrance", "assaf", "farida", "khamriya", "عطر", "عطور", "عود", "خمريا", "فريدة", "عساف"];
+  const skincare = ["skin", "skincare", "moistur", "cream", "lotion", "serum", "aloe", "alo-eva", "eva", "بشرة", "كريم", "مرطب", "ترطيب", "ألو", "الو"];
+
+  if (haircare.some((k) => haystack.includes(k))) return "haircare-botanical";
+  if (perfume.some((k) => haystack.includes(k))) return "luxury-perfume";
+  if (skincare.some((k) => haystack.includes(k))) return "skincare-spa";
+  return "default";
+}
+
+function stageSceneDescription(style: StageStyle): string {
+  switch (style) {
+    case "haircare-botanical":
+      return "Sunlit warm botanical editorial stage — textured travertine stone plinth, golden sunbeams casting crisp palm/monstera leaf shadows, natural argan/shea/botanical accents, warm creamy/sage studio depth, 85mm macro lens, shallow depth of field.";
+    case "luxury-perfume":
+      return "Moody architectural luxury stage — dark smoked-travertine & brushed brass pedestal, warm amber rim lighting, subtle agarwood/floral mist accents, dramatic editorial shadows.";
+    case "skincare-spa":
+      return "Fresh spa & hydration editorial stage — sculpted matte ceramic & water-rippled marble surface, dewy water droplets, fresh aloe/botanical leaves, crisp natural daylight.";
+    case "default":
+    default:
+      return "Clean premium beauty editorial studio stage with refined stone/ceramic surfaces, soft directional studio lighting, subtle botanical accents, and elegant depth of field.";
+  }
+}
+
+function buildStagingPrompt(context: NanoBananaArtDirection): string {
+  void context;
+  const style = detectStageStyle(context);
+  return `${stageSceneDescription(style)} ${STRICT_STAGING_SUFFIX}`;
+}
 
 function base64FromBytes(bytes: Uint8Array): string {
   let binary = "";
@@ -145,6 +193,7 @@ async function callGeminiImageModel(
   key: string,
   model: string,
   source: { bytes: Uint8Array; mimeType: string },
+  prompt: string,
 ): Promise<string | null> {
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
   const body = {
@@ -157,7 +206,7 @@ async function callGeminiImageModel(
               data: base64FromBytes(source.bytes),
             },
           },
-          { text: STAGING_PROMPT },
+          { text: prompt },
         ],
       },
     ],
@@ -189,6 +238,7 @@ export async function stageProductWithNanoBananaDetailed(
   env: NanoBananaEnv,
   productImageUrl: string,
   template: TemplateId,
+  context: NanoBananaArtDirection = {},
 ): Promise<{ image: string | null; provider: NanoBananaStageProvider; model?: string }> {
   void template;
   const key = env.GEMINI_API_KEY?.trim();
@@ -206,9 +256,10 @@ export async function stageProductWithNanoBananaDetailed(
     if (!source) {
       return { image: null, provider: "studio-fallback" };
     }
+    const prompt = buildStagingPrompt(context);
 
     try {
-      const image = await callGeminiImageModel(key, MODEL_PRIMARY, source);
+      const image = await callGeminiImageModel(key, MODEL_PRIMARY, source, prompt);
       if (image) return { image, provider: "nano-banana", model: MODEL_PRIMARY };
       console.warn(`Nano Banana ${MODEL_PRIMARY} returned no inline image, falling back to studio pipeline.`);
       return { image: null, provider: "studio-fallback" };
@@ -217,7 +268,7 @@ export async function stageProductWithNanoBananaDetailed(
       if (retryable) {
         console.warn(`Nano Banana ${MODEL_PRIMARY} unavailable, retrying with ${MODEL_FALLBACK}.`, error);
         try {
-          const image = await callGeminiImageModel(key, MODEL_FALLBACK, source);
+          const image = await callGeminiImageModel(key, MODEL_FALLBACK, source, prompt);
           if (image) return { image, provider: "nano-banana", model: MODEL_FALLBACK };
           console.warn(`Nano Banana ${MODEL_FALLBACK} returned no inline image, falling back to studio pipeline.`);
         } catch (fallbackError) {
@@ -238,8 +289,9 @@ export async function stageProductWithNanoBanana(
   env: NanoBananaEnv,
   productImageUrl: string,
   template: TemplateId,
+  context: NanoBananaArtDirection = {},
 ): Promise<string | null> {
-  const result = await stageProductWithNanoBananaDetailed(env, productImageUrl, template);
+  const result = await stageProductWithNanoBananaDetailed(env, productImageUrl, template, context);
   return result.image;
 }
 
@@ -267,7 +319,7 @@ export const onRequestPost: PagesFunction<NanoBananaEnv> = async ({ request, env
     return Response.json({ success: false, error: validation.error }, { status: validation.status });
   }
 
-  const staged = await stageProductWithNanoBananaDetailed(env, imageUrl, template);
+  const staged = await stageProductWithNanoBananaDetailed(env, imageUrl, template, {});
   if (!staged.image) {
     return Response.json(
       {

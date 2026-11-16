@@ -56,6 +56,8 @@ export interface GeneratedArabicCopy {
   cta: string;
   ctaShort: string;
   hashtags: string[];
+  /** Ready-to-copy Egyptian Arabic caption: Hook + 3 benefits + CTA + hashtags. */
+  socialCaption: string;
   fullPostText: string;
 }
 
@@ -154,6 +156,28 @@ function buildHeadline(product: ProductDetails): string {
   return `${raw} ${category}`.trim();
 }
 
+function deriveSocialBenefits(product: ProductDetails, salesCopy: string): [string, string, string] {
+  const verified = clean(product.verifiedBenefits);
+  const category = categoryLabel(product.category);
+  const safeFallbacks = [
+    clampWords(salesCopy, 4, 8),
+    `جودة موثّقة في ${category}`,
+    `اختيار موثّق من ${AL_RAHMA_BRAND_CONFIG.brandName}`,
+  ].map((s) => s.trim()).filter(Boolean);
+
+  const items: string[] = [];
+  for (const b of verified) {
+    if (items.length >= 3) break;
+    if (!items.includes(b)) items.push(b);
+  }
+  for (const f of safeFallbacks) {
+    if (items.length >= 3) break;
+    if (!items.includes(f)) items.push(f);
+  }
+  while (items.length < 3) items.push(`اختيار موثّق من ${AL_RAHMA_BRAND_CONFIG.brandName}`);
+  return [items[0], items[1], items[2]];
+}
+
 export class ArabicCopywriter {
   public static generatePost(
     product: ProductDetails,
@@ -202,6 +226,15 @@ export class ArabicCopywriter {
 
     // Safety: ensure benefitLine is 4-9 words
     const finalBenefit = clampWords(benefitLine, 4, 8);
+    const socialBenefits = deriveSocialBenefits(product, finalBenefit);
+    const socialCaption = [
+      hook,
+      ...socialBenefits.map((b) => `• ${b}`),
+      ctaShort,
+      hashtags.join(" "),
+    ]
+      .filter(Boolean)
+      .join("\n");
 
     return {
       headline,
@@ -211,6 +244,7 @@ export class ArabicCopywriter {
       cta,
       ctaShort,
       hashtags,
+      socialCaption,
       fullPostText,
     };
   }
