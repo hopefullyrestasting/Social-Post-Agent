@@ -65,29 +65,39 @@ function commonDefs(): string {
       <filter id="contact-shadow-wide" x="-40%" y="-160%" width="180%" height="420%">
         <feGaussianBlur stdDeviation="12" />
       </filter>
+      <filter id="editorial-text-shadow" x="-20%" y="-40%" width="140%" height="180%">
+        <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#0F172A" flood-opacity="0.28" />
+        <feDropShadow dx="0" dy="1" stdDeviation="1.5" flood-color="#0F172A" flood-opacity="0.22" />
+      </filter>
+      <linearGradient id="bottom-editorial-vignette" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#0F172A" stop-opacity="0" />
+        <stop offset="35%" stop-color="#0F172A" stop-opacity="0.10" />
+        <stop offset="70%" stop-color="#0F172A" stop-opacity="0.30" />
+        <stop offset="100%" stop-color="#0F172A" stop-opacity="0.46" />
+      </linearGradient>
     </defs>
   `;
 }
 
 function headerPill(width: number, brandLogoUrl?: string | null): string {
-  // Top dark-emerald pill: x=40, y=48, w=1000, h=150, rx=36
+  // Sleek top header y=44..184
+  void width;
   const x = 40;
-  const y = 48;
+  const y = 44;
   const w = 1000;
-  const h = 150;
+  const h = 140;
   const logo = brandLogoUrl?.trim() || null;
 
-  // Absolute coordinates as specified by Phase 13 lockup.
-  const logoX = 915;
-  const logoY = 73;
+  const logoX = 916;
+  const logoY = 66;
   const logoSize = 96;
-  const brandX = 895;
-  const brandY = 134;
+  const brandX = 896;
+  const brandY = 128;
   const dividerX = 685;
-  const dividerY1 = 78;
-  const dividerY2 = 168;
+  const dividerY1 = 72;
+  const dividerY2 = 156;
   const taglineX = 660;
-  const taglineY = 132;
+  const taglineY = 126;
 
   const logoNode = logo
     ? `<image href="${escapeXml(logo)}" x="${logoX}" y="${logoY}" width="${logoSize}" height="${logoSize}" preserveAspectRatio="xMidYMid meet" />
@@ -98,7 +108,7 @@ function headerPill(width: number, brandLogoUrl?: string | null): string {
 
   return `
     <g id="top-header-pill">
-      <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="36" fill="#113D2E" />
+      <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="34" fill="#0F3D2E" />
       ${logoNode}
       <text x="${brandX}" y="${brandY}" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="38" font-weight="900" fill="#FFFFFF" text-anchor="end">${escapeXml(BRAND.brandName)}</text>
       <line id="header-divider" x1="${dividerX}" y1="${dividerY1}" x2="${dividerX}" y2="${dividerY2}" stroke="rgba(255,255,255,0.35)" stroke-width="2" />
@@ -108,15 +118,15 @@ function headerPill(width: number, brandLogoUrl?: string | null): string {
 }
 
 function productTitle(width: number, headline: string): string {
-  // Product Title y=245..410, Cairo 900, 56-64px, centered, max 2 lines, zero ellipsis
+  // Product Name y=220..375, Cairo 900, 54-60px, max 2 lines, zero ellipsis
   const x = width / 2;
-  const { lines, charsPerLine } = wrapTextNoTruncate(headline, 24, 2, 12);
-  const size = Math.max(56, Math.min(64, 56 + Math.max(0, 22 - charsPerLine)));
-  const lineHeight = Math.round(size * 1.28);
+  const { lines, charsPerLine } = wrapTextNoTruncate(headline, 22, 2, 10);
+  const size = Math.max(54, Math.min(60, 54 + Math.max(0, 20 - charsPerLine)));
+  const lineHeight = Math.round(size * 1.26);
   const blockH = size + (lines.length - 1) * lineHeight;
-  const top = 275;
-  const bottom = 400;
-  const y = Math.min(top + size, bottom - Math.max(0, blockH - size));
+  const top = 220 + size;
+  const bottom = 375;
+  const y = Math.min(top, bottom - Math.max(0, blockH - size));
 
   const tspans = lines
     .map((line, index) => `<tspan x="${x}" dy="${index === 0 ? 0 : lineHeight}">${escapeXml(line)}</tspan>`)
@@ -128,93 +138,63 @@ function productTitle(width: number, headline: string): string {
   `;
 }
 
-function featurePill(x: number, y: number, text: string): string {
-  const w = 286;
-  const h = 72;
-  return `
-    <g transform="translate(${x}, ${y})" filter="url(#pill-shadow)">
-      <rect width="${w}" height="${h}" rx="24" fill="#FFFFFF" fill-opacity="0.92" stroke="#E2E8F0" stroke-width="1.5" />
-      <rect x="1.5" y="1.5" width="${w - 3}" height="${h - 3}" rx="22.5" fill="#FFFFFF" fill-opacity="0.18" />
-      <circle cx="42" cy="${h / 2}" r="16" fill="#059669" />
-      <path d="M 34 ${h / 2 + 1} l 5 5 l 10 -12" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
-      <text x="${w / 2 + 14}" y="${h / 2 + 9}" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="24" font-weight="700" fill="#334155" text-anchor="middle">${escapeXml(text)}</text>
-    </g>
-  `;
-}
-
 function heroPackshot(
   width: number,
   productUrl: string | null | undefined,
   options?: { staged?: boolean },
 ): string {
-  // Side Feature Pills y=820..910 (always rendered as typography/UI overlay)
-  const badges = `
-    <g id="feature-pills">
-      ${featurePill(width - 64 - 286, 820, "تركيبة طبيعية")}
-      ${featurePill(64, 840, "جودة مضمونة")}
-    </g>
-  `;
-
   // When a full staged image (background+product) is provided, do not duplicate the bottle.
   if (options?.staged) {
-    return badges;
+    return "";
   }
 
-  // Hero packshot y=460..1240, h=740 w=580 x=250 y=490, bottom seated at 1230
+  // Dominant hero packshot: 860x680 at x=200,y=400, bottom at 1260
   const cx = width / 2;
-  const packshotX = 250;
-  const packshotY = 490;
-  const packshotW = 580;
-  const packshotH = 740;
-  const bottom = 1230;
+  const packshotX = 200;
+  const packshotY = 400;
+  const packshotW = 680;
+  const packshotH = 860;
+  const bottom = 1260;
 
-  let packshot: string;
   if (!productUrl) {
-    packshot = `
+    return `
       <g id="packshot-missing">
         <rect x="${packshotX}" y="${packshotY}" width="${packshotW}" height="${packshotH}" rx="28" fill="none" stroke="#94A3B8" stroke-width="3" stroke-dasharray="14 12" />
-        <text x="${cx}" y="${packshotY + packshotH / 2}" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="28" font-weight="700" fill="#64748B" text-anchor="middle">الصورة الأصلية غير متاحة</text>
-      </g>
-    `;
-  } else {
-    packshot = `
-      <g id="packshot-hero">
-        <!-- realistic soft contact shadow + ambient lighting integration -->
-        <ellipse id="packshot-contact-shadow-wide" cx="${cx}" cy="${bottom + 4}" rx="190" ry="30" fill="#0F172A" fill-opacity="0.16" filter="url(#contact-shadow-wide)" />
-        <ellipse id="packshot-contact-shadow-tight" cx="${cx}" cy="${bottom + 2}" rx="105" ry="14" fill="#0F172A" fill-opacity="0.34" filter="url(#contact-shadow-tight)" />
-        <ellipse id="packshot-ambient-glow" cx="${cx}" cy="${packshotY + packshotH * 0.45}" rx="210" ry="320" fill="#FFFFFF" fill-opacity="0.10" filter="url(#contact-shadow-wide)" />
-        <g id="packshot" data-packshot="true" filter="url(#rim-light)">
-          <image data-packshot="true" href="${escapeXml(productUrl)}" x="${packshotX}" y="${packshotY}" width="${packshotW}" height="${packshotH}" preserveAspectRatio="xMidYMid meet" />
-        </g>
+        <text x="${cx}" y="${packshotY + packshotH / 2}" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="30" font-weight="700" fill="#64748B" text-anchor="middle">الصورة الأصلية غير متاحة</text>
       </g>
     `;
   }
 
-  return `${packshot}${badges}`;
+  return `
+    <g id="packshot-hero">
+      <ellipse id="packshot-contact-shadow-wide" cx="${cx}" cy="${bottom + 6}" rx="230" ry="34" fill="#0F172A" fill-opacity="0.16" filter="url(#contact-shadow-wide)" />
+      <ellipse id="packshot-contact-shadow-tight" cx="${cx}" cy="${bottom + 2}" rx="125" ry="16" fill="#0F172A" fill-opacity="0.34" filter="url(#contact-shadow-tight)" />
+      <ellipse id="packshot-ambient-glow" cx="${cx}" cy="${packshotY + packshotH * 0.45}" rx="250" ry="360" fill="#FFFFFF" fill-opacity="0.08" filter="url(#contact-shadow-wide)" />
+      <g id="packshot" data-packshot="true" filter="url(#rim-light)">
+        <image data-packshot="true" href="${escapeXml(productUrl)}" x="${packshotX}" y="${packshotY}" width="${packshotW}" height="${packshotH}" preserveAspectRatio="xMidYMid meet" />
+      </g>
+    </g>
+  `;
 }
 
-function salesCopyCard(width: number, text: string): string {
-  // Elevated white sales card y=1310, height=195, rx=28. 4-8 words, max 2 balanced lines, no clipping.
-  const x = 86;
-  const y = 1310;
-  const w = width - 172;
-  const h = 195;
-  const size = 44;
-  const lineHeight = 58;
-
+function editorialSalesCopy(width: number, height: number, text: string): string {
+  // High-impact editorial sales copy y=1330..1530, direct on photography with subtle vignette/scrim (no white box)
+  const x = width / 2;
+  const size = 54;
+  const lineHeight = 64;
   const { lines } = wrapTextNoTruncate(text, 22, 2, 10);
   const blockH = size + (lines.length - 1) * lineHeight;
-  const textY = y + h / 2 - blockH / 2 + size - 2;
-
+  const top = 1330 + size;
+  const bottom = 1530;
+  const y = Math.min(top, bottom - Math.max(0, blockH - size));
   const tspans = lines
-    .map((line, index) => `<tspan x="${width / 2}" dy="${index === 0 ? 0 : lineHeight}">${escapeXml(line)}</tspan>`)
+    .map((line, index) => `<tspan x="${x}" dy="${index === 0 ? 0 : lineHeight}">${escapeXml(line)}</tspan>`)
     .join("");
 
   return `
-    <g id="sales-copy-card" filter="url(#card-shadow)">
-      <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="28" fill="#FFFFFF" />
-      <rect x="${x + 1.5}" y="${y + 1.5}" width="${w - 3}" height="${h - 3}" rx="26.5" fill="#FFFFFF" stroke="#F1F5F9" stroke-width="1" />
-      <text x="${width / 2}" y="${textY}" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="${size}" font-weight="800" fill="#155E42" text-anchor="middle" direction="rtl">${tspans}</text>
+    <g id="sales-copy-editorial">
+      <rect x="0" y="${Math.max(0, height - 760)}" width="${width}" height="760" fill="url(#bottom-editorial-vignette)" />
+      <text x="${x}" y="${y}" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="${size}" font-weight="900" fill="#FFFFFF" text-anchor="middle" direction="rtl" filter="url(#editorial-text-shadow)">${tspans}</text>
     </g>
   `;
 }
@@ -286,12 +266,13 @@ function availabilityPill(width: number, y: number, text: string): string {
 }
 
 function ctaPill(width: number, y: number, text: string): string {
-  const w = 500;
+  const w = 480;
+  const h = 80;
   const x = (width - w) / 2;
   return `
-    <g transform="translate(${x}, ${y})" filter="url(#pill-shadow)">
-      <rect width="${w}" height="70" rx="35" fill="#059669" />
-      <text x="${w / 2}" y="45" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="28" font-weight="800" fill="#FFFFFF" text-anchor="middle">${escapeXml(text)}</text>
+    <g id="cta-pill" transform="translate(${x}, ${y})" filter="url(#pill-shadow)">
+      <rect width="${w}" height="${h}" rx="${h / 2}" fill="#059669" />
+      <text x="${w / 2}" y="51" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="30" font-weight="800" fill="#FFFFFF" text-anchor="middle">${escapeXml(text)}</text>
     </g>
   `;
 }
@@ -326,7 +307,7 @@ function contactBlock(width: number): string {
   const phone = BRAND.contact.phone;
   return `
     <g id="contact-block">
-      <rect x="0" y="${y}" width="${width}" height="${barH}" fill="#113D2E" />
+      <rect x="0" y="${y}" width="${width}" height="${barH}" fill="#0F3D2E" />
       <text x="960" y="1840" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="42" font-weight="800" fill="#FFFFFF" text-anchor="end" direction="rtl">${escapeXml(CONTACT_LABEL)}</text>
       <text x="540" y="1842" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="52" font-weight="900" fill="#FFFFFF" text-anchor="middle" direction="ltr">${escapeXml(phone)}</text>
       ${circularIcon(250, 1825, "whatsapp")}
@@ -358,8 +339,8 @@ export class OverlaySystem {
         sceneImageUrl: stagedImageUrl ?? opts.sceneImageUrl ?? null,
       });
 
-    // Promo badge sits above sales copy card when active (keeps card position stable)
-    const promoY = 1202;
+    // Keep promo badge clear of hero/sales area in the editorial layout.
+    const promoY = 1180;
 
     return `
       <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" role="img" aria-label="${escapeXml(BRAND.brandName)}">
@@ -370,9 +351,9 @@ export class OverlaySystem {
         ${productTitle(width, headline)}
         ${heroPackshot(width, productUrl, { staged: Boolean(stagedImageUrl) })}
         ${promotion ? promoBadge(width, promoY, promotion) : ""}
-        ${benefit ? salesCopyCard(width, benefit) : ""}
-        ${availability ? availabilityPill(width, 1518, availability) : ""}
-        ${!promotion && cta ? ctaPill(width, 1510, cta) : ""}
+        ${benefit ? editorialSalesCopy(width, height, benefit) : ""}
+        ${availability ? availabilityPill(width, 1542, availability) : ""}
+        ${!promotion && cta ? ctaPill(width, 1575, cta) : ""}
         ${opts.showFooterBar === false ? "" : contactBlock(width)}
       </svg>
     `.trim();

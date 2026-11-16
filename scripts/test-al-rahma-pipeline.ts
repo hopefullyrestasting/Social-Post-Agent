@@ -227,48 +227,52 @@ assertWordRange(variants[0].copy.benefitLine, 4, 8, "Engine variant 1 benefit li
 assertWordRange(variants[1].copy.benefitLine, 4, 8, "Engine variant 2 benefit line");
 assert.notEqual(variants[0].svgOverlay, variants[1].svgOverlay, "Variants must differ in layout.");
 
-for (const result of variants) {
-  assert.equal(result.success, true, result.blockers.join(" | ") || result.qualityReport.errors.join(" | "));
-  assert.equal(result.styleId, `al-rahma/${result.template}`);
-  assert.equal(result.background.provider, "deterministic-studio");
-  assert.deepEqual(result.metadata.dimensions, { width: 1080, height: 1920 });
-  assert.ok(result.svgOverlay.includes(verifiedProduct.productImageUrl));
-  assert.ok(result.svgOverlay.includes(brand.contact.phone), "Exact phone number must render.");
-  assert.ok(result.svgOverlay.includes("\u200Fللتواصل:"), "Contact label must render with proper RTL formatting.");
-  assert.equal(result.svgOverlay.includes("..."), false, "No truncation ellipsis allowed in rendered SVG.");
-  assert.equal(result.svgOverlay.includes("…"), false, "No unicode ellipsis allowed in rendered SVG.");
-  assert.ok(result.svgOverlay.includes("متاح توصيل"), "Header/subtitle must include متاح توصيل.");
-  assert.ok(result.svgOverlay.includes("#FFFFFF"));
-  assert.ok(result.svgOverlay.includes('data-template="'), "Template marker must be present.");
-  assert.ok(result.svgOverlay.includes('data-packshot="true"'), "Packshot must be marked for cutout compositing.");
-  assert.ok(result.svgOverlay.includes('height="740"'), "Hero packshot must be rendered at 740px height.");
-  assert.ok(result.svgOverlay.includes('x="250" y="490" width="580" height="740"'), "Hero packshot must use approved geometry (x=250,y=490,w=580,h=740, bottom at 1230).");
-  assert.ok(result.svgOverlay.includes('id="top-header-pill"'), "Top dark-emerald header pill must render.");
-  assert.ok(result.svgOverlay.includes("#113D2E"), "Approved dark-emerald header/footer color must be used.");
-  assert.ok(result.svgOverlay.includes('width="1000" height="150" rx="36" fill="#113D2E"'), "Header pill must match approved dimensions and color.");
-  assert.ok(result.svgOverlay.includes('x="915" y="73" width="96" height="96"'), "Brand logo must be positioned in the approved header lockup.");
-  assert.ok(result.svgOverlay.includes('x="895" y="134"') && result.svgOverlay.includes('font-size="38"') && result.svgOverlay.includes('font-weight="900"'), "Brand name must use approved header coordinates/typography.");
-  assert.ok(result.svgOverlay.includes('id="header-divider"') && result.svgOverlay.includes('x1="685"') && result.svgOverlay.includes('y1="78"') && result.svgOverlay.includes('x2="685"') && result.svgOverlay.includes('y2="168"'), "Header must include vertical divider at approved coordinates.");
-  assert.ok(result.svgOverlay.includes('x="660" y="132"') && result.svgOverlay.includes('font-size="25"') && result.svgOverlay.includes('fill="#E2E8F0"'), "Header tagline must use approved coordinates/typography with no overlap.");
-  assert.ok(result.svgOverlay.includes("مستحضرات تجميل ومستلزمات الصيدليات - متاح توصيل"), "Header activity/delivery text must match approved lockup.");
-  assert.ok(result.svgOverlay.includes('id="product-title"'), "Product title block must render.");
-  assert.ok(result.svgOverlay.includes("تركيبة طبيعية") && result.svgOverlay.includes("جودة مضمونة"), "Side feature pills must render.");
-  assert.ok(result.svgOverlay.includes('id="sales-copy-card"'), "Elevated sales copy card must render.");
-  assert.ok(result.svgOverlay.includes('y="1310"') && result.svgOverlay.includes('height="195"') && result.svgOverlay.includes('rx="28"'), "Sales copy card must use approved geometry.");
-  assert.ok(result.svgOverlay.includes('font-size="44"') && result.svgOverlay.includes('font-weight="800"') && result.svgOverlay.includes("#155E42"), "Sales copy must use approved typography and color.");
-  assert.ok(result.svgOverlay.includes('y="1730"') && result.svgOverlay.includes('height="190"'), "Bottom contact bar must use approved geometry.");
-  assert.ok(result.svgOverlay.includes('x="960" y="1840"') && result.svgOverlay.includes('font-size="42"'), "Contact label must use approved coordinates/typography.");
-  assert.ok(result.svgOverlay.includes('x="540" y="1842"') && result.svgOverlay.includes('font-size="52"'), "Phone number must be centered with approved coordinates/typography.");
-  assert.ok(result.svgOverlay.includes('cx="250" cy="1825"') && result.svgOverlay.includes('cx="165" cy="1825"') && result.svgOverlay.includes('r="30"'), "Contact icons must be placed away from phone digits with r=30.");
-  assert.ok(result.svgOverlay.includes("\u200Fللتواصل:") && result.svgOverlay.includes(brand.contact.phone), "Contact bar must render label and phone.");
-  assert.equal(result.svgOverlay.includes('href="/studio-scenes/'), false, "External studio scene URLs must never be emitted in SVG (PNG export safety).");
-  assert.ok(result.svgOverlay.includes("#059669"), "Contact/icons must include emerald accent styling.");
-  assert.equal(result.qualityReport.passed, true);
-  assert.equal(result.metadata.promotion, null);
-  assert.equal(result.metadata.occasion, null);
-  assert.equal(result.svgOverlay.includes("promo-badge"), false, "No promo without an active in-window record.");
-  assert.equal(result.svgOverlay.includes("occasion-ribbon"), false, "No greeting without an in-window occasion.");
-}
+  for (const result of variants) {
+    assert.equal(result.success, true, result.blockers.join(" | ") || result.qualityReport.errors.join(" | "));
+    assert.equal(result.styleId, `al-rahma/${result.template}`);
+    assert.equal(result.background.provider, "deterministic-studio");
+    assert.deepEqual(result.metadata.dimensions, { width: 1080, height: 1920 });
+    assert.ok(result.svgOverlay.includes(verifiedProduct.productImageUrl));
+    assert.ok(result.svgOverlay.includes(brand.contact.phone), "Exact phone number must render.");
+    assert.ok(result.svgOverlay.includes("\u200Fللتواصل:"), "Contact label must render with proper RTL formatting.");
+    assert.equal(result.svgOverlay.includes("..."), false, "No truncation ellipsis allowed in rendered SVG.");
+    assert.equal(result.svgOverlay.includes("…"), false, "No unicode ellipsis allowed in rendered SVG.");
+    assert.ok(result.svgOverlay.includes("متاح توصيل"), "Header/subtitle must include متاح توصيل.");
+    assert.ok(result.svgOverlay.includes("#FFFFFF"));
+    assert.ok(result.svgOverlay.includes('data-template="'), "Template marker must be present.");
+    assert.ok(result.svgOverlay.includes('data-packshot="true"'), "Packshot must be marked for cutout compositing.");
+    assert.ok(result.svgOverlay.includes('height="860"'), "Dominant hero packshot must be rendered at 860px height.");
+    assert.ok(result.svgOverlay.includes('x="200" y="400" width="680" height="860"'), "Hero packshot must use approved dominant geometry (x=200,y=400,w=680,h=860, bottom at 1260).");
+    assert.ok(result.svgOverlay.includes('id="top-header-pill"'), "Top dark-emerald header pill must render.");
+    assert.ok(result.svgOverlay.includes('fill="#0F3D2E"'), "Approved dark-emerald header/footer color must be used.");
+    assert.ok(result.svgOverlay.includes('id="header-divider"') && result.svgOverlay.includes('x1="685"') && result.svgOverlay.includes('y1="72"') && result.svgOverlay.includes('x2="685"') && result.svgOverlay.includes('y2="156"'), "Header must include vertical divider at approved coordinates.");
+    assert.ok(result.svgOverlay.includes('x="660" y="126"') && result.svgOverlay.includes('font-size="25"') && result.svgOverlay.includes('fill="#E2E8F0"'), "Header tagline must use approved coordinates/typography with no overlap.");
+    assert.ok(result.svgOverlay.includes("مستحضرات تجميل ومستلزمات الصيدليات - متاح توصيل"), "Header activity/delivery text must match approved lockup.");
+    assert.ok(result.svgOverlay.includes('id="product-title"'), "Product title block must render.");
+    assert.equal(result.svgOverlay.includes("تركيبة طبيعية"), false, "Side feature pills must be removed.");
+    assert.equal(result.svgOverlay.includes("جودة مضمونة"), false, "Side feature pills must be removed.");
+    assert.equal(result.svgOverlay.includes('id="feature-pills"'), false, "Side feature pills group must be removed.");
+    assert.ok(result.svgOverlay.includes('id="sales-copy-editorial"'), "Editorial sales copy must render directly over photography.");
+    assert.equal(result.svgOverlay.includes('id="sales-copy-card"'), false, "Bulky white sales copy card must be removed.");
+    assert.ok(result.svgOverlay.includes('font-size="54"') && result.svgOverlay.includes('font-weight="900"') && result.svgOverlay.includes('fill="#FFFFFF"'), "Sales copy must use approved editorial typography.");
+    assert.ok(result.svgOverlay.includes('bottom-editorial-vignette'), "Sales copy must include subtle bottom vignette/scrim.");
+    assert.ok(result.svgOverlay.includes('id="cta-pill"'), "CTA pill must render in editorial layout.");
+    assert.ok(result.svgOverlay.includes('y="1730"') && result.svgOverlay.includes('height="190"'), "Bottom contact bar must use approved geometry.");
+    assert.ok(result.svgOverlay.includes('x="960" y="1840"') && result.svgOverlay.includes('font-size="42"'), "Contact label must use approved coordinates/typography.");
+    assert.ok(result.svgOverlay.includes('x="540" y="1842"') && result.svgOverlay.includes('font-size="52"'), "Phone number must be centered with approved coordinates/typography.");
+    assert.ok(result.svgOverlay.includes('cx="250" cy="1825"') && result.svgOverlay.includes('cx="165" cy="1825"') && result.svgOverlay.includes('r="30"'), "Contact icons must be placed away from phone digits with r=30.");
+    assert.ok(result.svgOverlay.includes("\u200Fللتواصل:") && result.svgOverlay.includes(brand.contact.phone), "Contact bar must render label and phone.");
+    assert.equal(result.svgOverlay.includes('href="/studio-scenes/'), false, "External studio scene URLs must never be emitted in SVG (PNG export safety).");
+    assert.ok(result.svgOverlay.includes("#059669"), "Contact/icons/CTA must include emerald accent styling.");
+    assert.ok(result.copy.socialCaption && result.copy.socialCaption.includes(result.copy.ctaShort), "Each creative must include a ready-to-copy socialCaption with CTA.");
+    assert.ok((result.copy.socialCaption.match(/•/g) || []).length >= 3, "socialCaption must include 3 benefit lines.");
+    assert.ok(result.copy.socialCaption.includes("#"), "socialCaption must include hashtags.");
+    assert.equal(result.qualityReport.passed, true);
+    assert.equal(result.metadata.promotion, null);
+    assert.equal(result.metadata.occasion, null);
+    assert.equal(result.svgOverlay.includes("promo-badge"), false, "No promo without an active in-window record.");
+    assert.equal(result.svgOverlay.includes("occasion-ribbon"), false, "No greeting without an in-window occasion.");
+  }
 
 assert.ok(variants[0].svgOverlay.includes("studio-podium") || variants[0].svgOverlay.includes("shader-podium") || variants[0].svgOverlay.includes("podium"), "Variant 1 must include a studio podium stage.");
 
@@ -429,21 +433,20 @@ assert.ok(overlay.includes("\u200Fللتواصل:"));
 assert.ok(overlay.includes("متاح توصيل"));
 assert.ok(overlay.includes("ترطيب") && overlay.includes("عميق"), "Benefit line text must render in overlay.");
 assert.ok(overlay.includes('data-packshot="true"'));
-assert.ok(overlay.includes('height="740"'));
-assert.ok(overlay.includes('x="250" y="490" width="580" height="740"'));
+assert.ok(overlay.includes('height="860"'));
+assert.ok(overlay.includes('x="200" y="400" width="680" height="860"'));
 assert.ok(overlay.includes('id="top-header-pill"'));
-assert.ok(overlay.includes("#113D2E"));
-assert.ok(overlay.includes('width="1000" height="150" rx="36" fill="#113D2E"'));
-assert.ok(overlay.includes('x="915" y="73" width="96" height="96"'));
-assert.ok(overlay.includes('x="895" y="134"'));
-assert.ok(overlay.includes('id="header-divider"') && overlay.includes('x1="685"') && overlay.includes('y1="78"') && overlay.includes('x2="685"') && overlay.includes('y2="168"'));
-assert.ok(overlay.includes('x="660" y="132"'));
+assert.ok(overlay.includes('fill="#0F3D2E"'));
+assert.ok(overlay.includes('id="header-divider"') && overlay.includes('x1="685"'));
 assert.ok(overlay.includes("مستحضرات تجميل ومستلزمات الصيدليات - متاح توصيل"));
 assert.ok(overlay.includes('id="product-title"'));
-assert.ok(overlay.includes("تركيبة طبيعية") && overlay.includes("جودة مضمونة"));
-assert.ok(overlay.includes('id="sales-copy-card"'));
-assert.ok(overlay.includes('y="1310"') && overlay.includes('height="195"'));
-assert.ok(overlay.includes('font-size="44"') && overlay.includes("#155E42"));
+assert.equal(overlay.includes("تركيبة طبيعية"), false);
+assert.equal(overlay.includes("جودة مضمونة"), false);
+assert.equal(overlay.includes('id="feature-pills"'), false);
+assert.ok(overlay.includes('id="sales-copy-editorial"'));
+assert.equal(overlay.includes('id="sales-copy-card"'), false);
+assert.ok(overlay.includes('font-size="54"'));
+assert.ok(overlay.includes('id="cta-pill"'));
 assert.ok(overlay.includes('y="1730"') && overlay.includes('height="190"'));
 assert.ok(overlay.includes('x="960" y="1840"'));
 assert.ok(overlay.includes('x="540" y="1842"'));
@@ -480,7 +483,7 @@ assert.deepEqual(
 );
 
 console.log(
-  "Al Rahma pipeline tests passed: BrandConfig, 4-8 benefit-only copy (no usage, no ellipsis), 3 designer templates, approved studio header/card/footer lockup, 740px hero packshot on podium, feature pills and sales card, quality gate, promos, 48h cultural greeting, and single-source brand identity.",
+  "Al Rahma pipeline tests passed: BrandConfig, 4-8 benefit-only copy (no usage, no ellipsis), 3 designer templates, pro editorial header/footer lockup, dominant 860px hero packshot, no side pills or sales box, vignette editorial sales copy, socialCaption, quality gate, promos, 48h cultural greeting, and single-source brand identity.",
 );
 })().catch((error) => {
   console.error(error);
