@@ -24,7 +24,7 @@ import {
  * POST /api/db/campaigns/run (protected by admin middleware)
  *
  * Manual daily batch: select up to 5 eligible products (verified + verified
- * primary image), prioritize not advertised in last 7 days, generate 2 designer-template variants (Variant 1: silver-podium-botanical, Variant 2 alternates), persist campaign + creatives + last_advertised_at.
+ * primary image), prioritize not advertised in last 7 days, generate 2 designer-template variants (Variant 1: simple-botanical-horizon, Variant 2 alternates), persist campaign + creatives + last_advertised_at.
  *
  * No Cloudflare Cron is enabled by this endpoint.
  */
@@ -353,6 +353,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     for (const product of products) {
       selectedIds.push(product.id);
+      const seedBase = Array.from(product.id).reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+      const [style1, style2] = variantStylePair(product.id);
+      // The Simple theme composites the authentic packshot over a colour-matched
+      // scene with a true mirror reflection, so AI product staging is skipped for
+      // that primary direction (it would duplicate/redraw the packaging).
+      const simplePrimary =
+        ART_DIRECTION_STYLES[style1]?.template === "simple-botanical-horizon";
       const [promotion, research] = await Promise.all([
         loadActivePromotion(env, product.id, today),
         loadResearch(env, product.id),
@@ -366,12 +373,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       let stageProvider: NanoBananaStageProvider = "studio-fallback";
       let stageModel: string | undefined;
 
-      if (env.GEMINI_API_KEY?.trim()) {
+      if (env.GEMINI_API_KEY?.trim() && !simplePrimary) {
         try {
           const staged = await stageProductWithNanoBananaDetailed(
             env,
             product.image_url,
-            "silver-podium-botanical",
+            ART_DIRECTION_STYLES[style1].template,
             {
               brand: product.brand_arabic,
               category: product.category,
@@ -421,8 +428,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           | "unknown",
       };
 
-      const seedBase = Array.from(product.id).reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
-      const [style1, style2] = variantStylePair(product.id);
       let scene1: SceneOutcome | null = null;
       let scene2: SceneOutcome | null = null;
 

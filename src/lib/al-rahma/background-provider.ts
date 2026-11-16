@@ -15,6 +15,7 @@ import { escapeXml } from "./svg-utils";
  */
 
 export type DesignerTemplate =
+  | "simple-botanical-horizon"
   | "silver-podium-botanical"
   | "botanical-arch-frame"
   | "editorial-beauty-card";
@@ -25,11 +26,127 @@ export type BackgroundProviderId =
   | "pollinations"
   | "muapi";
 
+/**
+ * Adaptive colour palettes for the Simple editorial theme. The studio wall and
+ * glossy floor are colour-matched to the product packaging mood so the same
+ * composition works for skincare, haircare and luxury fragrance.
+ */
+export type SimplePaletteKey =
+  | "fresh-sage"
+  | "blush-apricot"
+  | "golden-sage"
+  | "luxury-emerald";
+
+export interface SimplePalette {
+  key: SimplePaletteKey;
+  wallFrom: string;
+  wallMid: string;
+  wallTo: string;
+  floorFrom: string;
+  floorMid: string;
+  floorTo: string;
+  leafLight: string;
+  leafMid: string;
+  leafDark: string;
+}
+
+export const SIMPLE_HORIZON_Y = 1240;
+
+export const SIMPLE_PALETTES: Record<SimplePaletteKey, SimplePalette> = {
+  "fresh-sage": {
+    key: "fresh-sage",
+    wallFrom: "#5A9A48",
+    wallMid: "#6BAA59",
+    wallTo: "#7AB864",
+    floorFrom: "#65A852",
+    floorMid: "#4E8C3D",
+    floorTo: "#3E7830",
+    leafLight: "#C4E8A6",
+    leafMid: "#63B14E",
+    leafDark: "#2F6B33",
+  },
+  "blush-apricot": {
+    key: "blush-apricot",
+    wallFrom: "#C87D8A",
+    wallMid: "#D693A0",
+    wallTo: "#E5A9B4",
+    floorFrom: "#B86B78",
+    floorMid: "#9A5764",
+    floorTo: "#7D3F4B",
+    leafLight: "#F6E3CF",
+    leafMid: "#7FA86F",
+    leafDark: "#3F6B44",
+  },
+  "golden-sage": {
+    key: "golden-sage",
+    wallFrom: "#6E9B63",
+    wallMid: "#7EAC73",
+    wallTo: "#8FBC83",
+    floorFrom: "#5C8A52",
+    floorMid: "#3E6636",
+    floorTo: "#2C4A26",
+    leafLight: "#DCE9BC",
+    leafMid: "#7FAE63",
+    leafDark: "#456B3A",
+  },
+  "luxury-emerald": {
+    key: "luxury-emerald",
+    wallFrom: "#1B3B32",
+    wallMid: "#244B40",
+    wallTo: "#2D5A4C",
+    floorFrom: "#142E27",
+    floorMid: "#0F241E",
+    floorTo: "#0B1B16",
+    leafLight: "#8FB8A1",
+    leafMid: "#3E6B57",
+    leafDark: "#1F3D33",
+  },
+};
+
+export interface SimplePaletteContext {
+  brand?: string | null;
+  category?: string | null;
+  name?: string | null;
+  benefits?: string[] | null;
+}
+
+/**
+ * Deterministically pick the Simple palette from product category/brand/name.
+ * Perfumes and oud go dark emerald-charcoal, kids go blush-apricot, haircare
+ * with argan goes warm golden sage, everything else stays fresh sage-green.
+ */
+export function resolveSimplePaletteKey(
+  context?: SimplePaletteContext,
+): SimplePaletteKey {
+  const haystack = [
+    context?.brand,
+    context?.category,
+    context?.name,
+    ...(context?.benefits ?? []),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  if (/(perfume|fragrance|oud|عود|عطر|برفان|بارفان|luxury|فخم)/.test(haystack)) {
+    return "luxury-emerald";
+  }
+  if (/(kids|children|child|أطفال|اطفال|مينك|mink|baby|بيبى)/.test(haystack)) {
+    return "blush-apricot";
+  }
+  if (/(argan|أرغان|ارجان|vatika|فاتيكا|penduline|بندولين|hair|شعر|شامبو|بلسم|زيت)/.test(haystack)) {
+    return "golden-sage";
+  }
+  return "fresh-sage";
+}
+
 export interface BackgroundRequest {
   width: number;
   height: number;
   template: DesignerTemplate;
   sceneImageUrl?: string | null;
+  /** Simple theme colour mood; defaults to fresh sage-green. */
+  palette?: SimplePaletteKey;
 }
 
 export interface BackgroundLayer {
@@ -164,12 +281,153 @@ function editorialBeautyCard(width: number, height: number): string {
   `.trim();
 }
 
+function simpleDefs(palette: SimplePalette): string {
+  return `
+    <defs>
+      <linearGradient id="simple-wall" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="${palette.wallFrom}" />
+        <stop offset="62%" stop-color="${palette.wallMid}" />
+        <stop offset="100%" stop-color="${palette.wallTo}" />
+      </linearGradient>
+      <linearGradient id="simple-floor" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="${palette.floorFrom}" />
+        <stop offset="55%" stop-color="${palette.floorMid}" />
+        <stop offset="100%" stop-color="${palette.floorTo}" />
+      </linearGradient>
+      <linearGradient id="simple-floor-sheen" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.26" />
+        <stop offset="22%" stop-color="#FFFFFF" stop-opacity="0.05" />
+        <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0" />
+      </linearGradient>
+      <radialGradient id="simple-sky-glow" cx="50%" cy="24%" r="64%">
+        <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.30" />
+        <stop offset="58%" stop-color="#FFFFFF" stop-opacity="0.07" />
+        <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0" />
+      </radialGradient>
+      <radialGradient id="simple-horizon-glow" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.40" />
+        <stop offset="55%" stop-color="#FFFFFF" stop-opacity="0.12" />
+        <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0" />
+      </radialGradient>
+      <linearGradient id="simple-leaf" x1="0%" y1="100%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="${palette.leafDark}" />
+        <stop offset="55%" stop-color="${palette.leafMid}" />
+        <stop offset="100%" stop-color="${palette.leafLight}" />
+      </linearGradient>
+      <filter id="simple-cloud-blur" x="-40%" y="-60%" width="180%" height="220%">
+        <feGaussianBlur stdDeviation="12" />
+      </filter>
+      <filter id="simple-leaf-blur" x="-40%" y="-40%" width="180%" height="180%">
+        <feGaussianBlur stdDeviation="5" />
+      </filter>
+    </defs>
+  `.trim();
+}
+
+function cumulusCloud(
+  cx: number,
+  cy: number,
+  scale: number,
+  opacity: number,
+): string {
+  return `
+    <g transform="translate(${cx} ${cy}) scale(${scale})" filter="url(#simple-cloud-blur)" fill="#FFFFFF" fill-opacity="${opacity}">
+      <ellipse cx="0" cy="4" rx="118" ry="50" />
+      <ellipse cx="-62" cy="18" rx="70" ry="38" fill-opacity="${(opacity * 0.85).toFixed(2)}" />
+      <ellipse cx="58" cy="16" rx="76" ry="40" fill-opacity="${(opacity * 0.85).toFixed(2)}" />
+      <ellipse cx="-26" cy="-30" rx="64" ry="46" fill-opacity="${(opacity * 0.95).toFixed(2)}" />
+      <ellipse cx="34" cy="-24" rx="54" ry="38" fill-opacity="${(opacity * 0.9).toFixed(2)}" />
+      <ellipse cx="2" cy="30" rx="104" ry="24" fill-opacity="${(opacity * 0.6).toFixed(2)}" />
+    </g>
+  `.trim();
+}
+
+function mintLeaf(
+  x: number,
+  y: number,
+  rotate: number,
+  scale: number,
+  opacity: number,
+): string {
+  return `
+    <g transform="translate(${x} ${y}) rotate(${rotate}) scale(${scale})">
+      <path d="M 0 0 C -34 -34, -42 -104, 0 -152 C 42 -104, 34 -34, 0 0 Z" fill="url(#simple-leaf)" fill-opacity="${opacity}" />
+      <path d="M 0 -8 L 0 -138" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="2" fill="none" />
+      <path d="M 0 -42 C -16 -58, -22 -74, -24 -92 M 0 -42 C 16 -58, 22 -74, 24 -92 M 0 -82 C -12 -94, -16 -104, -18 -116 M 0 -82 C 12 -94, 16 -104, 18 -116" stroke="${paletteLeafVein()}" stroke-opacity="0.22" stroke-width="1.6" fill="none" />
+    </g>
+  `.trim();
+}
+
+/** Leaf vein accent stays neutral so it works across every palette. */
+function paletteLeafVein(): string {
+  return "#0B1B16";
+}
+
+function botanicalBase(width: number): string {
+  const cx = width / 2;
+  return `
+    <g id="botanical-base">
+      <!-- Soft base shadow anchoring the leaf cluster on the horizon -->
+      <ellipse cx="${cx}" cy="1258" rx="430" ry="54" fill="#0B1B16" fill-opacity="0.14" filter="url(#simple-leaf-blur)" />
+      <!-- Back leaves, radiating outwards from the centre base -->
+      ${mintLeaf(cx - 268, 1262, -42, 1.28, 0.9)}
+      ${mintLeaf(cx - 190, 1252, -58, 1.02, 0.8)}
+      ${mintLeaf(cx - 372, 1268, -24, 0.92, 0.78)}
+      ${mintLeaf(cx + 268, 1262, 42, 1.28, 0.9)}
+      ${mintLeaf(cx + 190, 1252, 58, 1.02, 0.8)}
+      ${mintLeaf(cx + 372, 1268, 24, 0.92, 0.78)}
+      <!-- Inner leaves hugging the product base -->
+      ${mintLeaf(cx - 96, 1248, -14, 0.82, 0.86)}
+      ${mintLeaf(cx + 96, 1248, 14, 0.82, 0.86)}
+      ${mintLeaf(cx - 44, 1242, -5, 0.62, 0.9)}
+      ${mintLeaf(cx + 44, 1242, 5, 0.62, 0.9)}
+      <!-- Foreground tips spilling onto the glossy floor -->
+      <g opacity="0.9">
+        ${mintLeaf(cx - 300, 1336, -118, 0.7, 0.7)}
+        ${mintLeaf(cx + 300, 1336, 118, 0.7, 0.7)}
+      </g>
+    </g>
+  `.trim();
+}
+
+function simpleBotanicalHorizon(
+  width: number,
+  height: number,
+  paletteKey: SimplePaletteKey,
+): string {
+  const palette = SIMPLE_PALETTES[paletteKey] ?? SIMPLE_PALETTES["fresh-sage"];
+  const horizon = SIMPLE_HORIZON_Y;
+  const floorHeight = Math.max(1, height - horizon);
+  return `
+    <g id="simple-botanical-horizon" data-theme="simple" data-palette="${palette.key}" data-horizon-y="${horizon}">
+      ${simpleDefs(palette)}
+      <!-- Colour-matched monochrome studio wall -->
+      <rect x="0" y="0" width="${width}" height="${horizon}" fill="url(#simple-wall)" />
+      <rect x="0" y="0" width="${width}" height="${horizon}" fill="url(#simple-sky-glow)" />
+      <!-- Two soft volumetric clouds in the open upper sky -->
+      <g id="cloud-left">${cumulusCloud(185, 492, 0.92, 0.9)}</g>
+      <g id="cloud-right">${cumulusCloud(896, 560, 0.98, 0.86)}</g>
+      <!-- Glossy reflective floor -->
+      <rect x="0" y="${horizon}" width="${width}" height="${floorHeight}" fill="url(#simple-floor)" />
+      <rect x="0" y="${horizon}" width="${width}" height="${Math.round(floorHeight * 0.6)}" fill="url(#simple-floor-sheen)" />
+      <ellipse cx="${width / 2}" cy="${horizon}" rx="660" ry="128" fill="url(#simple-horizon-glow)" />
+      <!-- Crisp glossy horizon line -->
+      <rect id="horizon-line" x="0" y="${horizon - 1}" width="${width}" height="3" fill="#FFFFFF" fill-opacity="0.55" />
+      <rect x="0" y="${horizon + 2}" width="${width}" height="10" fill="#FFFFFF" fill-opacity="0.08" />
+      ${botanicalBase(width)}
+    </g>
+  `.trim();
+}
+
 export function deterministicSceneMarkup(
   template: DesignerTemplate,
   width: number,
   height: number,
+  palette: SimplePaletteKey = "fresh-sage",
 ): string {
   switch (template) {
+    case "simple-botanical-horizon":
+      return simpleBotanicalHorizon(width, height, palette);
     case "botanical-arch-frame":
       return botanicalArchFrame(width, height);
     case "editorial-beauty-card":
@@ -182,6 +440,7 @@ export function deterministicSceneMarkup(
 
 export function resolveBackground(request: BackgroundRequest): BackgroundLayer {
   const { width, height, template } = request;
+  const palette = request.palette ?? "fresh-sage";
   const sceneImageUrl = request.sceneImageUrl?.trim() || null;
 
   // PNG-safe export: never emit external/relative scene URLs (e.g. /studio-scenes/*.svg).
@@ -205,7 +464,7 @@ export function resolveBackground(request: BackgroundRequest): BackgroundLayer {
     requestedProvider: "deterministic-studio",
     kind: "scene",
     template,
-    markup: deterministicSceneMarkup(template, width, height),
+    markup: deterministicSceneMarkup(template, width, height, palette),
     fallbackReason: sceneImageUrl ? "non-data scene URL not embeddable; rendered inline vector studio fallback" : undefined,
   };
 }
@@ -214,7 +473,9 @@ export function templateForVariant(
   variantNumber: 1 | 2,
   seed: string,
 ): DesignerTemplate {
-  if (variantNumber === 1) return "silver-podium-botanical";
+  // Variant 1 is always the approved Simple editorial theme (primary default);
+  // variant 2 rotates the secondary variations so pairs never look identical.
+  if (variantNumber === 1) return "simple-botanical-horizon";
   let hash = 0;
   for (let i = 0; i < seed.length; i += 1) {
     hash = (hash * 31 + seed.charCodeAt(i)) | 0;

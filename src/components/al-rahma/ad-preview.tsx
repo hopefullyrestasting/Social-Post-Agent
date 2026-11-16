@@ -33,7 +33,8 @@ type Props = {
 };
 
 const TEMPLATE_TITLES: Record<string, string> = {
-  "silver-podium-botanical": "النسخة 1 — منصة فضية ونباتات",
+  "simple-botanical-horizon": "النسخة 1 — أفق نباتي بسيط",
+  "silver-podium-botanical": "نسخة بديلة — منصة فضية ونباتات",
   "botanical-arch-frame": "النسخة 2 — إطار قوسي نباتي",
   "editorial-beauty-card": "النسخة 2 — بطاقة تحريرية تجميلية",
 };

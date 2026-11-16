@@ -2,6 +2,7 @@ import { AL_RAHMA_BRAND_CONFIG } from "./brand-core";
 import {
   BackgroundLayer,
   DesignerTemplate,
+  SimplePaletteKey,
   resolveBackground,
 } from "./background-provider";
 import { OccasionGreetingInput, ValidPromotion } from "./commercial";
@@ -13,6 +14,8 @@ export interface OverlayOptions {
   width?: number;
   height?: number;
   template?: DesignerTemplate;
+  /** Simple theme colour mood (defaults to fresh sage-green). */
+  palette?: SimplePaletteKey;
   /** Pre-generated AI scene (data URI or URL) for the pure background stage. */
   sceneImageUrl?: string | null;
   /**
@@ -75,56 +78,75 @@ function commonDefs(): string {
         <stop offset="70%" stop-color="#0F172A" stop-opacity="0.30" />
         <stop offset="100%" stop-color="#0F172A" stop-opacity="0.46" />
       </linearGradient>
+      <filter id="title-soft-shadow" x="-25%" y="-60%" width="150%" height="220%">
+        <feDropShadow dx="0" dy="4" stdDeviation="7" flood-color="#0B1B16" flood-opacity="0.38" />
+        <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#0B1B16" flood-opacity="0.22" />
+      </filter>
+      <clipPath id="reflection-clip">
+        <rect x="0" y="1240" width="1080" height="270" />
+      </clipPath>
+      <linearGradient id="reflection-fade-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.34" />
+        <stop offset="55%" stop-color="#FFFFFF" stop-opacity="0.12" />
+        <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0" />
+      </linearGradient>
+      <mask id="reflection-fade" maskUnits="userSpaceOnUse" x="0" y="1240" width="1080" height="270">
+        <rect x="0" y="1240" width="1080" height="270" fill="url(#reflection-fade-gradient)" />
+      </mask>
+      <filter id="reflection-blur" x="-15%" y="-15%" width="130%" height="130%">
+        <feGaussianBlur stdDeviation="2.5" />
+      </filter>
     </defs>
   `;
 }
 
 function headerPill(width: number, brandLogoUrl?: string | null): string {
-  // Top header pill y=40..175
+  // Simple theme header pill y=36..156 (translucent dark-emerald glass)
   void width;
   const x = 40;
-  const y = 40;
+  const y = 36;
   const w = 1000;
-  const h = 135;
+  const h = 120;
   const logo = brandLogoUrl?.trim() || null;
 
-  const logoX = 918;
-  const logoY = 60;
-  const logoSize = 95;
-  const brandX = 898;
-  const brandY = 122;
+  const logoX = 920;
+  const logoY = 54;
+  const logoSize = 84;
+  const brandX = 902;
+  const brandY = 108;
   const dividerX = 685;
-  const dividerY1 = 66;
-  const dividerY2 = 149;
-  const taglineX = 660;
-  const taglineY = 120;
+  const dividerY1 = 56;
+  const dividerY2 = 136;
+  const taglineX = 655;
+  const taglineY = 99;
 
   const logoNode = logo
     ? `<image href="${escapeXml(logo)}" x="${logoX}" y="${logoY}" width="${logoSize}" height="${logoSize}" preserveAspectRatio="xMidYMid meet" />
-       <rect x="${logoX}" y="${logoY}" width="${logoSize}" height="${logoSize}" rx="22" fill="#FFFFFF" fill-opacity="0.10" stroke="#FFFFFF" stroke-opacity="0.18" />`
-    : `<rect x="${logoX}" y="${logoY}" width="${logoSize}" height="${logoSize}" rx="22" fill="#FFFFFF" fill-opacity="0.12" stroke="#FFFFFF" stroke-opacity="0.18" />
-       <circle cx="${logoX + logoSize / 2}" cy="${logoY + logoSize / 2}" r="26" fill="#059669" />
-       <path d="M ${logoX + 34} ${logoY + 49} L ${logoX + 45} ${logoY + 61} L ${logoX + 64} ${logoY + 37}" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />`;
+       <rect x="${logoX}" y="${logoY}" width="${logoSize}" height="${logoSize}" rx="20" fill="#FFFFFF" fill-opacity="0.10" stroke="#FFFFFF" stroke-opacity="0.18" />`
+    : `<rect x="${logoX}" y="${logoY}" width="${logoSize}" height="${logoSize}" rx="20" fill="#FFFFFF" fill-opacity="0.12" stroke="#FFFFFF" stroke-opacity="0.18" />
+       <circle cx="${logoX + logoSize / 2}" cy="${logoY + logoSize / 2}" r="23" fill="#059669" />
+       <path d="M ${logoX + 30} ${logoY + 43} L ${logoX + 40} ${logoY + 54} L ${logoX + 57} ${logoY + 32}" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />`;
 
   return `
     <g id="top-header-pill">
-      <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="34" fill="#0F3D2E" />
+      <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="32" fill="#0C3024" fill-opacity="0.85" />
+      <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="32" fill="none" stroke="#FFFFFF" stroke-opacity="0.12" stroke-width="1.5" />
       ${logoNode}
-      <text x="${brandX}" y="${brandY}" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="38" font-weight="900" fill="#FFFFFF" text-anchor="end">${escapeXml(BRAND.brandName)}</text>
-      <line id="header-divider" x1="${dividerX}" y1="${dividerY1}" x2="${dividerX}" y2="${dividerY2}" stroke="rgba(255,255,255,0.35)" stroke-width="2" />
-      <text x="${taglineX}" y="${taglineY}" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="25" font-weight="700" fill="#E2E8F0" text-anchor="end">${escapeXml(HEADER_ACTIVITY)}</text>
+      <text x="${brandX}" y="${brandY}" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="36" font-weight="900" fill="#FFFFFF" text-anchor="end">${escapeXml(BRAND.brandName)}</text>
+      <line id="header-divider" x1="${dividerX}" y1="${dividerY1}" x2="${dividerX}" y2="${dividerY2}" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="2" />
+      <text x="${taglineX}" y="${taglineY}" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="24" font-weight="700" fill="#E2E8F0" text-anchor="end">${escapeXml(HEADER_ACTIVITY)}</text>
     </g>
   `;
 }
 
 function productTitle(width: number, headline: string): string {
-  // Product title y=205..345, Cairo 900, 56px, max 2 lines, zero ellipsis
+  // Simple hero title y=195..345, Cairo 900, pure-white 58px, max 2 lines, zero ellipsis
   const x = width / 2;
   const { lines } = wrapTextNoTruncate(headline, 22, 2, 10);
-  const size = 56;
+  const size = 58;
   const lineHeight = Math.round(size * 1.24);
   const blockH = size + (lines.length - 1) * lineHeight;
-  const top = 205 + size;
+  const top = 195 + size;
   const bottom = 345;
   const y = Math.min(top, bottom - Math.max(0, blockH - size));
 
@@ -133,7 +155,7 @@ function productTitle(width: number, headline: string): string {
     .join("");
   return `
     <g id="product-title">
-      <text x="${x}" y="${y}" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="${size}" font-weight="900" fill="#1F2937" text-anchor="middle" direction="rtl">${tspans}</text>
+      <text x="${x}" y="${y}" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="${size}" font-weight="900" fill="#FFFFFF" text-anchor="middle" direction="rtl" filter="url(#title-soft-shadow)">${tspans}</text>
     </g>
   `;
 }
@@ -153,17 +175,20 @@ function heroPackshot(
     return "";
   }
 
-  // Full-bleed hero: x=40, y=350, w=1000, h=1200 (dominates frame down to contact bar)
+  // Simple hero: x=190, y=380, w=700, h=860 — bottom seated flush on the
+  // glossy horizon at y=1240 so the mirror reflection reads as real contact.
   const cx = width / 2;
-  const packshotX = 40;
-  const packshotY = 350;
-  const packshotW = 1000;
-  const packshotH = 1200;
+  const packshotX = 190;
+  const packshotY = 380;
+  const packshotW = 700;
+  const packshotH = 860;
+  const reflectFrom = 1240;
+  const reflectTo = 1510;
 
   if (!productUrl) {
     return `
       <g id="packshot-missing">
-        <rect x="${packshotX + 80}" y="${packshotY + 120}" width="${packshotW - 160}" height="${packshotH - 240}" rx="28" fill="none" stroke="#94A3B8" stroke-width="3" stroke-dasharray="14 12" />
+        <rect x="${packshotX + 60}" y="${packshotY + 90}" width="${packshotW - 120}" height="${packshotH - 180}" rx="28" fill="none" stroke="#94A3B8" stroke-width="3" stroke-dasharray="14 12" />
         <text x="${cx}" y="${packshotY + packshotH / 2}" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="30" font-weight="700" fill="#64748B" text-anchor="middle">الصورة الأصلية غير متاحة</text>
       </g>
     `;
@@ -181,19 +206,24 @@ function heroPackshot(
       <g id="packshot" data-packshot="true">
         <image data-packshot="true" data-blend="${blendMarker}" href="${escapeXml(productUrl)}" x="${packshotX}" y="${packshotY}" width="${packshotW}" height="${packshotH}" preserveAspectRatio="xMidYMid meet"${imageFilter}${blendStyle} />
       </g>
+      <!-- True vertical mirror reflection on the glossy floor ("translate(0, 2480) scale(1, -1)" mirrors about y=1240) -->
+      <g id="packshot-reflection" clip-path="url(#reflection-clip)" mask="url(#reflection-fade)" filter="url(#reflection-blur)" data-reflect-from="${reflectFrom}" data-reflect-to="${reflectTo}">
+        <image id="packshot-reflection-image" data-reflection="true" data-blend="${blendMarker}" data-reflect-from="${reflectFrom}" data-reflect-to="${reflectTo}" href="${escapeXml(productUrl)}" x="${packshotX}" y="${packshotY}" width="${packshotW}" height="${packshotH}" preserveAspectRatio="xMidYMid meet" transform="translate(0, 2480) scale(1, -1)"${blendStyle} />
+      </g>
     </g>
   `;
 }
 
 function editorialSalesCopy(width: number, height: number, text: string): string {
-  // Editorial sales copy y=1520..1690, 48px Cairo 900, over bottom gradient scrim (no white box)
+  // Simple benefit headline y=1535..1685, pure-white 46px Cairo 800 over a
+  // darker lower-horizon gradient (no white box, no side pills).
   const x = width / 2;
-  const size = 48;
+  const size = 46;
   const lineHeight = 58;
-  const { lines } = wrapTextNoTruncate(text, 24, 2, 10);
+  const { lines } = wrapTextNoTruncate(text, 26, 2, 10);
   const blockH = size + (lines.length - 1) * lineHeight;
-  const top = 1520 + size;
-  const bottom = 1690;
+  const top = 1535 + size;
+  const bottom = 1685;
   const y = Math.min(top, bottom - Math.max(0, blockH - size));
   const tspans = lines
     .map((line, index) => `<tspan x="${x}" dy="${index === 0 ? 0 : lineHeight}">${escapeXml(line)}</tspan>`)
@@ -202,7 +232,7 @@ function editorialSalesCopy(width: number, height: number, text: string): string
   return `
     <g id="sales-copy-editorial">
       <rect x="0" y="${Math.max(0, height - 760)}" width="${width}" height="760" fill="url(#bottom-editorial-vignette)" />
-      <text x="${x}" y="${y}" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="${size}" font-weight="900" fill="#FFFFFF" text-anchor="middle" direction="rtl" filter="url(#editorial-text-shadow)">${tspans}</text>
+      <text x="${x}" y="${y}" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="${size}" font-weight="800" fill="#FFFFFF" text-anchor="middle" direction="rtl" filter="url(#editorial-text-shadow)">${tspans}</text>
     </g>
   `;
 }
@@ -309,17 +339,18 @@ function circularIcon(cx: number, cy: number, type: "phone" | "whatsapp"): strin
 }
 
 function contactBlock(width: number): string {
-  // Full-width dark-emerald footer y=1740..1920
-  const y = 1740;
-  const barH = 180;
+  // Simple theme full-width deep-emerald contact bar y=1745..1920
+  const y = 1745;
+  const barH = 175;
   const phone = BRAND.contact.phone;
+  const centerY = y + barH / 2;
   return `
     <g id="contact-block">
-      <rect x="0" y="${y}" width="${width}" height="${barH}" fill="#0F3D2E" />
-      <text x="960" y="1846" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="42" font-weight="800" fill="#FFFFFF" text-anchor="end" direction="rtl">${escapeXml(CONTACT_LABEL)}</text>
-      <text x="540" y="1848" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="52" font-weight="900" fill="#FFFFFF" text-anchor="middle" direction="ltr">${escapeXml(phone)}</text>
-      ${circularIcon(250, 1830, "whatsapp")}
-      ${circularIcon(165, 1830, "phone")}
+      <rect x="0" y="${y}" width="${width}" height="${barH}" fill="#0D3829" />
+      <text x="955" y="${Math.round(centerY + 15)}" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="42" font-weight="800" fill="#FFFFFF" text-anchor="end" direction="rtl">${escapeXml(CONTACT_LABEL)}</text>
+      <text x="540" y="${Math.round(centerY + 18)}" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="52" font-weight="900" fill="#FFFFFF" text-anchor="middle" direction="ltr">${escapeXml(phone)}</text>
+      ${circularIcon(240, Math.round(centerY), "whatsapp")}
+      ${circularIcon(150, Math.round(centerY), "phone")}
     </g>
   `;
 }
@@ -328,7 +359,8 @@ export class OverlaySystem {
   public static generateOverlaySvg(opts: OverlayOptions = {}): string {
     const width = opts.width ?? BRAND.visual.format.width;
     const height = opts.height ?? BRAND.visual.format.height;
-    const template = opts.template ?? "silver-podium-botanical";
+    const template = opts.template ?? "simple-botanical-horizon";
+    const palette = opts.palette ?? "fresh-sage";
     const headline = (opts.headline ?? "").trim();
     const benefit = (opts.benefitLine ?? "").trim();
     const cta = (opts.ctaText ?? "").trim();
@@ -337,6 +369,9 @@ export class OverlaySystem {
     const occasion = opts.occasion ?? null;
     const stagedImageUrl = opts.stagedImageUrl?.trim() || null;
     const productUrl = opts.productImageUrl?.trim() || null;
+    // The Simple theme is a clean editorial layout: badges/status pills are
+    // suppressed so nothing floats over the glossy floor and pure-white type.
+    const simpleTheme = template === "simple-botanical-horizon";
 
     const background =
       opts.background ??
@@ -344,6 +379,7 @@ export class OverlaySystem {
         width,
         height,
         template,
+        palette,
         sceneImageUrl: stagedImageUrl ?? opts.sceneImageUrl ?? null,
       });
 
@@ -360,8 +396,8 @@ export class OverlaySystem {
         ${heroPackshot(width, productUrl, { staged: Boolean(stagedImageUrl) })}
         ${promotion ? promoBadge(width, promoY, promotion) : ""}
         ${benefit ? editorialSalesCopy(width, height, benefit) : ""}
-        ${availability ? availabilityPill(width, 1465, availability) : ""}
-        ${!promotion && cta ? ctaPill(width, 1658, cta) : ""}
+        ${!simpleTheme && availability ? availabilityPill(width, 1465, availability) : ""}
+        ${!simpleTheme && !promotion && cta ? ctaPill(width, 1658, cta) : ""}
         ${opts.showFooterBar === false ? "" : contactBlock(width)}
       </svg>
     `.trim();

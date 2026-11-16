@@ -3,6 +3,7 @@ import { isProtectedRequest } from "../functions/api/_auth";
 import {
   ART_DIRECTION_STYLES,
   ART_DIRECTION_STYLE_IDS,
+  DEFAULT_ART_DIRECTION_STYLE,
   buildScenePrompt,
   detectBase64ImageMime,
   generateArtDirectedScene,
@@ -36,10 +37,12 @@ const JPEG_BASE64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP/////////////////////////
 function testArtDirectionStyles() {
   assert.equal(
     ART_DIRECTION_STYLE_IDS.length,
-    5,
-    "Exactly five rotating art directions are required.",
+    6,
+    "Six art directions (Simple primary + five legacy) are required.",
   );
-  assert.equal(new Set(ART_DIRECTION_STYLE_IDS).size, 5, "Style ids must be unique.");
+  assert.equal(new Set(ART_DIRECTION_STYLE_IDS).size, 6, "Style ids must be unique.");
+  assert.equal(ART_DIRECTION_STYLE_IDS[0], "simple-botanical-horizon", "Simple must be the primary default.");
+  assert.equal(DEFAULT_ART_DIRECTION_STYLE, "simple-botanical-horizon");
 
   for (const id of ART_DIRECTION_STYLE_IDS) {
     const style = ART_DIRECTION_STYLES[id];
@@ -49,7 +52,7 @@ function testArtDirectionStyles() {
     assert.ok(style.labelEn.trim().length > 0, `Style ${id} needs an English label.`);
     assert.ok(style.scenePrompt.length > 80, `Style ${id} prompt must be detailed.`);
     assert.ok(
-      /no product/i.test(style.scenePrompt),
+      /no product|no bottle/i.test(style.scenePrompt),
       `Style ${id} must forbid the product in the scene prompt.`,
     );
     assert.ok(
@@ -61,6 +64,32 @@ function testArtDirectionStyles() {
       `Style ${id} must request a vertical 9:16 stage.`,
     );
   }
+
+  const simple = ART_DIRECTION_STYLES["simple-botanical-horizon"];
+  assert.equal(simple.template, "simple-botanical-horizon");
+  assert.ok(/glossy reflective glass horizon floor/i.test(simple.scenePrompt));
+  assert.ok(/volumetric clouds/i.test(simple.scenePrompt));
+  assert.ok(/botanical leaves clustered at the center horizon floor/i.test(simple.scenePrompt));
+
+  const freshPrompt = buildScenePrompt("simple-botanical-horizon", {
+    category: "skincare",
+    name: "غسول مرطب",
+  });
+  assert.ok(freshPrompt.includes("smooth monochrome sage-green wall"));
+  assert.ok(freshPrompt.includes("fresh lush green mint and botanical leaves"));
+
+  const luxuryPrompt = buildScenePrompt("simple-botanical-horizon", {
+    category: "fragrance",
+    name: "عطر عود",
+  });
+  assert.ok(luxuryPrompt.includes("smooth monochrome deep emerald-charcoal wall"));
+  assert.ok(luxuryPrompt.includes("dark emerald botanical leaves"));
+
+  const haircarePrompt = buildScenePrompt("simple-botanical-horizon", {
+    category: "hair_care",
+    name: "شامبو بالزيت",
+  });
+  assert.ok(haircarePrompt.includes("smooth monochrome warm golden sage-green wall"));
 
   const prompt = buildScenePrompt("luxury-amber-noir", {
     brand: "الرحمة",
@@ -86,6 +115,7 @@ function testStyleRotation() {
 
   for (const seed of ["a", "b", "c", "d", "e", "f", "g", "h"]) {
     const [first, second] = variantStylePair(seed);
+    assert.equal(first, "simple-botanical-horizon", "Variant 1 must always use Simple.");
     assert.notEqual(first, second, `Variants for ${seed} must use distinct art directions.`);
     assert.ok((ART_DIRECTION_STYLE_IDS as string[]).includes(first));
     assert.ok((ART_DIRECTION_STYLE_IDS as string[]).includes(second));
@@ -270,7 +300,7 @@ async function run() {
   testAdminProtection();
 
   console.log(
-    "Phase 16 tests passed: five art directions, distinct variant styles, FLUX data URIs, mime detection, harvest safety filters, random selection, and admin protection.",
+    "Phase 16 tests passed: Simple primary art direction + five legacy styles, distinct variant styles, colour-adapted FLUX prompts, data URIs, mime detection, harvest safety filters, random selection, and admin protection.",
   );
 }
 
