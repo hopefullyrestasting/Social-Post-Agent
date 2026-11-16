@@ -11,18 +11,36 @@ import {
   type ExportCreative,
 } from "@/lib/al-rahma/export";
 
+type ArtDirectionMeta = {
+  styleId?: string;
+  styleLabelAr?: string;
+  styleLabelEn?: string;
+  accent?: string;
+  engine?: string;
+  model?: string;
+  cutoutApplied?: boolean;
+  stagedProduct?: boolean;
+};
+
 type CampaignCreative = ExportCreative & {
   campaign_id?: string | null;
   variant?: string;
   template?: string;
+  style_id?: string | null;
   headline_arabic?: string | null;
   copy_arabic?: string | null;
   socialCaption?: string | null;
   quality_status?: string | null;
+  quality_notes?: string | null;
   brand_arabic?: string | null;
   brand_slug?: string | null;
   success?: boolean;
   blockers?: string[];
+  art_direction_style?: string | null;
+  art_direction_label?: string | null;
+  ai_engine?: string | null;
+  cutout_applied?: boolean;
+  artDirection?: ArtDirectionMeta | null;
 };
 
 type Campaign = {
@@ -48,8 +66,69 @@ const VARIANT_LABELS: Record<string, string> = {
   "2": "نسخة 2 — قالب بديل",
 };
 
+const ART_STYLE_LABELS: Record<string, string> = {
+  "sunlit-travertine": "شمس الترافرتين",
+  "aqua-splash-minimal": "ماء وأكريليك",
+  "luxury-amber-noir": "فخامة العنبر الداكن",
+  "botanical-terracotta": "نباتات وتيراكوتا",
+  "modern-clinical-glow": "صيدلية عصرية",
+};
+
+const ENGINE_LABELS: Record<string, string> = {
+  "cloudflare-ai": "FLUX — Workers AI",
+  "gemini-flash-image": "Gemini Flash Image",
+  "nano-banana": "Nano Banana",
+  "deterministic-studio": "استوديو SVG احتياطي",
+  "studio-fallback": "استوديو SVG احتياطي",
+  "bundled-studio-stage": "استوديو SVG احتياطي",
+};
+
+function creativeArtMeta(creative: CampaignCreative): ArtDirectionMeta | null {
+  let parsed: Record<string, unknown> = {};
+  if (creative.quality_notes) {
+    try {
+      parsed = JSON.parse(creative.quality_notes) as Record<string, unknown>;
+    } catch {
+      parsed = {};
+    }
+  }
+
+  const fromNotes =
+    parsed.artDirection && typeof parsed.artDirection === "object"
+      ? (parsed.artDirection as ArtDirectionMeta)
+      : null;
+
+  const styleId =
+    creative.art_direction_style ??
+    fromNotes?.styleId ??
+    (typeof parsed.styleId === "string" ? parsed.styleId : undefined);
+  const engine =
+    creative.ai_engine ??
+    fromNotes?.engine ??
+    (typeof parsed.sceneProvider === "string" ? parsed.sceneProvider : undefined);
+
+  if (!styleId && !engine) return null;
+
+  return {
+    ...fromNotes,
+    styleId: styleId ?? undefined,
+    styleLabelAr:
+      creative.art_direction_label ??
+      fromNotes?.styleLabelAr ??
+      (styleId ? ART_STYLE_LABELS[styleId] : undefined),
+    engine: engine ?? undefined,
+    cutoutApplied: creative.cutout_applied ?? fromNotes?.cutoutApplied,
+  };
+}
+
 function creativeSvgMarkup(creative: CampaignCreative): string | null {
   return getCreativeSvg(creative);
+}
+
+function campaignsUrl(): string {
+  // Cache-buster + no-store: the dashboard must never show a stale stored SVG
+  // after a new editorial campaign is generated.
+  return `/api/db/campaigns?limit=10&v=phase16&t=${Date.now()}`;
 }
 
 function groupByProduct(creatives: CampaignCreative[]) {
@@ -168,6 +247,15 @@ function CreativeCard({
   }
 
   const passed = creative.quality_status === "passed" || creative.success;
+  const artMeta = creativeArtMeta(creative);
+  const styleLabel = artMeta?.styleLabelAr
+    ? ART_STYLE_LABELS[artMeta.styleLabelAr] ?? artMeta.styleLabelAr
+    : artMeta?.styleId
+      ? ART_STYLE_LABELS[artMeta.styleId] ?? artMeta.styleId
+      : null;
+  const engineLabel = artMeta?.engine
+    ? ENGINE_LABELS[artMeta.engine] ?? artMeta.engine
+    : null;
 
   return (
     <article className="rounded-xl border border-slate-200 bg-white p-3">
@@ -181,6 +269,26 @@ function CreativeCard({
           {passed ? "جاهز للنشر" : "يحتاج مراجعة"}
         </span>
       </div>
+
+      {(styleLabel || engineLabel) && (
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {styleLabel && (
+            <span className="rounded-full bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-800">
+              🎨 {styleLabel}
+            </span>
+          )}
+          {engineLabel && (
+            <span className="rounded-full bg-sky-50 px-2 py-1 text-[11px] font-bold text-sky-800">
+              ⚙️ {engineLabel}
+            </span>
+          )}
+          {artMeta?.cutoutApplied && (
+            <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-700">
+              ✂️ قص خلفية
+            </span>
+          )}
+        </div>
+      )}
 
       {pngUrl ? (
         <img
@@ -240,8 +348,9 @@ export default function CampaignGallery() {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch("/api/db/campaigns?limit=10", {
+      const response = await fetch(campaignsUrl(), {
         headers: { Accept: "application/json" },
+        cache: "no-store",
       });
       const body = (await response.json()) as ApiResult<{ campaigns: Campaign[] }>;
       if (!response.ok || !body.success) {
@@ -260,8 +369,9 @@ export default function CampaignGallery() {
     (async () => {
       setError("");
       try {
-        const response = await fetch("/api/db/campaigns?limit=10", {
+        const response = await fetch(campaignsUrl(), {
           headers: { Accept: "application/json" },
+          cache: "no-store",
         });
         const body = (await response.json()) as ApiResult<{ campaigns: Campaign[] }>;
         if (!response.ok || !body.success) {

@@ -468,6 +468,11 @@ async function testCampaignEndpoints() {
   const listBody = await json(listRes);
   assert.equal(listRes.status, 200);
   assert.equal(listBody.success, true);
+  assert.equal(
+    listRes.headers.get("Cache-Control"),
+    "no-store, max-age=0, must-revalidate",
+    "Campaign gallery reads must never be served stale.",
+  );
   assert.equal((listBody.campaigns as unknown[]).length, 1);
   const firstCampaign = (listBody.campaigns as { creatives: unknown[] }[])[0];
   assert.equal(firstCampaign.creatives.length, 1);
@@ -534,7 +539,20 @@ async function testCampaignEndpoints() {
     "Response should report available count when fewer than 5.",
   );
 
-  const creatives = runBody.creatives as { variant_number: number; product_id: string; socialCaption?: string }[];
+  const creatives = runBody.creatives as {
+    variant_number: number;
+    product_id: string;
+    socialCaption?: string;
+    art_direction_style?: string;
+    art_direction_label?: string;
+    ai_engine?: string;
+    cutout_applied?: boolean;
+    artDirection?: {
+      styleId?: string;
+      engine?: string;
+      cutoutApplied?: boolean;
+    };
+  }[];
   assert.equal(creatives.length, 6);
   for (const pid of ["p-never", "p-old", "p-recent"]) {
     const productCreatives = creatives.filter((c) => c.product_id === pid);
@@ -543,7 +561,41 @@ async function testCampaignEndpoints() {
       productCreatives.map((c) => c.variant_number).sort(),
       [1, 2],
     );
+    const styles = productCreatives.map((c) => c.artDirection?.styleId);
+    assert.equal(
+      new Set(styles).size,
+      2,
+      `product ${pid} variants must use two distinct art directions.`,
+    );
   }
+
+  // Every creative must carry art-direction/engine metadata for the gallery badges.
+  for (const creative of creatives) {
+    assert.ok(creative.artDirection, "Creative must record artDirection metadata.");
+    assert.ok(creative.art_direction_style, "Creative must expose art_direction_style.");
+    assert.ok(creative.art_direction_label, "Creative must expose the Arabic style label.");
+    assert.ok(creative.ai_engine, "Creative must expose the AI engine.");
+    assert.equal(
+      creative.cutout_applied,
+      creative.artDirection?.cutoutApplied,
+      "cutout_applied must match the recorded art direction.",
+    );
+    assert.equal(
+      creative.artDirection?.engine,
+      creative.ai_engine,
+      "Art direction engine must match ai_engine.",
+    );
+  }
+
+  assert.equal(
+    runRes.headers.get("Cache-Control"),
+    "no-store, max-age=0, must-revalidate",
+    "Campaign runs must return fresh, uncached creatives.",
+  );
+  assert.ok(
+    (runBody.artDirectionStyles as Record<string, unknown>)["sunlit-travertine"],
+    "Run response must include the five art directions.",
+  );
 
   // Selection query must randomize eligible products every run
   const selectCall = runDb.calls.find(
@@ -591,6 +643,11 @@ async function run() {
   const filtered = await json(filteredResponse);
 
   assert.equal(filteredResponse.status, 200);
+  assert.equal(
+    filteredResponse.headers.get("Cache-Control"),
+    "no-store, max-age=0, must-revalidate",
+    "Product reads must never serve stale gallery data.",
+  );
   assert.equal(filtered.total, 177);
   assert.equal(filtered.limit, 50);
   assert.equal(filtered.offset, 50);
@@ -626,6 +683,11 @@ async function run() {
   );
   const stats = await json(statsResponse);
   assert.equal(statsResponse.status, 200);
+  assert.equal(
+    statsResponse.headers.get("Cache-Control"),
+    "no-store, max-age=0, must-revalidate",
+    "Stats must never be cached after a harvest.",
+  );
   assert.equal((stats.stats as { products: number }).products, 177);
 
   const brandsResponse = await getBrands(

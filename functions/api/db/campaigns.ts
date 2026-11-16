@@ -48,6 +48,10 @@ function clampLimit(value: string | null): number | null {
   return parsed;
 }
 
+const NO_STORE_HEADERS = {
+  "Cache-Control": "no-store, max-age=0, must-revalidate",
+} as const;
+
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const url = new URL(request.url);
   const limit = clampLimit(url.searchParams.get("limit"));
@@ -55,7 +59,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (limit === null) {
     return Response.json(
       { success: false, error: "limit must be an integer between 1 and 50." },
-      { status: 400 },
+      { status: 400, headers: NO_STORE_HEADERS },
     );
   }
 
@@ -72,7 +76,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       .all<CampaignRow>();
 
     if (campaigns.results.length === 0) {
-      return Response.json({ success: true, campaigns: [] });
+      return Response.json(
+        { success: true, campaigns: [] },
+        { headers: NO_STORE_HEADERS },
+      );
     }
 
     const ids = campaigns.results.map((row) => row.id);
@@ -101,18 +108,21 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       creativesByCampaign.set(key, bucket);
     }
 
-    return Response.json({
-      success: true,
-      campaigns: campaigns.results.map((campaign) => ({
-        ...campaign,
-        creatives: creativesByCampaign.get(campaign.id) ?? [],
-      })),
-    });
+    return Response.json(
+      {
+        success: true,
+        campaigns: campaigns.results.map((campaign) => ({
+          ...campaign,
+          creatives: creativesByCampaign.get(campaign.id) ?? [],
+        })),
+      },
+      { headers: NO_STORE_HEADERS },
+    );
   } catch (error) {
     console.error("Failed to load campaigns from D1.", error);
     return Response.json(
       { success: false, error: "Unable to load campaigns from D1." },
-      { status: 500 },
+      { status: 500, headers: NO_STORE_HEADERS },
     );
   }
 };

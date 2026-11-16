@@ -12,6 +12,13 @@ import {
   stageProductWithNanoBananaDetailed,
   type NanoBananaStageProvider,
 } from "../../ai/nano-banana-stage";
+import {
+  ART_DIRECTION_STYLES,
+  generateArtDirectedScene,
+  variantStylePair,
+  type ArtDirectionStyleId,
+  type SceneProvider,
+} from "../../ai/studio-scene";
 
 /**
  * POST /api/db/campaigns/run (protected by admin middleware)
@@ -89,124 +96,13 @@ const requestSchema = z
   .strict()
   .optional();
 
-const VARIANT_SCENE_PROMPTS: Record<1 | 2, string> = {
-  1: "Photorealistic luxury cosmetic product photography studio background, soft light silver-grey wall with subtle diagonal botanical leaf shadows, minimalist 3D white marble and brushed silver hexagonal podium centered in lower third, lush green palm fronds and eucalyptus leaves framing bottom left and right corners, small glossy silver-pearl spheres floating softly in background, bright clean studio lighting, empty podium top surface, no bottle, no text, no logos, vertical 9:16, sharp focus",
-  2: `Architectural cream and soft sage-green 3D arch niche skincare studio background, crisp natural sunlight window shadows, clean stone display plinth at bottom, subtle botanical leaves, empty stage, no products, no text, vertical 9:16, sharp focus, crisp edges, architectural 3D product photography stage, 8k resolution, high detail, no blur, no bokeh background`,
-};
-
-function base64FromBytes(bytes: Uint8Array): string {
-  let binary = "";
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
-  }
-  return btoa(binary);
-}
-
-function asDataJpegUri(base64: string): string {
-  const clean = base64.trim();
-  return clean.startsWith("data:") ? clean : `data:image/jpeg;base64,${clean}`;
-}
-
-async function bytesFromUnknown(value: unknown): Promise<Uint8Array | null> {
-  if (!value) return null;
-  if (value instanceof Uint8Array) return value;
-  if (value instanceof ArrayBuffer) return new Uint8Array(value);
-  if (ArrayBuffer.isView(value)) {
-    return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
-  }
-  if (Array.isArray(value) && value.every((n) => typeof n === "number")) {
-    return Uint8Array.from(value);
-  }
-  if (typeof (value as { arrayBuffer?: unknown }).arrayBuffer === "function") {
-    try {
-      const ab = await (value as { arrayBuffer: () => Promise<ArrayBuffer> }).arrayBuffer();
-      if (ab) return new Uint8Array(ab);
-    } catch {
-      // ignore
-    }
-  }
-  if (typeof ReadableStream !== "undefined" && value instanceof ReadableStream) {
-    try {
-      const reader = value.getReader();
-      const chunks: Uint8Array[] = [];
-      let total = 0;
-      while (true) {
-        const { done, value: chunk } = await reader.read();
-        if (done) break;
-        if (chunk) {
-          const bytes = chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk as ArrayBuffer);
-          chunks.push(bytes);
-          total += bytes.length;
-        }
-      }
-      const merged = new Uint8Array(total);
-      let offset = 0;
-      for (const c of chunks) {
-        merged.set(c, offset);
-        offset += c.length;
-      }
-      return merged;
-    } catch {
-      // ignore
-    }
-  }
-  if (value && typeof value === "object") {
-    const obj = value as Record<string, unknown>;
-    for (const key of ["image", "data", "bytes", "result", "body"]) {
-      if (key in obj) {
-        if (typeof obj[key] === "string") return null;
-        const inner = await bytesFromUnknown(obj[key]);
-        if (inner) return inner;
-      }
-    }
-  }
-  return null;
-}
-
-async function generateStudioScene(
-  env: Env,
-  variant: 1 | 2,
-  seed: number,
-): Promise<string | null> {
-  void seed;
-  const prompt = VARIANT_SCENE_PROMPTS[variant];
-  if (env.AI && typeof env.AI.run === "function") {
-    try {
-      const result = await env.AI.run("@cf/black-forest-labs/flux-1-schnell", {
-        prompt,
-        num_steps: 4,
-      });
-
-      if (typeof result === "string") {
-        return asDataJpegUri(result);
-      }
-
-      if (result && typeof result === "object") {
-        const obj = result as Record<string, unknown>;
-        if (typeof obj.image === "string") {
-          return asDataJpegUri(obj.image);
-        }
-        const bytes =
-          (await bytesFromUnknown(obj.image)) ??
-          (await bytesFromUnknown(obj.data)) ??
-          (await bytesFromUnknown(obj.bytes)) ??
-          (await bytesFromUnknown(result));
-        if (bytes && bytes.length > 0) {
-          return `data:image/jpeg;base64,${base64FromBytes(bytes)}`;
-        }
-      }
-
-      const directBytes = await bytesFromUnknown(result);
-      if (directBytes && directBytes.length > 0) {
-        return `data:image/jpeg;base64,${base64FromBytes(directBytes)}`;
-      }
-    } catch (error) {
-      console.error("Workers AI studio-scene generation failed, falling back to inline studio vectors.", error);
-    }
-  }
-  // PNG-safe fallback: do not emit external /studio-scenes URLs; let overlay/background render inline vectors.
-  return null;
+interface SceneOutcome {
+  image: string | null;
+  provider: SceneProvider;
+  styleId: ArtDirectionStyleId;
+  styleLabelAr: string;
+  styleLabelEn: string;
+  model?: string;
 }
 async function loadBrandLogoUrl(env: Env): Promise<string | null> {
   try {
@@ -426,21 +322,25 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         )
         .run();
 
-      return Response.json({
-        success: true,
-        campaign: {
-          id: campaignId,
-          campaign_date: campaignDate,
-          status: "empty",
-          total_products: 0,
-          total_images: 0,
+      return Response.json(
+        {
+          success: true,
+          campaign: {
+            id: campaignId,
+            campaign_date: campaignDate,
+            status: "empty",
+            total_products: 0,
+            total_images: 0,
+          },
+          message:
+            "لا توجد منتجات موثّقة مع صورة مرجعية أساسية حالياً. تم حفظ حملة فارغة للتتبع. استخدم زر الاكتشاف والتوثيق أولاً.",
+          stageProvider: "studio-fallback",
+          stageProvidersByProduct: {},
+          artDirectionStyles: ART_DIRECTION_STYLES,
+          creatives: [],
         },
-        message:
-          "لا توجد منتجات موثّقة مع صورة مرجعية أساسية حالياً. تم حفظ حملة فارغة للتتبع.",
-        stageProvider: "studio-fallback",
-        stageProvidersByProduct: {},
-        creatives: [],
-      });
+        { headers: { "Cache-Control": "no-store, max-age=0, must-revalidate" } },
+      );
     }
 
     const occasion = await loadActiveOccasion(env);
@@ -459,7 +359,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       ]);
 
       // Try Nano Banana photorealistic staging first when GEMINI_API_KEY is configured.
-      // Fallback: server-side BRIA cutout + bundled/FLUX studio scene pipeline.
+      // Fallback: server-side BRIA cutout + FLUX (Workers AI) multi-style studio scene.
       let productImageUrl = product.image_url;
       let staged1: string | null = null;
       let staged2: string | null = null;
@@ -493,13 +393,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       }
       stageProvidersByProduct[product.id] = stageProvider;
 
-      if (!staged1 && !staged2) {
-        try {
-          const cutout = await removePackshotBackgroundServer(env, product.image_url);
-          if (cutout) productImageUrl = cutout;
-        } catch (error) {
-          console.error("Server-side packshot cutout failed, using original image.", error);
-        }
+      // Always cut the packshot background server-side so the authentic bottle
+      // never keeps a white box, even if a previous asset had one baked in.
+      let cutoutImage: string | null = null;
+      try {
+        cutoutImage = await removePackshotBackgroundServer(env, product.image_url);
+      } catch (error) {
+        console.error("Server-side packshot cutout failed, using original image.", error);
+      }
+      const cutoutApplied = Boolean(cutoutImage);
+      if (!staged1 && !staged2 && cutoutImage) {
+        productImageUrl = cutoutImage;
       }
 
       const details: ProductDetails = {
@@ -518,12 +422,24 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       };
 
       const seedBase = Array.from(product.id).reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
-      const [scene1, scene2] = staged1 || staged2
-        ? [null, null]
-        : await Promise.all([
-            generateStudioScene(env, 1, seedBase),
-            generateStudioScene(env, 2, seedBase + 1),
-          ]);
+      const [style1, style2] = variantStylePair(product.id);
+      let scene1: SceneOutcome | null = null;
+      let scene2: SceneOutcome | null = null;
+
+      if (!staged1 && !staged2) {
+        const sceneContext = {
+          brand: product.brand_arabic,
+          category: product.category,
+          name: product.name_arabic,
+          benefits: research.verifiedBenefits,
+        };
+        const [generated1, generated2] = await Promise.all([
+          generateArtDirectedScene(env, style1, sceneContext, { seed: seedBase }),
+          generateArtDirectedScene(env, style2, sceneContext, { seed: seedBase + 1 }),
+        ]);
+        scene1 = generated1;
+        scene2 = generated2;
+      }
 
       const variants = ProductionEngine.executeVariants({
         product: details,
@@ -531,13 +447,32 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         occasion,
         today,
         brandLogoUrl,
-        sceneImageUrls: { 1: scene1, 2: scene2 },
+        sceneImageUrls: { 1: scene1?.image ?? null, 2: scene2?.image ?? null },
         stagedImageUrls: { 1: staged1, 2: staged2 },
       });
 
       for (const variant of variants) {
         const creativeId = crypto.randomUUID();
         const qualityStatus = variant.success ? "passed" : "blocked";
+        const variantStyle = variant.variantNumber === 1 ? style1 : style2;
+        const styleMeta = ART_DIRECTION_STYLES[variantStyle];
+        const sceneOutcome = variant.variantNumber === 1 ? scene1 : scene2;
+        const aiEngine =
+          stageProvider === "nano-banana"
+            ? "nano-banana"
+            : (sceneOutcome?.provider ?? "deterministic-studio");
+        const aiEngineModel =
+          stageProvider === "nano-banana" ? stageModel : sceneOutcome?.model;
+        const artDirection = {
+          styleId: variantStyle,
+          styleLabelAr: styleMeta.labelAr,
+          styleLabelEn: styleMeta.labelEn,
+          accent: styleMeta.accent,
+          engine: aiEngine,
+          ...(aiEngineModel ? { model: aiEngineModel } : {}),
+          cutoutApplied,
+          stagedProduct: stageProvider === "nano-banana",
+        };
         const qualityNotes = JSON.stringify({
           score: variant.qualityReport.overallScore,
           blockers: variant.blockers,
@@ -545,6 +480,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           warnings: variant.qualityReport.warnings,
           promotion: variant.metadata.promotion,
           occasion: variant.metadata.occasion,
+          artDirection,
         });
 
         statements.push(
@@ -592,7 +528,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           blockers: variant.blockers,
           metadata: variant.metadata,
           stageProvider,
-          ...(stageProvider === "nano-banana" && stageModel ? { stageModel } : {}),
+          stageModel,
+          sceneProvider: sceneOutcome?.provider ?? "deterministic-studio",
+          sceneModel: sceneOutcome?.model,
+          art_direction_style: variantStyle,
+          art_direction_label: styleMeta.labelAr,
+          art_direction_label_en: styleMeta.labelEn,
+          ai_engine: aiEngine,
+          ai_engine_model: aiEngineModel,
+          cutout_applied: cutoutApplied,
+          artDirection,
           qualityReport: variant.qualityReport,
         });
       }
@@ -630,26 +575,30 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     await env.DB.batch(statements);
 
-    return Response.json({
-      success: true,
-      campaign: {
-        id: campaignId,
-        campaign_date: campaignDate,
-        status,
-        total_products: selectedIds.length,
-        total_images: creativesOut.length,
-        selected_product_ids: selectedIds,
+    return Response.json(
+      {
+        success: true,
+        campaign: {
+          id: campaignId,
+          campaign_date: campaignDate,
+          status,
+          total_products: selectedIds.length,
+          total_images: creativesOut.length,
+          selected_product_ids: selectedIds,
+        },
+        requested: limit,
+        message:
+          selectedIds.length < limit
+            ? `تم توليد ${creativesOut.length} إعلاناً لـ ${selectedIds.length} منتج موثّق (أقل من 5 منتجات متاحة حالياً — استخدم زر الاكتشاف لزيادة التنوع).`
+            : `تم توليد ${creativesOut.length} إعلاناً لـ ${selectedIds.length} منتجات موثّقة بأنماط إخراج فنية متنوعة.`,
+        occasion,
+        stageProvider: runStageProvider,
+        stageProvidersByProduct,
+        artDirectionStyles: ART_DIRECTION_STYLES,
+        creatives: creativesOut,
       },
-      requested: limit,
-      message:
-        selectedIds.length < limit
-          ? `تم توليد ${creativesOut.length} إعلاناً لـ ${selectedIds.length} منتج موثّق (أقل من 5 منتجات متاحة حالياً).`
-          : `تم توليد ${creativesOut.length} إعلاناً لـ ${selectedIds.length} منتجات موثّقة.`,
-      occasion,
-      stageProvider: runStageProvider,
-      stageProvidersByProduct,
-      creatives: creativesOut,
-    });
+      { headers: { "Cache-Control": "no-store, max-age=0, must-revalidate" } },
+    );
   } catch (error) {
     console.error("Failed to run daily campaign batch.", error);
     return Response.json(
