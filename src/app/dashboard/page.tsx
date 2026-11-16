@@ -228,6 +228,7 @@ async function requestApi<T>(
   const response = await fetch(url, {
     headers: { Accept: "application/json" },
     signal,
+    cache: "no-store",
   });
   const body = (await response.json()) as ApiResult<T>;
 
@@ -278,6 +279,8 @@ export default function DashboardPage() {
   const [brandLogoUrl, setBrandLogoUrl] = useState<string | null>(null);
   const [logoUploading, setLogoUploading] = useState(false);
   const [logoMessage, setLogoMessage] = useState("");
+  const [harvesting, setHarvesting] = useState(false);
+  const [harvestMessage, setHarvestMessage] = useState("");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -319,6 +322,46 @@ export default function DashboardPage() {
       .catch(() => {});
     return () => controller.abort();
   }, [refreshKey]);
+
+  async function harvestRandomProducts() {
+    setHarvesting(true);
+    setHarvestMessage("");
+    setNotice("");
+    try {
+      const response = await fetch("/api/ai/harvest-random", {
+        method: "POST",
+        headers: adminWriteHeaders({
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        }),
+        body: JSON.stringify({ count: 5 }),
+        cache: "no-store",
+      });
+      const body = (await response.json()) as {
+        success?: boolean;
+        message?: string;
+        error?: string;
+        harvestedCount?: number;
+        skippedCount?: number;
+      };
+      if (!response.ok || !body.success) {
+        throw new Error(
+          response.status === 401
+            ? "المفتاح الإداري مطلوب أو غير صحيح. أدخل المفتاح من أعلى لوحة التحكم."
+            : body.error || `تعذر اكتشاف المنتجات (${response.status})`,
+        );
+      }
+      setHarvestMessage(body.message || "تمت عملية الاكتشاف.");
+      setNotice(body.message || "تمت عملية الاكتشاف.");
+      refresh();
+    } catch (err) {
+      setHarvestMessage(
+        err instanceof Error ? err.message : "تعذر اكتشاف منتجات جديدة.",
+      );
+    } finally {
+      setHarvesting(false);
+    }
+  }
 
   async function handleBrandLogoUpload(file: File) {
     setLogoMessage("");
@@ -618,6 +661,16 @@ export default function DashboardPage() {
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
+              onClick={() => void harvestRandomProducts()}
+              disabled={harvesting}
+              className="rounded-lg bg-amber-500 px-5 py-2 text-sm font-black text-slate-950 shadow-sm transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {harvesting
+                ? "جارٍ البحث والتوثيق..."
+                : "🔍 اكتشاف وتوثيق 5 منتجات عشوائية جديدة"}
+            </button>
+            <button
+              type="button"
               onClick={() => {
                 setNotice("");
                 setBulkOpen(true);
@@ -654,6 +707,15 @@ export default function DashboardPage() {
           </div>
         )}
 
+        {harvestMessage && (
+          <div
+            role="status"
+            className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900"
+          >
+            {harvestMessage}
+          </div>
+        )}
+
         <section
           aria-label="ملخص قاعدة البيانات"
           className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7"
@@ -671,7 +733,7 @@ export default function DashboardPage() {
           ))}
         </section>
 
-        <CampaignGallery />
+        <CampaignGallery key={refreshKey} />
 
         <section className="rounded-2xl border border-slate-200 bg-white p-5">
           <div className="mb-4 flex flex-wrap items-end justify-between gap-3">

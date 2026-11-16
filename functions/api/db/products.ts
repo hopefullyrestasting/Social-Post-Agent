@@ -142,15 +142,18 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       `).all<CategoryRow>(),
     ]);
 
-    return Response.json({
-      success: true,
-      products: products.results,
-      categories: categories.results.map((row) => row.category),
-      total: count?.count ?? 0,
-      limit,
-      offset,
-      hasMore: offset + limit < (count?.count ?? 0),
-    });
+    return Response.json(
+      {
+        success: true,
+        products: products.results,
+        categories: categories.results.map((row) => row.category),
+        total: count?.count ?? 0,
+        limit,
+        offset,
+        hasMore: offset + limit < (count?.count ?? 0),
+      },
+      { headers: { "Cache-Control": "no-store, max-age=0, must-revalidate" } },
+    );
   } catch (error) {
     console.error("Failed to load Al Rahma products from D1.", error);
     return Response.json(

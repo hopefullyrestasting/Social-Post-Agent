@@ -26,7 +26,8 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
   if (
     decision.mode === "unconfigured-preview" &&
-    new URL(context.request.url).pathname.startsWith("/api/db/") &&
+    (new URL(context.request.url).pathname.startsWith("/api/db/") ||
+      new URL(context.request.url).pathname === "/api/ai/harvest-random") &&
     ["POST", "PUT", "PATCH", "DELETE"].includes(
       context.request.method.toUpperCase(),
     )

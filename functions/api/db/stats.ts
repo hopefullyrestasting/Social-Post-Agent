@@ -30,18 +30,21 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
       ).first<{ count: number }>(),
     ]);
 
-    return Response.json({
-      success: true,
-      stats: {
-        products: products?.count ?? 0,
-        brands: brands?.count ?? 0,
-        needsVerification: needsVerification?.count ?? 0,
-        verified: verified?.count ?? 0,
-        referenceImages: referenceImages?.count ?? 0,
-        campaigns: campaigns?.count ?? 0,
-        generatedImages: generatedImages?.count ?? 0,
+    return Response.json(
+      {
+        success: true,
+        stats: {
+          products: products?.count ?? 0,
+          brands: brands?.count ?? 0,
+          needsVerification: needsVerification?.count ?? 0,
+          verified: verified?.count ?? 0,
+          referenceImages: referenceImages?.count ?? 0,
+          campaigns: campaigns?.count ?? 0,
+          generatedImages: generatedImages?.count ?? 0,
+        },
       },
-    });
+      { headers: { "Cache-Control": "no-store, max-age=0, must-revalidate" } },
+    );
   } catch (error) {
     console.error("Failed to load Al Rahma dashboard statistics from D1.", error);
     return Response.json(

@@ -30,10 +30,11 @@ export interface AuthDecision {
 
 export function isProtectedRequest(request: Request): boolean {
   const url = new URL(request.url);
-  return (
-    url.pathname.startsWith("/api/db/") &&
-    MUTATING_METHODS.has(request.method.toUpperCase())
-  );
+  if (!MUTATING_METHODS.has(request.method.toUpperCase())) return false;
+  if (url.pathname.startsWith("/api/db/")) return true;
+  // AI write endpoints mutate D1 or spend provider quota, so they share the
+  // same admin-key gate as dashboard writes.
+  return url.pathname === "/api/ai/harvest-random";
 }
 
 async function digest(value: string): Promise<Uint8Array> {
