@@ -240,27 +240,58 @@ assert.notEqual(variants[0].svgOverlay, variants[1].svgOverlay, "Variants must d
     assert.ok(result.svgOverlay.includes("متاح توصيل"), "Header/subtitle must include متاح توصيل.");
     assert.ok(result.svgOverlay.includes("#FFFFFF"));
     assert.ok(result.svgOverlay.includes('data-template="'), "Template marker must be present.");
-    assert.ok(result.svgOverlay.includes('data-packshot="true"'), "Packshot must be marked for cutout compositing.");
-    assert.ok(result.svgOverlay.includes('height="860"'), "Dominant hero packshot must be rendered at 860px height.");
-    assert.ok(result.svgOverlay.includes('x="200" y="400" width="680" height="860"'), "Hero packshot must use approved dominant geometry (x=200,y=400,w=680,h=860, bottom at 1260).");
+    assert.ok(result.svgOverlay.includes('data-packshot="true"'), "Packshot must be marked for compositing.");
+
+    // Phase 17: full-bleed hero, no podium, no white box (template id may contain "podium" but no visual podium markup)
+    assert.equal(result.svgOverlay.includes('id="shader-podium"'), false, "No shader podium allowed in Phase 17.");
+    assert.equal(result.svgOverlay.includes('id="studio-podium"'), false, "No studio podium allowed in Phase 17.");
+    assert.equal(/id="[^"]*podium[^"]*"/.test(result.svgOverlay), false, "No podium element markup allowed in Phase 17.");
+    assert.ok(result.svgOverlay.includes('height="1200"'), "Full-bleed hero packshot must be rendered at 1200px height.");
+    assert.ok(
+      result.svgOverlay.includes('x="40" y="350" width="1000" height="1200"'),
+      "Hero packshot must use full-bleed geometry (x=40,y=350,w=1000,h=1200).",
+    );
+    // External (non-transparent PNG data URI) packshots use multiply to melt white padding.
+    assert.ok(result.svgOverlay.includes('mix-blend-mode:multiply'), "Non-cutout packshot must use mix-blend-mode:multiply to remove white box.");
+    assert.ok(result.svgOverlay.includes('data-blend="multiply"'), "Non-cutout packshot must be marked data-blend=multiply.");
+
     assert.ok(result.svgOverlay.includes('id="top-header-pill"'), "Top dark-emerald header pill must render.");
     assert.ok(result.svgOverlay.includes('fill="#0F3D2E"'), "Approved dark-emerald header/footer color must be used.");
-    assert.ok(result.svgOverlay.includes('id="header-divider"') && result.svgOverlay.includes('x1="685"') && result.svgOverlay.includes('y1="72"') && result.svgOverlay.includes('x2="685"') && result.svgOverlay.includes('y2="156"'), "Header must include vertical divider at approved coordinates.");
-    assert.ok(result.svgOverlay.includes('x="660" y="126"') && result.svgOverlay.includes('font-size="25"') && result.svgOverlay.includes('fill="#E2E8F0"'), "Header tagline must use approved coordinates/typography with no overlap.");
+    assert.ok(
+      result.svgOverlay.includes('id="header-divider"') &&
+        result.svgOverlay.includes('x1="685"') &&
+        result.svgOverlay.includes('y1="66"') &&
+        result.svgOverlay.includes('x2="685"') &&
+        result.svgOverlay.includes('y2="149"'),
+      "Header must include vertical divider at approved coordinates.",
+    );
+    assert.ok(
+      result.svgOverlay.includes('x="660" y="120"') &&
+        result.svgOverlay.includes('font-size="25"') &&
+        result.svgOverlay.includes('fill="#E2E8F0"'),
+      "Header tagline must use approved coordinates/typography.",
+    );
     assert.ok(result.svgOverlay.includes("مستحضرات تجميل ومستلزمات الصيدليات - متاح توصيل"), "Header activity/delivery text must match approved lockup.");
     assert.ok(result.svgOverlay.includes('id="product-title"'), "Product title block must render.");
+    assert.ok(result.svgOverlay.includes('font-size="56"'), "Product title must use 56px Cairo 900 typography.");
     assert.equal(result.svgOverlay.includes("تركيبة طبيعية"), false, "Side feature pills must be removed.");
     assert.equal(result.svgOverlay.includes("جودة مضمونة"), false, "Side feature pills must be removed.");
     assert.equal(result.svgOverlay.includes('id="feature-pills"'), false, "Side feature pills group must be removed.");
     assert.ok(result.svgOverlay.includes('id="sales-copy-editorial"'), "Editorial sales copy must render directly over photography.");
     assert.equal(result.svgOverlay.includes('id="sales-copy-card"'), false, "Bulky white sales copy card must be removed.");
-    assert.ok(result.svgOverlay.includes('font-size="54"') && result.svgOverlay.includes('font-weight="900"') && result.svgOverlay.includes('fill="#FFFFFF"'), "Sales copy must use approved editorial typography.");
+    assert.ok(
+      result.svgOverlay.includes('font-size="48"') && result.svgOverlay.includes('font-weight="900"') && result.svgOverlay.includes('fill="#FFFFFF"'),
+      "Sales copy must use approved editorial typography (48px Cairo 900).",
+    );
     assert.ok(result.svgOverlay.includes('bottom-editorial-vignette'), "Sales copy must include subtle bottom vignette/scrim.");
     assert.ok(result.svgOverlay.includes('id="cta-pill"'), "CTA pill must render in editorial layout.");
-    assert.ok(result.svgOverlay.includes('y="1730"') && result.svgOverlay.includes('height="190"'), "Bottom contact bar must use approved geometry.");
-    assert.ok(result.svgOverlay.includes('x="960" y="1840"') && result.svgOverlay.includes('font-size="42"'), "Contact label must use approved coordinates/typography.");
-    assert.ok(result.svgOverlay.includes('x="540" y="1842"') && result.svgOverlay.includes('font-size="52"'), "Phone number must be centered with approved coordinates/typography.");
-    assert.ok(result.svgOverlay.includes('cx="250" cy="1825"') && result.svgOverlay.includes('cx="165" cy="1825"') && result.svgOverlay.includes('r="30"'), "Contact icons must be placed away from phone digits with r=30.");
+    assert.ok(result.svgOverlay.includes('y="1740"') && result.svgOverlay.includes('height="180"'), "Bottom contact bar must use approved geometry.");
+    assert.ok(result.svgOverlay.includes('x="960" y="1846"') && result.svgOverlay.includes('font-size="42"'), "Contact label must use approved coordinates/typography.");
+    assert.ok(result.svgOverlay.includes('x="540" y="1848"') && result.svgOverlay.includes('font-size="52"'), "Phone number must be centered with approved coordinates/typography.");
+    assert.ok(
+      result.svgOverlay.includes('cx="250" cy="1830"') && result.svgOverlay.includes('cx="165" cy="1830"') && result.svgOverlay.includes('r="30"'),
+      "Contact icons must be placed away from phone digits with r=30.",
+    );
     assert.ok(result.svgOverlay.includes("\u200Fللتواصل:") && result.svgOverlay.includes(brand.contact.phone), "Contact bar must render label and phone.");
     assert.equal(result.svgOverlay.includes('href="/studio-scenes/'), false, "External studio scene URLs must never be emitted in SVG (PNG export safety).");
     assert.ok(result.svgOverlay.includes("#059669"), "Contact/icons/CTA must include emerald accent styling.");
@@ -274,7 +305,25 @@ assert.notEqual(variants[0].svgOverlay, variants[1].svgOverlay, "Variants must d
     assert.equal(result.svgOverlay.includes("occasion-ribbon"), false, "No greeting without an in-window occasion.");
   }
 
-assert.ok(variants[0].svgOverlay.includes("studio-podium") || variants[0].svgOverlay.includes("shader-podium") || variants[0].svgOverlay.includes("podium"), "Variant 1 must include a studio podium stage.");
+assert.equal(/id="[^"]*podium[^"]*"/.test(variants[0].svgOverlay), false, "Variant 1 must have no podium markup in Phase 17.");
+assert.equal(variants[0].svgOverlay.includes('id="packshot-hero"'), true, "Variant 1 must include the full-bleed hero packshot.");
+assert.equal(variants[0].svgOverlay.includes('data-blend="multiply"'), true, "Variant 1 non-cutout packshot must be multiply-blended.");
+
+// Transparent PNG cutout renders normally (no multiply, with soft drop shadow).
+const cutoutOverlay = OverlaySystem.generateOverlaySvg({
+  width: 1080,
+  height: 1920,
+  template: "silver-podium-botanical",
+  productImageUrl: "data:image/png;base64,abc",
+  headline: verifiedProduct.title,
+  benefitLine: "ترطيب عميق يدوم طويلاً للشعر",
+  ctaText: "اطلب عبر واتساب",
+  availabilityText: "متوفر في المخزن",
+});
+assert.ok(cutoutOverlay.includes('x="40" y="350" width="1000" height="1200"'), "Cutout hero must use full-bleed geometry.");
+assert.ok(cutoutOverlay.includes('data-blend="cutout"'), "Transparent cutout must be marked data-blend=cutout.");
+assert.equal(cutoutOverlay.includes('mix-blend-mode:multiply'), false, "Transparent cutout must not use multiply blend.");
+assert.ok(cutoutOverlay.includes('filter="url(#soft-drop)"'), "Transparent cutout must render with soft drop shadow.");
 
 const single = ProductionEngine.execute({ product: verifiedProduct, today: fixedToday });
 assert.equal(single.variant, "silver-podium-botanical");
@@ -353,7 +402,11 @@ const externalScene = resolveBackground({
 assert.equal(externalScene.provider, "deterministic-studio");
 assert.equal(externalScene.kind, "scene");
 assert.equal(externalScene.markup.includes('href="https://image.pollinations.ai/prompt/test"'), false);
-assert.ok(externalScene.markup.includes("shader-podium"), "Non-data scene URLs must fall back to inline 3D podium vectors for PNG-safe export.");
+assert.equal(/id="[^"]*podium[^"]*"/.test(externalScene.markup), false, "Non-data scene URLs must fall back to podium-free editorial vectors for PNG-safe export.");
+assert.ok(
+  externalScene.markup.includes("botanical-shadows") || externalScene.markup.includes("studio-wall"),
+  "Fallback scene must use podium-free editorial backdrop markup.",
+);
 
 const workersScene = resolveBackground({
   width: 1080,
@@ -433,24 +486,28 @@ assert.ok(overlay.includes("\u200Fللتواصل:"));
 assert.ok(overlay.includes("متاح توصيل"));
 assert.ok(overlay.includes("ترطيب") && overlay.includes("عميق"), "Benefit line text must render in overlay.");
 assert.ok(overlay.includes('data-packshot="true"'));
-assert.ok(overlay.includes('height="860"'));
-assert.ok(overlay.includes('x="200" y="400" width="680" height="860"'));
+assert.equal(/id="[^"]*podium[^"]*"/.test(overlay), false, "Overlay must have no podium markup in Phase 17.");
+assert.ok(overlay.includes('height="1200"'));
+assert.ok(overlay.includes('x="40" y="350" width="1000" height="1200"'));
+assert.ok(overlay.includes('mix-blend-mode:multiply'), "Non-cutout overlay packshot must multiply-blend white padding.");
+assert.ok(overlay.includes('data-blend="multiply"'));
 assert.ok(overlay.includes('id="top-header-pill"'));
 assert.ok(overlay.includes('fill="#0F3D2E"'));
-assert.ok(overlay.includes('id="header-divider"') && overlay.includes('x1="685"'));
+assert.ok(overlay.includes('id="header-divider"') && overlay.includes('x1="685"') && overlay.includes('y1="66"'));
 assert.ok(overlay.includes("مستحضرات تجميل ومستلزمات الصيدليات - متاح توصيل"));
 assert.ok(overlay.includes('id="product-title"'));
+assert.ok(overlay.includes('font-size="56"'));
 assert.equal(overlay.includes("تركيبة طبيعية"), false);
 assert.equal(overlay.includes("جودة مضمونة"), false);
 assert.equal(overlay.includes('id="feature-pills"'), false);
 assert.ok(overlay.includes('id="sales-copy-editorial"'));
 assert.equal(overlay.includes('id="sales-copy-card"'), false);
-assert.ok(overlay.includes('font-size="54"'));
+assert.ok(overlay.includes('font-size="48"'));
 assert.ok(overlay.includes('id="cta-pill"'));
-assert.ok(overlay.includes('y="1730"') && overlay.includes('height="190"'));
-assert.ok(overlay.includes('x="960" y="1840"'));
-assert.ok(overlay.includes('x="540" y="1842"'));
-assert.ok(overlay.includes('cx="250" cy="1825"') && overlay.includes('cx="165" cy="1825"') && overlay.includes('r="30"'));
+assert.ok(overlay.includes('y="1740"') && overlay.includes('height="180"'));
+assert.ok(overlay.includes('x="960" y="1846"'));
+assert.ok(overlay.includes('x="540" y="1848"'));
+assert.ok(overlay.includes('cx="250" cy="1830"') && overlay.includes('cx="165" cy="1830"') && overlay.includes('r="30"'));
 assert.equal(overlay.includes('href="/studio-scenes/'), false);
 assert.equal(overlay.includes("..."), false);
 
@@ -483,7 +540,7 @@ assert.deepEqual(
 );
 
 console.log(
-  "Al Rahma pipeline tests passed: BrandConfig, 4-8 benefit-only copy (no usage, no ellipsis), 3 designer templates, pro editorial header/footer lockup, dominant 860px hero packshot, no side pills or sales box, vignette editorial sales copy, socialCaption, quality gate, promos, 48h cultural greeting, and single-source brand identity.",
+  "Al Rahma pipeline tests passed: BrandConfig, 4-8 benefit-only copy (no usage, no ellipsis), 3 designer templates, pro editorial header/footer lockup, full-bleed 1200px hero packshot with multiply white-box protection (no podium), no side pills or sales box, vignette editorial sales copy, socialCaption, quality gate, promos, 48h cultural greeting, and single-source brand identity.",
 );
 })().catch((error) => {
   console.error(error);

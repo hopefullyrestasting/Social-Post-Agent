@@ -55,10 +55,11 @@ export interface ArtDirectionStyle {
 }
 
 /**
- * Five distinct commercial art directions. Each prompt describes ONLY the stage
- * (no product, no packaging, no text) with clean top/bottom negative space so
- * the authentic packshot and Arabic editorial typography can be composited on
- * top without fighting busy areas.
+ * Five distinct commercial art directions. Each prompt describes ONLY a clean,
+ * bright, edge-to-edge editorial studio backdrop (no product, no packaging, no
+ * text, NO podium/plinth/pedestal). Backgrounds must blend seamlessly across the
+ * full 1080x1920 canvas so multiply-blended packshots and AI-staged products sit
+ * naturally without a white box or platform.
  */
 export const ART_DIRECTION_STYLES: Record<ArtDirectionStyleId, ArtDirectionStyle> = {
   "sunlit-travertine": {
@@ -68,7 +69,7 @@ export const ART_DIRECTION_STYLES: Record<ArtDirectionStyleId, ArtDirectionStyle
     template: "botanical-arch-frame",
     accent: "#C9A06A",
     scenePrompt:
-      "Photorealistic commercial beauty product advertising studio stage, warm sunlit textured travertine stone plinth centered in the lower third, golden-hour sunlight through a window casting crisp palm and monstera leaf shadows on a creamy sage plaster wall, natural argan and dried botanical accents at the edges, warm cream and sage depth, 85mm macro lens look, shallow depth of field, soft realistic contact shadow on the empty plinth top, generous clean uncluttered negative space in the top 25% and bottom 28% for Arabic typography, no product, no bottle, no packaging, no text, no letters, no logos, no watermark, vertical 9:16",
+      "Photorealistic bright commercial beauty advertising studio backdrop, full-bleed warm sunlit limestone and travertine wall with soft natural stone texture, golden-hour window light casting gentle palm and monstera leaf shadows across the surface, creamy sage and warm beige tones, airy editorial daylight, soft depth, clean open center area for a full-height product hero, no podium, no plinth, no pedestal, no stage, no platform, no table, no shelf, no product, no bottle, no packaging, no text, no letters, no logos, no watermark, vertical 9:16",
   },
   "aqua-splash-minimal": {
     id: "aqua-splash-minimal",
@@ -77,7 +78,7 @@ export const ART_DIRECTION_STYLES: Record<ArtDirectionStyleId, ArtDirectionStyle
     template: "editorial-beauty-card",
     accent: "#67C7D8",
     scenePrompt:
-      "Photorealistic fresh spa commercial beauty studio stage, sculpted white acrylic pedestal centered in the lower third, crystal-clear water ripples and a subtle splash crown, dewy condensation droplets on a pale aqua seamless backdrop, fresh mint and aloe leaves at the lower corners, crisp natural daylight with soft caustic reflections, clean empty plinth top, generous clean uncluttered negative space in the top 25% and bottom 28% for Arabic typography, no product, no bottle, no packaging, no text, no letters, no logos, no watermark, vertical 9:16",
+      "Photorealistic fresh spa commercial beauty studio backdrop, full-bleed pale aqua and white seamless gradient with soft water-ripple caustics and dewy mist highlights, subtle mint freshness, crisp clean natural daylight, bright airy editorial feel, smooth open center for a full-height product hero, no podium, no plinth, no pedestal, no stage, no platform, no table, no shelf, no product, no bottle, no packaging, no text, no letters, no logos, no watermark, vertical 9:16",
   },
   "luxury-amber-noir": {
     id: "luxury-amber-noir",
@@ -86,7 +87,7 @@ export const ART_DIRECTION_STYLES: Record<ArtDirectionStyleId, ArtDirectionStyle
     template: "editorial-beauty-card",
     accent: "#B8860B",
     scenePrompt:
-      "Photorealistic moody luxury perfume advertising studio stage, dark smoked-travertine and brushed brass pedestal centered in the lower third, warm amber rim lighting and dramatic architectural shadows, subtle agarwood chips and dark floral mist accents at the edges, rich noir background with a soft golden glow, elegant empty display surface with realistic contact shadow, generous clean uncluttered negative space in the top 25% and bottom 28% for Arabic typography, no product, no bottle, no packaging, no text, no letters, no logos, no watermark, vertical 9:16",
+      "Photorealistic moody luxury perfume advertising studio backdrop, full-bleed dark smoked stone and warm amber-lit wall, soft golden rim glow with elegant architectural shadows and subtle atmospheric haze, rich noir-to-amber gradient depth, dramatic yet clean editorial lighting, open luminous center for a full-height product hero, no podium, no plinth, no pedestal, no stage, no platform, no table, no shelf, no product, no bottle, no packaging, no text, no letters, no logos, no watermark, vertical 9:16",
   },
   "botanical-terracotta": {
     id: "botanical-terracotta",
@@ -95,7 +96,7 @@ export const ART_DIRECTION_STYLES: Record<ArtDirectionStyleId, ArtDirectionStyle
     template: "botanical-arch-frame",
     accent: "#C97B5A",
     scenePrompt:
-      "Photorealistic warm botanical editorial beauty studio stage, soft warm clay and natural linen textured pedestal centered in the lower third, eucalyptus branches and dried botanicals arranged at the edges, diffused natural daylight with gentle window shadows on a sand-beige plaster wall, earthy terracotta and cream palette, empty display surface with a realistic soft contact shadow, generous clean uncluttered negative space in the top 25% and bottom 28% for Arabic typography, no product, no bottle, no packaging, no text, no letters, no logos, no watermark, vertical 9:16",
+      "Photorealistic warm botanical editorial beauty studio backdrop, full-bleed sand-beige plaster and natural linen texture wall with soft clay and terracotta warmth, diffused natural daylight casting gentle eucalyptus leaf shadows, earthy cream palette, calm airy editorial feel, clean open center for a full-height product hero, no podium, no plinth, no pedestal, no stage, no platform, no table, no shelf, no product, no bottle, no packaging, no text, no letters, no logos, no watermark, vertical 9:16",
   },
   "modern-clinical-glow": {
     id: "modern-clinical-glow",
@@ -104,7 +105,7 @@ export const ART_DIRECTION_STYLES: Record<ArtDirectionStyleId, ArtDirectionStyle
     template: "silver-podium-botanical",
     accent: "#3FBF9A",
     scenePrompt:
-      "Photorealistic high-end pharmacy skincare studio stage, frosted glass podium centered in the lower third, soft emerald and pearl rim lighting, clean minimal pale grey-white architectural backdrop with subtle silver mesh texture, polished empty display surface with a crisp realistic contact shadow, premium clinical beauty aesthetic, generous clean uncluttered negative space in the top 25% and bottom 28% for Arabic typography, no product, no bottle, no packaging, no text, no letters, no logos, no watermark, vertical 9:16",
+      "Photorealistic premium clinical skincare studio backdrop, full-bleed pale pearl-white and soft silver architectural wall with subtle frosted-glass glow and gentle emerald rim light, clean minimal pharmacy-beauty aesthetic, bright even studio lighting, smooth open center for a full-height product hero, no podium, no plinth, no pedestal, no stage, no platform, no table, no shelf, no product, no bottle, no packaging, no text, no letters, no logos, no watermark, vertical 9:16",
   },
 };
 

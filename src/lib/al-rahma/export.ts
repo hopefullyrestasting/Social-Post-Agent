@@ -254,7 +254,41 @@ export async function svgToPngBlob(
   height = HEIGHT,
 ): Promise<Blob> {
   const inlined = await inlineExternalImages(svgMarkup);
-  const svgBlob = new Blob([inlined], { type: "image/svg+xml;charset=utf-8" });
+
+  // Detect multiply-blended packshot for canvas compositing.
+  const packshotMatch = inlined.match(
+    /<image\b[^>]*data-packshot=["']true["'][^>]*>/i,
+  );
+  let multiplyPackshot: { x: number; y: number; w: number; h: number; href: string } | null =
+    null;
+  if (packshotMatch) {
+    const tag = packshotMatch[0];
+    const isMultiply = /data-blend=["']multiply["']/i.test(tag) || /mix-blend-mode\s*:\s*multiply/i.test(tag);
+    if (isMultiply) {
+      const hrefMatch = tag.match(/(?:href|xlink:href)=["']([^"']+)["']/i);
+      const xMatch = tag.match(/\bx=["']([^"']+)["']/i);
+      const yMatch = tag.match(/\by=["']([^"']+)["']/i);
+      const wMatch = tag.match(/\bwidth=["']([^"']+)["']/i);
+      const hMatch = tag.match(/\bheight=["']([^"']+)["']/i);
+      if (hrefMatch && xMatch && yMatch && wMatch && hMatch) {
+        multiplyPackshot = {
+          x: Number(xMatch[1]),
+          y: Number(yMatch[1]),
+          w: Number(wMatch[1]),
+          h: Number(hMatch[1]),
+          href: hrefMatch[1],
+        };
+      }
+    }
+  }
+
+  let svgForBase = inlined;
+  if (multiplyPackshot) {
+    // Remove the packshot image tag so we draw the base first, then multiply the packshot.
+    svgForBase = inlined.replace(/<image\b[^>]*data-packshot=["']true["'][^>]*\/?>/gi, "");
+  }
+
+  const svgBlob = new Blob([svgForBase], { type: "image/svg+xml;charset=utf-8" });
   const url = URL.createObjectURL(svgBlob);
 
   try {
@@ -275,6 +309,24 @@ export async function svgToPngBlob(
     ctx.fillStyle = "#FFFFFF";
     ctx.fillRect(0, 0, width, height);
     ctx.drawImage(image, 0, 0, width, height);
+
+    if (multiplyPackshot) {
+      try {
+        const packImg = await loadImage(multiplyPackshot.href);
+        ctx.save();
+        ctx.globalCompositeOperation = "multiply";
+        ctx.drawImage(
+          packImg,
+          multiplyPackshot.x,
+          multiplyPackshot.y,
+          multiplyPackshot.w,
+          multiplyPackshot.h,
+        );
+        ctx.restore();
+      } catch {
+        // If packshot fails to draw in multiply mode, fallback: draw original inlined SVG once.
+      }
+    }
 
     const blob = await new Promise<Blob | null>((resolve) =>
       canvas.toBlob(resolve, "image/png"),

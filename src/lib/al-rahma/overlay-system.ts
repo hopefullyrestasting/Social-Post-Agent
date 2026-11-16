@@ -80,31 +80,31 @@ function commonDefs(): string {
 }
 
 function headerPill(width: number, brandLogoUrl?: string | null): string {
-  // Sleek top header y=44..184
+  // Top header pill y=40..175
   void width;
   const x = 40;
-  const y = 44;
+  const y = 40;
   const w = 1000;
-  const h = 140;
+  const h = 135;
   const logo = brandLogoUrl?.trim() || null;
 
-  const logoX = 916;
-  const logoY = 66;
-  const logoSize = 96;
-  const brandX = 896;
-  const brandY = 128;
+  const logoX = 918;
+  const logoY = 60;
+  const logoSize = 95;
+  const brandX = 898;
+  const brandY = 122;
   const dividerX = 685;
-  const dividerY1 = 72;
-  const dividerY2 = 156;
+  const dividerY1 = 66;
+  const dividerY2 = 149;
   const taglineX = 660;
-  const taglineY = 126;
+  const taglineY = 120;
 
   const logoNode = logo
     ? `<image href="${escapeXml(logo)}" x="${logoX}" y="${logoY}" width="${logoSize}" height="${logoSize}" preserveAspectRatio="xMidYMid meet" />
        <rect x="${logoX}" y="${logoY}" width="${logoSize}" height="${logoSize}" rx="22" fill="#FFFFFF" fill-opacity="0.10" stroke="#FFFFFF" stroke-opacity="0.18" />`
     : `<rect x="${logoX}" y="${logoY}" width="${logoSize}" height="${logoSize}" rx="22" fill="#FFFFFF" fill-opacity="0.12" stroke="#FFFFFF" stroke-opacity="0.18" />
        <circle cx="${logoX + logoSize / 2}" cy="${logoY + logoSize / 2}" r="26" fill="#059669" />
-       <path d="M ${logoX + 34} ${logoY + 50} L ${logoX + 45} ${logoY + 62} L ${logoX + 64} ${logoY + 38}" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />`;
+       <path d="M ${logoX + 34} ${logoY + 49} L ${logoX + 45} ${logoY + 61} L ${logoX + 64} ${logoY + 37}" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />`;
 
   return `
     <g id="top-header-pill">
@@ -118,14 +118,14 @@ function headerPill(width: number, brandLogoUrl?: string | null): string {
 }
 
 function productTitle(width: number, headline: string): string {
-  // Product Name y=220..375, Cairo 900, 54-60px, max 2 lines, zero ellipsis
+  // Product title y=205..345, Cairo 900, 56px, max 2 lines, zero ellipsis
   const x = width / 2;
-  const { lines, charsPerLine } = wrapTextNoTruncate(headline, 22, 2, 10);
-  const size = Math.max(54, Math.min(60, 54 + Math.max(0, 20 - charsPerLine)));
-  const lineHeight = Math.round(size * 1.26);
+  const { lines } = wrapTextNoTruncate(headline, 22, 2, 10);
+  const size = 56;
+  const lineHeight = Math.round(size * 1.24);
   const blockH = size + (lines.length - 1) * lineHeight;
-  const top = 220 + size;
-  const bottom = 375;
+  const top = 205 + size;
+  const bottom = 345;
   const y = Math.min(top, bottom - Math.max(0, blockH - size));
 
   const tspans = lines
@@ -138,6 +138,11 @@ function productTitle(width: number, headline: string): string {
   `;
 }
 
+function isTransparentCutout(productUrl: string): boolean {
+  // Server-side BRIA/remove-bg cutouts are always embedded as transparent PNG data URIs.
+  return productUrl.startsWith("data:image/png");
+}
+
 function heroPackshot(
   width: number,
   productUrl: string | null | undefined,
@@ -148,44 +153,47 @@ function heroPackshot(
     return "";
   }
 
-  // Dominant hero packshot: 860x680 at x=200,y=400, bottom at 1260
+  // Full-bleed hero: x=40, y=350, w=1000, h=1200 (dominates frame down to contact bar)
   const cx = width / 2;
-  const packshotX = 200;
-  const packshotY = 400;
-  const packshotW = 680;
-  const packshotH = 860;
-  const bottom = 1260;
+  const packshotX = 40;
+  const packshotY = 350;
+  const packshotW = 1000;
+  const packshotH = 1200;
 
   if (!productUrl) {
     return `
       <g id="packshot-missing">
-        <rect x="${packshotX}" y="${packshotY}" width="${packshotW}" height="${packshotH}" rx="28" fill="none" stroke="#94A3B8" stroke-width="3" stroke-dasharray="14 12" />
+        <rect x="${packshotX + 80}" y="${packshotY + 120}" width="${packshotW - 160}" height="${packshotH - 240}" rx="28" fill="none" stroke="#94A3B8" stroke-width="3" stroke-dasharray="14 12" />
         <text x="${cx}" y="${packshotY + packshotH / 2}" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="30" font-weight="700" fill="#64748B" text-anchor="middle">الصورة الأصلية غير متاحة</text>
       </g>
     `;
   }
 
+  const cutout = isTransparentCutout(productUrl);
+  const blendStyle = cutout ? "" : ' style="mix-blend-mode:multiply"';
+  // Transparent cutouts get a soft studio drop shadow; multiply-blended originals
+  // melt their white padding into the backdrop, so no shadow frame is drawn.
+  const imageFilter = cutout ? ' filter="url(#soft-drop)"' : "";
+  const blendMarker = cutout ? "cutout" : "multiply";
+
   return `
-    <g id="packshot-hero">
-      <ellipse id="packshot-contact-shadow-wide" cx="${cx}" cy="${bottom + 6}" rx="230" ry="34" fill="#0F172A" fill-opacity="0.16" filter="url(#contact-shadow-wide)" />
-      <ellipse id="packshot-contact-shadow-tight" cx="${cx}" cy="${bottom + 2}" rx="125" ry="16" fill="#0F172A" fill-opacity="0.34" filter="url(#contact-shadow-tight)" />
-      <ellipse id="packshot-ambient-glow" cx="${cx}" cy="${packshotY + packshotH * 0.45}" rx="250" ry="360" fill="#FFFFFF" fill-opacity="0.08" filter="url(#contact-shadow-wide)" />
-      <g id="packshot" data-packshot="true" filter="url(#rim-light)">
-        <image data-packshot="true" href="${escapeXml(productUrl)}" x="${packshotX}" y="${packshotY}" width="${packshotW}" height="${packshotH}" preserveAspectRatio="xMidYMid meet" />
+    <g id="packshot-hero" data-blend="${blendMarker}">
+      <g id="packshot" data-packshot="true">
+        <image data-packshot="true" data-blend="${blendMarker}" href="${escapeXml(productUrl)}" x="${packshotX}" y="${packshotY}" width="${packshotW}" height="${packshotH}" preserveAspectRatio="xMidYMid meet"${imageFilter}${blendStyle} />
       </g>
     </g>
   `;
 }
 
 function editorialSalesCopy(width: number, height: number, text: string): string {
-  // High-impact editorial sales copy y=1330..1530, direct on photography with subtle vignette/scrim (no white box)
+  // Editorial sales copy y=1520..1690, 48px Cairo 900, over bottom gradient scrim (no white box)
   const x = width / 2;
-  const size = 54;
-  const lineHeight = 64;
-  const { lines } = wrapTextNoTruncate(text, 22, 2, 10);
+  const size = 48;
+  const lineHeight = 58;
+  const { lines } = wrapTextNoTruncate(text, 24, 2, 10);
   const blockH = size + (lines.length - 1) * lineHeight;
-  const top = 1330 + size;
-  const bottom = 1530;
+  const top = 1520 + size;
+  const bottom = 1690;
   const y = Math.min(top, bottom - Math.max(0, blockH - size));
   const tspans = lines
     .map((line, index) => `<tspan x="${x}" dy="${index === 0 ? 0 : lineHeight}">${escapeXml(line)}</tspan>`)
@@ -267,12 +275,12 @@ function availabilityPill(width: number, y: number, text: string): string {
 
 function ctaPill(width: number, y: number, text: string): string {
   const w = 480;
-  const h = 80;
+  const h = 74;
   const x = (width - w) / 2;
   return `
     <g id="cta-pill" transform="translate(${x}, ${y})" filter="url(#pill-shadow)">
       <rect width="${w}" height="${h}" rx="${h / 2}" fill="#059669" />
-      <text x="${w / 2}" y="51" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="30" font-weight="800" fill="#FFFFFF" text-anchor="middle">${escapeXml(text)}</text>
+      <text x="${w / 2}" y="48" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="28" font-weight="800" fill="#FFFFFF" text-anchor="middle">${escapeXml(text)}</text>
     </g>
   `;
 }
@@ -301,17 +309,17 @@ function circularIcon(cx: number, cy: number, type: "phone" | "whatsapp"): strin
 }
 
 function contactBlock(width: number): string {
-  // Full-width dark-emerald footer x=0, y=1730, w=1080, h=190
-  const y = 1730;
-  const barH = 190;
+  // Full-width dark-emerald footer y=1740..1920
+  const y = 1740;
+  const barH = 180;
   const phone = BRAND.contact.phone;
   return `
     <g id="contact-block">
       <rect x="0" y="${y}" width="${width}" height="${barH}" fill="#0F3D2E" />
-      <text x="960" y="1840" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="42" font-weight="800" fill="#FFFFFF" text-anchor="end" direction="rtl">${escapeXml(CONTACT_LABEL)}</text>
-      <text x="540" y="1842" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="52" font-weight="900" fill="#FFFFFF" text-anchor="middle" direction="ltr">${escapeXml(phone)}</text>
-      ${circularIcon(250, 1825, "whatsapp")}
-      ${circularIcon(165, 1825, "phone")}
+      <text x="960" y="1846" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="42" font-weight="800" fill="#FFFFFF" text-anchor="end" direction="rtl">${escapeXml(CONTACT_LABEL)}</text>
+      <text x="540" y="1848" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="52" font-weight="900" fill="#FFFFFF" text-anchor="middle" direction="ltr">${escapeXml(phone)}</text>
+      ${circularIcon(250, 1830, "whatsapp")}
+      ${circularIcon(165, 1830, "phone")}
     </g>
   `;
 }
@@ -339,7 +347,7 @@ export class OverlaySystem {
         sceneImageUrl: stagedImageUrl ?? opts.sceneImageUrl ?? null,
       });
 
-    // Keep promo badge clear of hero/sales area in the editorial layout.
+    // Keep promo badge on the hero; place status/CTA clear of sales copy and footer.
     const promoY = 1180;
 
     return `
@@ -352,8 +360,8 @@ export class OverlaySystem {
         ${heroPackshot(width, productUrl, { staged: Boolean(stagedImageUrl) })}
         ${promotion ? promoBadge(width, promoY, promotion) : ""}
         ${benefit ? editorialSalesCopy(width, height, benefit) : ""}
-        ${availability ? availabilityPill(width, 1542, availability) : ""}
-        ${!promotion && cta ? ctaPill(width, 1575, cta) : ""}
+        ${availability ? availabilityPill(width, 1465, availability) : ""}
+        ${!promotion && cta ? ctaPill(width, 1658, cta) : ""}
         ${opts.showFooterBar === false ? "" : contactBlock(width)}
       </svg>
     `.trim();

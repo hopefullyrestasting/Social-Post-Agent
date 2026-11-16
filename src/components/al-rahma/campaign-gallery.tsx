@@ -127,8 +127,8 @@ function creativeSvgMarkup(creative: CampaignCreative): string | null {
 
 function campaignsUrl(): string {
   // Cache-buster + no-store: the dashboard must never show a stale stored SVG
-  // after a new editorial campaign is generated.
-  return `/api/db/campaigns?limit=10&v=phase16&t=${Date.now()}`;
+  // after a new full-bleed campaign is generated.
+  return `/api/db/campaigns?limit=10&v=phase17&t=${Date.now()}`;
 }
 
 function groupByProduct(creatives: CampaignCreative[]) {
@@ -391,10 +391,10 @@ export default function CampaignGallery() {
     };
   }, []);
 
-  async function runBatch() {
+  async function runBatch(fresh = false) {
     setRunning(true);
     setError("");
-    setNotice("");
+    setNotice(fresh ? "جارٍ توليد دفعة جديدة بتصميم Phase 17..." : "");
     try {
       const response = await fetch("/api/db/campaigns/run", {
         method: "POST",
@@ -403,6 +403,7 @@ export default function CampaignGallery() {
           "Content-Type": "application/json",
         }),
         body: JSON.stringify({}),
+        cache: "no-store",
       });
       const body = (await response.json()) as ApiResult<{
         campaign?: Campaign;
@@ -424,7 +425,10 @@ export default function CampaignGallery() {
         response.headers.get("X-Auth-Mode") === "unconfigured-preview"
           ? " — وضع المعاينة: لم يُضبط مفتاح الإدارة بعد."
           : "";
-      setNotice(`${body.message || "تم تشغيل دفعة اليوم بنجاح."}${previewNote}`);
+      const freshNote = fresh
+        ? "تم استبدال المعاينة بأحدث دفعة كاملة (منتج ممتد بلا بوديوم ولا مربع أبيض). "
+        : "";
+      setNotice(`${freshNote}${body.message || "تم تشغيل دفعة اليوم بنجاح."}${previewNote}`);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "تعذر تشغيل الدفعة.");
@@ -468,7 +472,15 @@ export default function CampaignGallery() {
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={runBatch}
+            onClick={() => void runBatch(true)}
+            disabled={running}
+            className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-black text-white shadow-sm transition hover:bg-emerald-600 disabled:opacity-50"
+          >
+            {running ? "جارٍ التوليد..." : "مسح المعاينات القديمة وتوليد الجديد"}
+          </button>
+          <button
+            type="button"
+            onClick={() => void runBatch(false)}
             disabled={running}
             className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-emerald-500 disabled:opacity-50"
           >
