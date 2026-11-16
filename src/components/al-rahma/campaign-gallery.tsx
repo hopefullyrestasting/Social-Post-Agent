@@ -59,14 +59,16 @@ type ApiResult<T> =
   | { success: false; error?: string; detail?: string; message?: string };
 
 const VARIANT_LABELS: Record<string, string> = {
-  "silver-podium-botanical": "نسخة 1 — منصة فضية ونباتات",
+  "simple-botanical-horizon": "نسخة 1 — أفق نباتي بسيط",
+  "silver-podium-botanical": "نسخة بديلة — منصة فضية ونباتات",
   "botanical-arch-frame": "نسخة 2 — إطار قوسي نباتي",
   "editorial-beauty-card": "نسخة 2 — بطاقة تحريرية تجميلية",
-  "1": "نسخة 1 — منصة فضية ونباتات",
+  "1": "نسخة 1 — أفق نباتي بسيط",
   "2": "نسخة 2 — قالب بديل",
 };
 
 const ART_STYLE_LABELS: Record<string, string> = {
+  "simple-botanical-horizon": "بسيط — أفق نباتي",
   "sunlit-travertine": "شمس الترافرتين",
   "aqua-splash-minimal": "ماء وأكريليك",
   "luxury-amber-noir": "فخامة العنبر الداكن",
@@ -128,7 +130,7 @@ function creativeSvgMarkup(creative: CampaignCreative): string | null {
 function campaignsUrl(): string {
   // Cache-buster + no-store: the dashboard must never show a stale stored SVG
   // after a new full-bleed campaign is generated.
-  return `/api/db/campaigns?limit=10&v=phase17&t=${Date.now()}`;
+  return `/api/db/campaigns?limit=10&v=phase18&t=${Date.now()}`;
 }
 
 function groupByProduct(creatives: CampaignCreative[]) {

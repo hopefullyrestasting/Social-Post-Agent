@@ -248,6 +248,111 @@ async function inlineExternalImages(svg: string): Promise<string> {
   return result;
 }
 
+interface PackshotGeometry {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  href: string;
+  multiply: boolean;
+  reflectFrom: number;
+  reflectTo: number;
+}
+
+function parsePackshotTag(tag: string): PackshotGeometry | null {
+  const hrefMatch = tag.match(/(?:href|xlink:href)=["']([^"']+)["']/i);
+  const xMatch = tag.match(/\bx=["']([^"']+)["']/i);
+  const yMatch = tag.match(/\by=["']([^"']+)["']/i);
+  const wMatch = tag.match(/\bwidth=["']([^"']+)["']/i);
+  const hMatch = tag.match(/\bheight=["']([^"']+)["']/i);
+  if (!hrefMatch || !xMatch || !yMatch || !wMatch || !hMatch) return null;
+  const fromMatch = tag.match(/data-reflect-from=["']([^"']+)["']/i);
+  const toMatch = tag.match(/data-reflect-to=["']([^"']+)["']/i);
+  return {
+    x: Number(xMatch[1]),
+    y: Number(yMatch[1]),
+    w: Number(wMatch[1]),
+    h: Number(hMatch[1]),
+    href: hrefMatch[1],
+    multiply:
+      /data-blend=["']multiply["']/i.test(tag) ||
+      /mix-blend-mode\s*:\s*multiply/i.test(tag),
+    reflectFrom: fromMatch ? Number(fromMatch[1]) : 1240,
+    reflectTo: toMatch ? Number(toMatch[1]) : 1510,
+  };
+}
+
+/** Contain-fit rect matching SVG `preserveAspectRatio="xMidYMid meet"`. */
+function containRect(
+  img: HTMLImageElement,
+  box: { x: number; y: number; w: number; h: number },
+): { x: number; y: number; w: number; h: number } {
+  const naturalW = img.naturalWidth || img.width;
+  const naturalH = img.naturalHeight || img.height;
+  if (!naturalW || !naturalH || !box.w || !box.h) return box;
+  const imageRatio = naturalW / naturalH;
+  const boxRatio = box.w / box.h;
+  let drawW = box.w;
+  let drawH = box.h;
+  if (imageRatio > boxRatio) {
+    drawH = box.w / imageRatio;
+  } else {
+    drawW = box.h * imageRatio;
+  }
+  return {
+    x: box.x + (box.w - drawW) / 2,
+    y: box.y + (box.h - drawH) / 2,
+    w: drawW,
+    h: drawH,
+  };
+}
+
+/**
+ * Draw the clipped mirror reflection (flipped about `reflectFrom`, faded to
+ * transparent, softly blurred) into the destination context at full canvas size.
+ */
+async function drawPackshotReflection(
+  ctx: CanvasRenderingContext2D,
+  reflection: PackshotGeometry,
+  width: number,
+  height: number,
+): Promise<void> {
+  const img = await loadImage(reflection.href);
+  const rect = containRect(img, reflection);
+
+  const offscreen = document.createElement("canvas");
+  offscreen.width = width;
+  offscreen.height = height;
+  const off = offscreen.getContext("2d");
+  if (!off) return;
+
+  off.save();
+  off.translate(0, reflection.reflectFrom * 2);
+  off.scale(1, -1);
+  off.filter = "blur(2.5px)";
+  off.drawImage(img, rect.x, rect.y, rect.w, rect.h);
+  off.restore();
+
+  // Vertical alpha fade 0.34 -> 0.12 -> 0, clipped to the reflection band.
+  const band = Math.max(1, reflection.reflectTo - reflection.reflectFrom);
+  const fade = off.createLinearGradient(0, reflection.reflectFrom, 0, reflection.reflectTo);
+  fade.addColorStop(0, "rgba(255,255,255,0.34)");
+  fade.addColorStop(0.55, "rgba(255,255,255,0.12)");
+  fade.addColorStop(1, "rgba(255,255,255,0)");
+  off.save();
+  off.globalCompositeOperation = "destination-in";
+  off.fillStyle = fade;
+  off.fillRect(0, reflection.reflectFrom, width, band);
+  off.restore();
+
+  ctx.save();
+  if (reflection.multiply) {
+    ctx.globalCompositeOperation = "multiply";
+  }
+  ctx.drawImage(offscreen, 0, 0, width, height);
+  ctx.restore();
+}
+
 export async function svgToPngBlob(
   svgMarkup: string,
   width = WIDTH,
@@ -255,37 +360,33 @@ export async function svgToPngBlob(
 ): Promise<Blob> {
   const inlined = await inlineExternalImages(svgMarkup);
 
-  // Detect multiply-blended packshot for canvas compositing.
-  const packshotMatch = inlined.match(
-    /<image\b[^>]*data-packshot=["']true["'][^>]*>/i,
+  const imageTags = Array.from(inlined.matchAll(/<image\b[^>]*\/?>/gi)).map(
+    (match) => match[0],
   );
-  let multiplyPackshot: { x: number; y: number; w: number; h: number; href: string } | null =
-    null;
-  if (packshotMatch) {
-    const tag = packshotMatch[0];
-    const isMultiply = /data-blend=["']multiply["']/i.test(tag) || /mix-blend-mode\s*:\s*multiply/i.test(tag);
-    if (isMultiply) {
-      const hrefMatch = tag.match(/(?:href|xlink:href)=["']([^"']+)["']/i);
-      const xMatch = tag.match(/\bx=["']([^"']+)["']/i);
-      const yMatch = tag.match(/\by=["']([^"']+)["']/i);
-      const wMatch = tag.match(/\bwidth=["']([^"']+)["']/i);
-      const hMatch = tag.match(/\bheight=["']([^"']+)["']/i);
-      if (hrefMatch && xMatch && yMatch && wMatch && hMatch) {
-        multiplyPackshot = {
-          x: Number(xMatch[1]),
-          y: Number(yMatch[1]),
-          w: Number(wMatch[1]),
-          h: Number(hMatch[1]),
-          href: hrefMatch[1],
-        };
-      }
-    }
-  }
+  const mainTag = imageTags.find(
+    (tag) =>
+      /data-packshot=["']true["']/i.test(tag) &&
+      !/data-reflection=["']true["']/i.test(tag),
+  );
+  const reflectionTag = imageTags.find((tag) =>
+    /data-reflection=["']true["']/i.test(tag),
+  );
+
+  const mainPackshot = mainTag ? parsePackshotTag(mainTag) : null;
+  const reflection = reflectionTag ? parsePackshotTag(reflectionTag) : null;
 
   let svgForBase = inlined;
-  if (multiplyPackshot) {
-    // Remove the packshot image tag so we draw the base first, then multiply the packshot.
-    svgForBase = inlined.replace(/<image\b[^>]*data-packshot=["']true["'][^>]*\/?>/gi, "");
+  // Remove the reflection image from the base raster (redrawn with a canvas
+  // alpha-fade) and the main packshot when it needs multiply compositing.
+  svgForBase = svgForBase.replace(
+    /<image\b[^>]*data-reflection=["']true["'][^>]*\/?>/gi,
+    "",
+  );
+  if (mainPackshot?.multiply) {
+    svgForBase = svgForBase.replace(
+      /<image\b[^>]*data-packshot=["']true["'][^>]*\/?>/gi,
+      "",
+    );
   }
 
   const svgBlob = new Blob([svgForBase], { type: "image/svg+xml;charset=utf-8" });
@@ -310,21 +411,24 @@ export async function svgToPngBlob(
     ctx.fillRect(0, 0, width, height);
     ctx.drawImage(image, 0, 0, width, height);
 
-    if (multiplyPackshot) {
+    if (mainPackshot?.multiply) {
       try {
-        const packImg = await loadImage(multiplyPackshot.href);
+        const packImg = await loadImage(mainPackshot.href);
+        const rect = containRect(packImg, mainPackshot);
         ctx.save();
         ctx.globalCompositeOperation = "multiply";
-        ctx.drawImage(
-          packImg,
-          multiplyPackshot.x,
-          multiplyPackshot.y,
-          multiplyPackshot.w,
-          multiplyPackshot.h,
-        );
+        ctx.drawImage(packImg, rect.x, rect.y, rect.w, rect.h);
         ctx.restore();
       } catch {
-        // If packshot fails to draw in multiply mode, fallback: draw original inlined SVG once.
+        // If the packshot fails, the inlined base raster still stands alone.
+      }
+    }
+
+    if (reflection) {
+      try {
+        await drawPackshotReflection(ctx, reflection, width, height);
+      } catch {
+        // A failed reflection must never break the export.
       }
     }
 

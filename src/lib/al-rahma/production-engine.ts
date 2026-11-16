@@ -9,6 +9,7 @@ import {
   BackgroundLayer,
   DesignerTemplate,
   resolveBackground,
+  resolveSimplePaletteKey,
   templateForVariant,
 } from "./background-provider";
 import {
@@ -126,7 +127,7 @@ export class ProductionEngine {
     return ProductionEngine.build(request, variantNumber, template);
   }
 
-  /** Two required creative variants per product: 1 = silver-podium-botanical, 2 alternates. */
+  /** Two required creative variants per product: 1 = simple-botanical-horizon, 2 alternates. */
   public static executeVariants(
     request: ProductionVariantsRequest,
   ): ProductionResult[] {
@@ -178,10 +179,20 @@ export class ProductionEngine {
     const productImageUrl = product.productImageUrl?.trim() || null;
     const stagedImageUrl = request.stagedImageUrl?.trim() || null;
     const effectiveSceneImageUrl = stagedImageUrl ?? request.sceneImageUrl ?? null;
+    // Colour-match the Simple studio wall/floor to the packaging mood.
+    const palette = resolveSimplePaletteKey({
+      category: product.category,
+      name: [product.title, product.badgeText].filter(Boolean).join(" "),
+      benefits: [
+        ...(product.features ?? []),
+        ...(product.verifiedBenefits ?? []),
+      ],
+    });
     const background = resolveBackground({
       width,
       height,
       template,
+      palette,
       sceneImageUrl: effectiveSceneImageUrl,
     });
 
@@ -189,6 +200,7 @@ export class ProductionEngine {
       width,
       height,
       template,
+      palette,
       sceneImageUrl: effectiveSceneImageUrl,
       stagedImageUrl,
       brandLogoUrl: request.brandLogoUrl ?? null,

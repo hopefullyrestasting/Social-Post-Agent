@@ -15,7 +15,11 @@ export interface NanoBananaEnv {
 
 export type NanoBananaStageProvider = "nano-banana" | "studio-fallback";
 
-type TemplateId = "silver-podium-botanical" | "botanical-arch-frame" | "editorial-beauty-card";
+type TemplateId =
+  | "simple-botanical-horizon"
+  | "silver-podium-botanical"
+  | "botanical-arch-frame"
+  | "editorial-beauty-card";
 
 export interface NanoBananaArtDirection {
   brand?: string | null;
@@ -309,7 +313,7 @@ export const onRequestPost: PagesFunction<NanoBananaEnv> = async ({ request, env
 
   const body = (payload && typeof payload === "object" ? payload : {}) as Record<string, unknown>;
   const imageUrl = typeof body.imageUrl === "string" ? body.imageUrl.trim() : "";
-  const template = (typeof body.template === "string" ? body.template : "silver-podium-botanical") as TemplateId;
+  const template = (typeof body.template === "string" ? body.template : "simple-botanical-horizon") as TemplateId;
   if (!imageUrl) {
     return Response.json({ success: false, error: "Missing required imageUrl." }, { status: 400 });
   }

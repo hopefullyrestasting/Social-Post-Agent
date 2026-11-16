@@ -24,9 +24,14 @@ export interface SceneEnv {
   GEMINI_API_KEY?: string;
 }
 
-type TemplateId = "silver-podium-botanical" | "botanical-arch-frame" | "editorial-beauty-card";
+type TemplateId =
+  | "simple-botanical-horizon"
+  | "silver-podium-botanical"
+  | "botanical-arch-frame"
+  | "editorial-beauty-card";
 
 export type ArtDirectionStyleId =
+  | "simple-botanical-horizon"
   | "sunlit-travertine"
   | "aqua-splash-minimal"
   | "luxury-amber-noir"
@@ -55,13 +60,25 @@ export interface ArtDirectionStyle {
 }
 
 /**
- * Five distinct commercial art directions. Each prompt describes ONLY a clean,
- * bright, edge-to-edge editorial studio backdrop (no product, no packaging, no
- * text, NO podium/plinth/pedestal). Backgrounds must blend seamlessly across the
- * full 1080x1920 canvas so multiply-blended packshots and AI-staged products sit
- * naturally without a white box or platform.
+ * Commercial art directions. The primary approved direction is the "Simple"
+ * editorial theme (colour-matched monochrome wall, glossy reflective horizon
+ * floor, volumetric clouds, botanical base); five secondary directions rotate
+ * behind it. Each prompt describes ONLY a clean, bright, edge-to-edge editorial
+ * studio backdrop (no product, no packaging, no text, NO podium/plinth/pedestal).
+ * Backgrounds must blend seamlessly across the full 1080x1920 canvas so
+ * multiply-blended packshots and AI-staged products sit naturally without a
+ * white box or platform.
  */
 export const ART_DIRECTION_STYLES: Record<ArtDirectionStyleId, ArtDirectionStyle> = {
+  "simple-botanical-horizon": {
+    id: "simple-botanical-horizon",
+    labelAr: "بسيط - أفق نباتي",
+    labelEn: "Simple Botanical Horizon",
+    template: "simple-botanical-horizon",
+    accent: "#5A9A48",
+    scenePrompt:
+      "Commercial skincare and beauty advertising studio background, smooth monochrome sage-green wall meeting a glossy reflective glass horizon floor in the lower third, two small soft white volumetric clouds floating gently in the upper left and upper right sky, fresh lush green mint and botanical leaves clustered at the center horizon floor ready for a product bottle, empty center space, no bottle, no text, no logos, vertical 9:16, 8k photorealistic",
+  },
   "sunlit-travertine": {
     id: "sunlit-travertine",
     labelAr: "شمس الترافرتين",
@@ -110,6 +127,7 @@ export const ART_DIRECTION_STYLES: Record<ArtDirectionStyleId, ArtDirectionStyle
 };
 
 export const ART_DIRECTION_STYLE_IDS: ArtDirectionStyleId[] = [
+  "simple-botanical-horizon",
   "sunlit-travertine",
   "aqua-splash-minimal",
   "luxury-amber-noir",
@@ -117,7 +135,11 @@ export const ART_DIRECTION_STYLE_IDS: ArtDirectionStyleId[] = [
   "modern-clinical-glow",
 ];
 
+/** Default approved art direction (Simple editorial theme). */
+export const DEFAULT_ART_DIRECTION_STYLE: ArtDirectionStyleId = "simple-botanical-horizon";
+
 export const LEGACY_SCENE_PROMPTS: Record<TemplateId, string> = {
+  "simple-botanical-horizon": ART_DIRECTION_STYLES["simple-botanical-horizon"].scenePrompt,
   "silver-podium-botanical": ART_DIRECTION_STYLES["modern-clinical-glow"].scenePrompt,
   "botanical-arch-frame": ART_DIRECTION_STYLES["sunlit-travertine"].scenePrompt,
   "editorial-beauty-card": ART_DIRECTION_STYLES["aqua-splash-minimal"].scenePrompt,
@@ -160,6 +182,8 @@ function asDataImageUri(value: string): string {
 
 function styleFromTemplate(template: TemplateId): ArtDirectionStyleId {
   switch (template) {
+    case "simple-botanical-horizon":
+      return "simple-botanical-horizon";
     case "botanical-arch-frame":
       return "sunlit-travertine";
     case "editorial-beauty-card":
@@ -196,11 +220,12 @@ export function styleForSeed(seed: string, offset = 0): ArtDirectionStyleId {
 }
 
 /**
- * Two distinct styles for the two variants of one product. Guarantees variant 2
- * never reuses variant 1's scene, which was the root of the "same look" loop.
+ * Two distinct styles for the two variants of one product. Variant 1 is always
+ * the approved Simple botanical-horizon theme; variant 2 rotates a secondary
+ * direction (guaranteed different) so pairs never look identical.
  */
 export function variantStylePair(seed: string): [ArtDirectionStyleId, ArtDirectionStyleId] {
-  const first = styleForSeed(seed, 0);
+  const first = DEFAULT_ART_DIRECTION_STYLE;
   let second = styleForSeed(seed, 1);
   if (second === first) {
     const index = ART_DIRECTION_STYLE_IDS.indexOf(first);
@@ -232,12 +257,63 @@ function categoryMood(context?: ArtDirectionContext): string {
   return "The mood is premium Egyptian beauty retail editorial.";
 }
 
+/** Hue keywords for the Simple prompt, matched to the overlay palette groups. */
+function simpleHueKeywords(context?: ArtDirectionContext): {
+  wall: string;
+  leaves: string;
+} {
+  const haystack = [
+    context?.brand,
+    context?.category,
+    context?.name,
+    ...(context?.benefits ?? []),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  if (/(perfume|fragrance|oud|عود|عطر|برفان|بارفان|luxury|فخم)/.test(haystack)) {
+    return {
+      wall: "deep emerald-charcoal",
+      leaves: "fresh lush dark emerald botanical leaves",
+    };
+  }
+  if (/(kids|children|child|أطفال|اطفال|مينك|mink|baby|بيبى)/.test(haystack)) {
+    return {
+      wall: "soft blush-pink",
+      leaves: "fresh lush sage-green mint and botanical leaves",
+    };
+  }
+  if (/(argan|أرغان|ارجان|vatika|فاتيكا|penduline|بندولين|hair|شعر|شامبو|بلسم|زيت)/.test(haystack)) {
+    return {
+      wall: "warm golden sage-green",
+      leaves: "fresh lush golden-green mint and botanical leaves",
+    };
+  }
+  return {
+    wall: "sage-green",
+    leaves: "fresh lush green mint and botanical leaves",
+  };
+}
+
+function simpleScenePrompt(context?: ArtDirectionContext): string {
+  const base = ART_DIRECTION_STYLES["simple-botanical-horizon"].scenePrompt;
+  const { wall, leaves } = simpleHueKeywords(context);
+  return base
+    .replace("smooth monochrome sage-green wall", `smooth monochrome ${wall} wall`)
+    .replace("fresh lush green mint and botanical leaves", leaves);
+}
+
 export function buildScenePrompt(
   styleId: ArtDirectionStyleId,
   context?: ArtDirectionContext,
 ): string {
-  const style = ART_DIRECTION_STYLES[styleId] ?? ART_DIRECTION_STYLES["modern-clinical-glow"];
-  return `${style.scenePrompt}. ${categoryMood(context)}`;
+  const style = ART_DIRECTION_STYLES[styleId] ?? ART_DIRECTION_STYLES[DEFAULT_ART_DIRECTION_STYLE];
+  const basePrompt =
+    style.id === "simple-botanical-horizon"
+      ? simpleScenePrompt(context)
+      : style.scenePrompt;
+  return `${basePrompt}. ${categoryMood(context)}`;
 }
 
 async function bytesFromUnknown(value: unknown): Promise<Uint8Array | null> {
@@ -441,7 +517,7 @@ export async function generateArtDirectedScene(
   context?: ArtDirectionContext,
   options?: { seed?: number; promptOverride?: string },
 ): Promise<GeneratedArtDirectedScene> {
-  const style = ART_DIRECTION_STYLES[styleId] ?? ART_DIRECTION_STYLES["modern-clinical-glow"];
+  const style = ART_DIRECTION_STYLES[styleId] ?? ART_DIRECTION_STYLES[DEFAULT_ART_DIRECTION_STYLE];
   const prompt = options?.promptOverride?.trim() || buildScenePrompt(style.id, context);
 
   const flux = await generateWithFlux(env, prompt, options?.seed);
@@ -506,7 +582,7 @@ function parseSceneRequest(
     ? body.style
     : isTemplateId(body.template)
       ? styleFromTemplate(body.template)
-      : styleFromSeed(typeof body.seed === "string" ? body.seed : "al-rahma", 0);
+      : DEFAULT_ART_DIRECTION_STYLE;
 
   const template = isTemplateId(body.template)
     ? body.template
@@ -526,10 +602,6 @@ function parseSceneRequest(
   };
 
   return { styleId, template, promptOverride, seed, context };
-}
-
-function styleFromSeed(seed: string, offset: number): ArtDirectionStyleId {
-  return styleForSeed(seed, offset);
 }
 
 export const onRequestPost: PagesFunction<SceneEnv> = async ({ request, env }) => {
@@ -596,7 +668,7 @@ export const onRequestGet: PagesFunction<SceneEnv> = async ({ request, env }) =>
     ? styleParam
     : isTemplateId(templateParam)
       ? styleFromTemplate(templateParam)
-      : styleForSeed(seedParam ?? "al-rahma", 0);
+      : DEFAULT_ART_DIRECTION_STYLE;
   const scene = await generateArtDirectedScene(env, styleId, undefined, {
     seed: seedParam ? clampSeed(Number(seedParam)) : undefined,
     promptOverride,
