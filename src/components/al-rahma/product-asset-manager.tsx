@@ -946,7 +946,10 @@ export default function ProductAssetManager({ pendingCount, onVerified }: Props)
                       )}
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="truncate font-bold">
+                          <span
+                            className="truncate font-bold"
+                            title={product.name_arabic}
+                          >
                             {product.name_arabic}
                           </span>
                           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-600">
