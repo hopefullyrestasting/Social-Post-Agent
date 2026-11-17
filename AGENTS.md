@@ -27,7 +27,7 @@ not redesign or replace it.
 | `src/lib/al-rahma/background-provider.ts` | Background seam: deterministic studio + optional env adapters |
 | `src/components/al-rahma/` | Dashboard verify modal and 2-variant ad preview |
 | `functions/api/db/` | Pages Functions: `stats`, `brands`, `products`, `research`, `research/ingest` |
-| `functions/api/ai/product-composite.ts` | Reference-conditioned img2img product compositing (Gemini edit → Hugging Face → Workers AI img2img) |
+| `functions/api/ai/product-composite.ts` | Reference-conditioned product compositing (Gemini image edit → Workers AI FLUX.2 klein reference editing → SDXL img2img → Hugging Face) |
 | `migrations/` | `0000_baseline.sql` (captured schema), `0001_product_research.sql` |
 | `scripts/` | Test entrypoints run by `npm test` |
 | `.opencode/skills/` | Project skills for D1/Pages, research, and ad composition |

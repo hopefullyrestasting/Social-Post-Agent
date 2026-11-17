@@ -735,8 +735,8 @@ async function testCampaignEndpoints() {
 
 /**
  * Authorized reference-conditioned compositing wiring: when Workers AI returns
- * an image-to-image composite, the campaign records it as containing the real
- * product and the SVG overlay must not paste a second flat packshot.
+ * a reference edit, the campaign records it as containing the real product and
+ * the SVG overlay must not paste a second flat packshot.
  */
 async function testCompositeCampaignWiring() {
   const db = new CampaignDatabase();
@@ -761,11 +761,13 @@ async function testCompositeCampaignWiring() {
     AI: {
       run: async (model: string, input: Record<string, unknown>) => {
         models.push(model);
-        if (model === "@cf/stabilityai/stable-diffusion-xl-base-1.0") {
-          assert.equal(
-            typeof input.image_b64,
-            "string",
-            "Composite img2img must receive the authentic cutout as image_b64.",
+        if (model === "@cf/black-forest-labs/flux-2-klein-4b") {
+          const multipart = input.multipart as
+            | { body?: ReadableStream }
+            | undefined;
+          assert.ok(
+            multipart?.body,
+            "Composite editing must send the authentic packshot as multipart input_image_0.",
           );
         }
         return { image: TINY_PNG_BASE64 };
@@ -824,7 +826,7 @@ async function testCompositeCampaignWiring() {
     );
   }
 
-  assert.ok(models.includes("@cf/stabilityai/stable-diffusion-xl-base-1.0"));
+  assert.ok(models.includes("@cf/black-forest-labs/flux-2-klein-4b"));
 }
 
 const TINY_PNG_BASE64 =

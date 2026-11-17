@@ -14,11 +14,11 @@
  *
  * Providers, in order:
  *   1. Google Gemini image editing (`GEMINI_API_KEY`) — best label fidelity.
- *   2. Hugging Face Inference API (`HF_TOKEN`, e.g. lllyasviel/ic-light,
- *      black-forest-labs/FLUX.1-dev).
- *   3. Cloudflare Workers AI zero-key fallback
- *      (`@cf/stabilityai/stable-diffusion-xl-base-1.0` img2img, then the
- *      retired `@cf/runwayml/stable-diffusion-v1-5-img2img` last resort).
+ *   2. Cloudflare Workers AI zero-key fallback:
+ *      `@cf/black-forest-labs/flux-2-klein-4b` reference editing (primary),
+ *      then `@cf/stabilityai/stable-diffusion-xl-base-1.0` img2img, then the
+ *      retired `@cf/runwayml/stable-diffusion-v1-5-img2img` last resort.
+ *   3. Hugging Face Inference API (`HF_TOKEN`, e.g. lllyasviel/ic-light).
  *
  * When no provider is configured/unavailable the function returns
  * `provider: "unavailable"` with `image: null` so the campaign runner can fall
@@ -79,6 +79,13 @@ export interface ProductCompositePromptInput {
 
 const MODEL_GEMINI_PRIMARY = "gemini-2.5-flash-image";
 const MODEL_GEMINI_FALLBACK = "gemini-2.0-flash-exp-image-generation";
+/**
+ * FLUX.2 [klein] unifies text-to-image and image editing on Workers AI with a
+ * fixed 4-step pass. It takes the authentic packshot as a binary reference
+ * (`input_image_0`) and returns a 9:16 edit in ~9s, which fits the Pages
+ * function budget. This is the primary zero-key compositor.
+ */
+const MODEL_WORKERS_EDIT = "@cf/black-forest-labs/flux-2-klein-4b";
 const MODEL_WORKERS_IMG2IMG = "@cf/stabilityai/stable-diffusion-xl-base-1.0";
 const MODEL_WORKERS_IMG2IMG_LEGACY = "@cf/runwayml/stable-diffusion-v1-5-img2img";
 const DEFAULT_HF_MODELS = [
@@ -559,14 +566,53 @@ async function generateWithWorkersAi(
 ): Promise<{ image: string; model: string } | null> {
   if (!env.AI || typeof env.AI.run !== "function") return null;
 
+  // 1. FLUX.2 [klein]: real reference-conditioned editing. The authentic
+  //    packshot is the binary `input_image_0` reference and the model paints a
+  //    new 9:16 scene around the genuine package (4 fixed steps, ~9s).
+  try {
+    const extension =
+      reference.mime === "image/png"
+        ? "png"
+        : reference.mime === "image/webp"
+          ? "webp"
+          : reference.mime === "image/avif"
+            ? "avif"
+            : "jpg";
+    const form = new FormData();
+    form.append("prompt", prompt);
+    form.append(
+      "input_image_0",
+      new Blob([Uint8Array.from(reference.bytes)], { type: reference.mime }),
+      `authentic-packshot.${extension}`,
+    );
+    form.append("width", "768");
+    form.append("height", "1344");
+    form.append("guidance", "5");
+    const serialized = new Response(form);
+
+    const result = await env.AI.run(MODEL_WORKERS_EDIT, {
+      multipart: {
+        body: serialized.body,
+        contentType:
+          serialized.headers.get("content-type") ?? "multipart/form-data",
+      },
+    });
+    const image = await extractImageFromUnknown(result);
+    if (image) return { image, model: MODEL_WORKERS_EDIT };
+    diagnostics.push(`workers-ai ${MODEL_WORKERS_EDIT}: no image in response`);
+  } catch (error) {
+    diagnostics.push(`workers-ai ${MODEL_WORKERS_EDIT}: ${errorMessage(error)}`);
+    console.warn(
+      `Workers AI ${MODEL_WORKERS_EDIT} reference editing failed.`,
+      error,
+    );
+  }
+
   const negativePrompt =
     "blurry label, distorted text, misspelled letters, extra bottles, duplicate product, watermark, price tag, low quality, deformed packaging";
 
-  // SDXL Base 1.0 exposes a real img2img path (`image_b64` + strength), which
-  // preserves the reference layout far better than a text-only model. Inference
-  // must stay inside the Workers AI request budget, so the pass is deliberately
-  // light (512x896, 6 steps): heavier settings returned `3046: Request timeout`.
-  // The retired Runway img2img endpoint is kept as a last resort.
+  // 2. SDXL Base 1.0 legacy img2img path (image_b64 + strength). It must stay
+  //    light to fit the request budget; the retired Runway endpoint is last.
   const attempts: { model: string; input: Record<string, unknown> }[] = [
     {
       model: MODEL_WORKERS_IMG2IMG,
@@ -674,23 +720,6 @@ export async function compositeProductScene(
     };
   }
 
-  const huggingFace = await generateWithHuggingFace(
-    env,
-    reference,
-    prompt,
-    diagnostics,
-  );
-  if (huggingFace) {
-    return {
-      image: huggingFace.image,
-      provider: "huggingface-img2img",
-      model: huggingFace.model,
-      usedReference: true,
-      containsProduct: true,
-      aiComposite: true,
-    };
-  }
-
   const workersAi = await generateWithWorkersAi(
     env,
     reference,
@@ -702,6 +731,23 @@ export async function compositeProductScene(
       image: workersAi.image,
       provider: "workers-ai-img2img",
       model: workersAi.model,
+      usedReference: true,
+      containsProduct: true,
+      aiComposite: true,
+    };
+  }
+
+  const huggingFace = await generateWithHuggingFace(
+    env,
+    reference,
+    prompt,
+    diagnostics,
+  );
+  if (huggingFace) {
+    return {
+      image: huggingFace.image,
+      provider: "huggingface-img2img",
+      model: huggingFace.model,
       usedReference: true,
       containsProduct: true,
       aiComposite: true,

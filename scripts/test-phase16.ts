@@ -467,13 +467,21 @@ async function testProductComposite() {
     globalThis.fetch = originalFetch;
   }
 
-  // Workers AI zero-key fallback: stable-diffusion-v1-5-img2img with the cutout.
+  // Workers AI zero-key path: FLUX.2 [klein] reference editing receives the
+  // authentic packshot as a binary multipart reference (`input_image_0`).
   const aiCalls: { model: string; input: Record<string, unknown> }[] = [];
+  let multipartText = "";
   const workers = await compositeProductScene(
     {
       AI: {
         run: async (model: string, input: Record<string, unknown>) => {
           aiCalls.push({ model, input });
+          const multipart = input.multipart as
+            | { body?: ReadableStream; contentType?: string }
+            | undefined;
+          if (multipart?.body) {
+            multipartText = await new Response(multipart.body).text();
+          }
           return { image: PNG_BASE64 };
         },
       },
@@ -483,20 +491,55 @@ async function testProductComposite() {
     { styleId: "modern-clinical-glow" },
   );
   assert.equal(workers.provider, "workers-ai-img2img");
-  assert.equal(workers.model, "@cf/stabilityai/stable-diffusion-xl-base-1.0");
+  assert.equal(workers.model, "@cf/black-forest-labs/flux-2-klein-4b");
   assert.equal(workers.usedReference, true);
-  assert.equal(aiCalls[0].model, "@cf/stabilityai/stable-diffusion-xl-base-1.0");
-  assert.equal(
-    aiCalls[0].input.image_b64,
-    PNG_BASE64,
-    "img2img must receive the authentic cutout as image_b64.",
+  assert.equal(aiCalls[0].model, "@cf/black-forest-labs/flux-2-klein-4b");
+  const kleinMultipart = aiCalls[0].input.multipart as
+    | { body?: ReadableStream; contentType?: string }
+    | undefined;
+  assert.ok(kleinMultipart?.body, "FLUX.2 klein must receive a multipart body.");
+  assert.match(
+    String(kleinMultipart?.contentType),
+    /^multipart\/form-data; boundary=/,
   );
-  assert.equal(aiCalls[0].input.strength, 0.6);
-  assert.equal(aiCalls[0].input.width, 512);
-  assert.equal(aiCalls[0].input.height, 896);
-  assert.equal(aiCalls[0].input.num_steps, 6);
-  assert.match(String(aiCalls[0].input.prompt), /Preserve the product exactly/i);
+  assert.match(
+    multipartText,
+    /name="input_image_0"; filename="authentic-packshot\.png"/,
+    "The authentic packshot must be attached as the input_image_0 reference.",
+  );
+  assert.match(multipartText, /name="prompt"/);
+  assert.match(multipartText, /Preserve the product exactly/i);
+  assert.match(multipartText, /name="width"\r\n\r\n768/);
+  assert.match(multipartText, /name="height"\r\n\r\n1344/);
   assert.ok(String(workers.image).startsWith("data:image/png;base64,"));
+
+  // Legacy SDXL img2img stays available as a lighter fallback when the edit
+  // model is unavailable.
+  const legacyCalls: { model: string; input: Record<string, unknown> }[] = [];
+  const legacy = await compositeProductScene(
+    {
+      AI: {
+        run: async (model: string, input: Record<string, unknown>) => {
+          legacyCalls.push({ model, input });
+          if (model === "@cf/black-forest-labs/flux-2-klein-4b") {
+            throw new Error("edit model unavailable");
+          }
+          return { image: PNG_BASE64 };
+        },
+      },
+    },
+    reference,
+    { category: "skincare" },
+  );
+  assert.equal(legacy.provider, "workers-ai-img2img");
+  assert.equal(legacy.model, "@cf/stabilityai/stable-diffusion-xl-base-1.0");
+  const sdxlCall = legacyCalls.find(
+    (call) => call.model === "@cf/stabilityai/stable-diffusion-xl-base-1.0",
+  );
+  assert.ok(sdxlCall, "SDXL img2img must be attempted after the edit model fails.");
+  assert.equal(sdxlCall?.input.image_b64, PNG_BASE64);
+  assert.equal(sdxlCall?.input.strength, 0.6);
+  assert.equal(sdxlCall?.input.num_steps, 6);
 
   // HTTP endpoint validation + graceful 502 fallback.
   const missing = await postProductComposite({
@@ -535,7 +578,7 @@ async function run() {
   testAdminProtection();
 
   console.log(
-    "Phase 16 tests passed: Simple primary art direction + five legacy styles, distinct variant styles, colour-adapted FLUX prompts, background-only Nano Banana plates (no packaging redraw), reference-conditioned product compositing (Gemini edit / Hugging Face / Workers AI img2img with label preservation and graceful fallback), data URIs, mime detection, harvest safety filters, random selection, and admin protection.",
+    "Phase 16 tests passed: Simple primary art direction + five legacy styles, distinct variant styles, colour-adapted FLUX prompts, background-only Nano Banana plates (no packaging redraw), reference-conditioned product compositing (Gemini edit / FLUX.2 klein multipart reference editing / SDXL img2img with label preservation and graceful fallback), data URIs, mime detection, harvest safety filters, random selection, and admin protection.",
   );
 }
 
