@@ -13,6 +13,7 @@ import AdPreview from "@/components/al-rahma/ad-preview";
 import BulkImportModal from "@/components/al-rahma/bulk-import-modal";
 import CampaignGallery from "@/components/al-rahma/campaign-gallery";
 import ProductAssetManager from "@/components/al-rahma/product-asset-manager";
+import SmartAssetMatcher from "@/components/al-rahma/smart-asset-matcher";
 import VerifyModal from "@/components/al-rahma/verify-modal";
 
 type Brand = {
@@ -740,6 +741,11 @@ export default function DashboardPage() {
         </section>
 
         <CampaignGallery key={refreshKey} />
+
+        <SmartAssetMatcher
+          pendingCount={stats?.needsVerification}
+          onVerified={handleAssetsVerified}
+        />
 
         <ProductAssetManager
           pendingCount={stats?.needsVerification}

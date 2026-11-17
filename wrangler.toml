@@ -18,3 +18,9 @@ database_id = "d25f54b6-61ca-4c6f-8468-7273ea971844"
 # [[r2_buckets]]
 # binding = "PRODUCT_ASSETS"
 # bucket_name = "al-rahma-product-assets"
+
+# Vision AI for the Smart Asset Matcher (/api/assets/vision-match).
+# Never put the key in this file. Bind it as a Pages secret instead:
+#   npx wrangler pages secret put GEMINI_API_KEY
+# Without it the endpoint falls back to Workers AI
+# (@cf/meta/llama-3.2-11b-vision-instruct), then to filename matching.

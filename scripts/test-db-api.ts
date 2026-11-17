@@ -3,7 +3,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { onRequest as adminMiddleware } from "../functions/api/_middleware";
 import { onRequestGet as getAssetCatalog } from "../functions/api/assets/catalog";
+import { onRequestPost as postCommitMatch } from "../functions/api/assets/commit-match";
 import { onRequestPost as postAssetUpload } from "../functions/api/assets/upload";
+import { onRequestPost as postVisionMatch } from "../functions/api/assets/vision-match";
 import { onRequestGet as getBrands } from "../functions/api/db/brands";
 import { onRequestGet as getCampaigns } from "../functions/api/db/campaigns";
 import { onRequestPost as runCampaign } from "../functions/api/db/campaigns/run";
@@ -939,6 +941,410 @@ async function testAssetEndpoints() {
   assert.equal(emptyRes.status, 400);
 }
 
+function tinyPngDataUrl(): string {
+  return `data:image/png;base64,${TINY_PNG_BASE64}`;
+}
+
+function visionForm(fileName: string): FormData {
+  const form = new FormData();
+  form.set(
+    "imageFile",
+    new File([tinyPngBytes()], fileName, { type: "image/png" }),
+  );
+  form.set("fileName", fileName);
+  return form;
+}
+
+function geminiReply(payload: Record<string, unknown>): Response {
+  return new Response(
+    JSON.stringify({
+      candidates: [{ content: { parts: [{ text: JSON.stringify(payload) }] } }],
+    }),
+    { status: 200, headers: { "Content-Type": "application/json" } },
+  );
+}
+
+async function testVisionEndpoints() {
+  const url = "https://example.test/api/assets/vision-match";
+
+  // No vision provider bound -> filename fallback still matches.
+  const filenameDb = new MockDatabase();
+  const filenameRes = await postVisionMatch(
+    context(filenameDb, url, {
+      method: "POST",
+      body: visionForm("vatika-shampoo-olive.jpg"),
+    }),
+  );
+  const filenameBody = await json(filenameRes);
+  assert.equal(filenameRes.status, 200, JSON.stringify(filenameBody));
+  assert.equal(filenameBody.success, true);
+  assert.equal((filenameBody.match as { productId: string }).productId, "product-1");
+  assert.equal((filenameBody.match as { provider: string }).provider, "filename");
+  assert.equal((filenameBody.match as { confidence: string }).confidence, "high");
+  assert.equal(
+    (filenameBody.vision as { geminiConfigured: boolean }).geminiConfigured,
+    false,
+  );
+  assert.ok(
+    filenameDb.calls.some((call) => call.sql.includes("LIMIT ?")),
+    "Vision matching must load the D1 catalog.",
+  );
+
+  // Phone/chat filenames must not invent a match.
+  const noMatchRes = await postVisionMatch(
+    context(new MockDatabase(), url, {
+      method: "POST",
+      body: visionForm("WhatsApp Image 2026-11-17 at 10.32.11.jpeg"),
+    }),
+  );
+  const noMatchBody = await json(noMatchRes);
+  assert.equal(noMatchRes.status, 200);
+  assert.equal((noMatchBody.match as { productId: string | null }).productId, null);
+  assert.match(
+    String(noMatchBody.message),
+    /اختر المنتج/,
+    "An unmatched image must ask for manual review.",
+  );
+
+  // Gemini is used when GEMINI_API_KEY is bound; the returned id must be in D1.
+  const originalFetch = globalThis.fetch;
+  let geminiCalled = false;
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const calledUrl = String(input);
+    assert.ok(
+      calledUrl.includes("generativelanguage.googleapis.com"),
+      "Gemini must be called through the generative language API.",
+    );
+    geminiCalled = true;
+    return geminiReply({
+      productId: "product-2",
+      confidence: "high",
+      detectedLabel: "ماسك ألو إيفا بالصبار",
+      detectedBrand: "إيفا",
+      detectedType: "ماسك شعر",
+      reasoning: "اسم العبوة مقروء بالكامل",
+    });
+  }) as typeof fetch;
+
+  try {
+    const geminiRes = await postVisionMatch(
+      context(
+        new MockDatabase(),
+        url,
+        { method: "POST", body: visionForm("IMG_4432.jpg") },
+        { GEMINI_API_KEY: "test-key" },
+      ),
+    );
+    const geminiBody = await json(geminiRes);
+    assert.equal(geminiRes.status, 200, JSON.stringify(geminiBody));
+    assert.equal(geminiCalled, true);
+    assert.equal((geminiBody.match as { productId: string }).productId, "product-2");
+    assert.equal((geminiBody.match as { provider: string }).provider, "gemini");
+    assert.equal(
+      (geminiBody.match as { detectedLabel: string }).detectedLabel,
+      "ماسك ألو إيفا بالصبار",
+    );
+    assert.equal(
+      (geminiBody.vision as { geminiConfigured: boolean }).geminiConfigured,
+      true,
+    );
+    assert.ok(
+      ((geminiBody.match as { candidates?: unknown[] }).candidates ?? []).length >
+        0,
+      "The endpoint must return text-scored alternatives for review.",
+    );
+
+    // A hallucinated id falls back to the label text read from the pack.
+    globalThis.fetch = (async () =>
+      geminiReply({
+        productId: "ghost-product",
+        confidence: "high",
+        detectedLabel: "ماسك ألو إيفا بالصبار",
+        detectedBrand: "إيفا",
+      })) as typeof fetch;
+    const ghostRes = await postVisionMatch(
+      context(
+        new MockDatabase(),
+        url,
+        { method: "POST", body: visionForm("IMG_7777.jpg") },
+        { GEMINI_API_KEY: "test-key" },
+      ),
+    );
+    const ghostBody = await json(ghostRes);
+    assert.equal(
+      (ghostBody.match as { productId: string }).productId,
+      "product-2",
+      "An unknown model id must be resolved from the detected label.",
+    );
+    assert.match(
+      String(ghostBody.note),
+      /لم يكن في الكتالوج/,
+      "The response must explain the label-based fallback.",
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  // Workers AI is the fallback provider when Gemini is not configured.
+  const aiRes = await postVisionMatch(
+    context(
+      new MockDatabase(),
+      url,
+      { method: "POST", body: visionForm("IMG_9001.jpg") },
+      {
+        AI: {
+          run: async (model: string) => {
+            assert.equal(model, "@cf/meta/llama-3.2-11b-vision-instruct");
+            return {
+              response: JSON.stringify({
+                productId: "product-3",
+                confidence: "medium",
+                detectedLabel: "عطر العنبر الملكي",
+                detectedBrand: "الرحمة",
+                detectedType: "عطر",
+              }),
+            };
+          },
+        },
+      },
+    ),
+  );
+  const aiBody = await json(aiRes);
+  assert.equal(aiRes.status, 200, JSON.stringify(aiBody));
+  assert.equal((aiBody.match as { productId: string }).productId, "product-3");
+  assert.equal((aiBody.match as { provider: string }).provider, "workers-ai");
+  assert.equal((aiBody.match as { confidence: string }).confidence, "medium");
+  assert.equal(
+    (aiBody.vision as { workersAiBound: boolean }).workersAiBound,
+    true,
+  );
+
+  // JSON input with a data URL is supported.
+  const jsonRes = await postVisionMatch(
+    context(new MockDatabase(), url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        imageDataUrl: tinyPngDataUrl(),
+        fileName: "vatika-shampoo-olive.jpg",
+      }),
+    }),
+  );
+  const jsonBody = await json(jsonRes);
+  assert.equal(jsonRes.status, 200, JSON.stringify(jsonBody));
+  assert.equal((jsonBody.match as { productId: string }).productId, "product-1");
+
+  // Invalid inputs.
+  const badImageRes = await postVisionMatch(
+    context(new MockDatabase(), url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ imageDataUrl: "data:text/plain;base64,QUJD" }),
+    }),
+  );
+  assert.equal(badImageRes.status, 415);
+
+  const missingImageRes = await postVisionMatch(
+    context(new MockDatabase(), url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    }),
+  );
+  assert.equal(missingImageRes.status, 400);
+
+  const missingFileRes = await postVisionMatch(
+    context(new MockDatabase(), url, {
+      method: "POST",
+      body: new FormData(),
+    }),
+  );
+  assert.equal(missingFileRes.status, 400);
+
+  const wrongTypeRes = await postVisionMatch(
+    context(new MockDatabase(), url, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: "hello",
+    }),
+  );
+  assert.equal(wrongTypeRes.status, 415);
+}
+
+async function testCommitMatchEndpoint() {
+  const url = "https://example.test/api/assets/commit-match";
+  const commit = (
+    database: MockDatabase,
+    body: Record<string, unknown>,
+    envExtra: Record<string, unknown> = {},
+  ) =>
+    postCommitMatch(
+      context(
+        database,
+        url,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        },
+        envExtra,
+      ),
+    );
+
+  // Happy path: review-approved match stored as the verified primary image.
+  const commitDb = new MockDatabase();
+  const commitRes = await commit(commitDb, {
+    productId: "product-1",
+    imageDataUrl: tinyPngDataUrl(),
+    autoCutout: false,
+  });
+  const commitBody = await json(commitRes);
+  assert.equal(commitRes.status, 200, JSON.stringify(commitBody));
+  assert.equal(commitBody.success, true);
+  assert.equal(
+    (commitBody.product as { verification_status: string }).verification_status,
+    "verified",
+  );
+  assert.equal((commitBody.asset as { storage: string }).storage, "embedded");
+  assert.equal(
+    (commitBody.provenance as { quality_gate_ready: boolean })
+      .quality_gate_ready,
+    false,
+  );
+  assert.ok(
+    commitDb.calls.some((call) =>
+      call.sql.includes("UPDATE product_assets SET is_primary = 0"),
+    ),
+    "Committing a match must demote the previous primary without deleting it.",
+  );
+  const commitAssetInsert = commitDb.calls.find((call) =>
+    call.sql.includes("INSERT INTO product_assets"),
+  );
+  assert.ok(commitAssetInsert);
+  assert.ok(
+    String(commitAssetInsert?.values[2]).startsWith("data:image/png;base64,"),
+  );
+  assert.ok(
+    commitDb.calls.some((call) =>
+      call.sql.includes("verification_status = 'verified'"),
+    ),
+  );
+  assert.equal(
+    commitDb.calls.filter((call) =>
+      call.sql.includes("INSERT INTO product_research_claims"),
+    ).length,
+    0,
+    "The vision flow must never invent benefit claims.",
+  );
+
+  // A real source URL is recorded as verified provenance for the quality gate.
+  const sourceDb = new MockDatabase();
+  const sourceRes = await commit(sourceDb, {
+    productId: "product-2",
+    imageDataUrl: tinyPngDataUrl(),
+    autoCutout: false,
+    sourceUrl: "https://example.test/official-mask",
+  });
+  const sourceBody = await json(sourceRes);
+  assert.equal(sourceRes.status, 200, JSON.stringify(sourceBody));
+  assert.equal(
+    (sourceBody.provenance as { quality_gate_ready: boolean })
+      .quality_gate_ready,
+    true,
+  );
+  assert.ok(
+    sourceDb.calls.some((call) =>
+      call.sql.includes("INSERT INTO product_information_sources"),
+    ),
+  );
+
+  // BRIA cutout applied.
+  const cutoutDb = new MockDatabase();
+  const cutoutRes = await commit(
+    cutoutDb,
+    {
+      productId: "product-1",
+      imageDataUrl: tinyPngDataUrl(),
+      autoCutout: true,
+    },
+    {
+      AI: {
+        run: async () => ({ image: TINY_PNG_BASE64 }),
+      },
+    },
+  );
+  const cutoutBody = await json(cutoutRes);
+  assert.equal(cutoutRes.status, 200, JSON.stringify(cutoutBody));
+  assert.equal((cutoutBody.cutout as { applied: boolean }).applied, true);
+  assert.equal(
+    (cutoutBody.asset as { content_type: string }).content_type,
+    "image/png",
+  );
+
+  // Cutout requested without a bound model -> keep the original photo.
+  const fallbackRes = await commit(new MockDatabase(), {
+    productId: "product-1",
+    imageDataUrl: tinyPngDataUrl(),
+    autoCutout: true,
+  });
+  const fallbackBody = await json(fallbackRes);
+  assert.equal(fallbackRes.status, 200);
+  assert.equal((fallbackBody.cutout as { applied: boolean }).applied, false);
+  assert.ok((fallbackBody.cutout as { note: string | null }).note);
+
+  // Unknown product -> 404 without touching assets.
+  const missingDb = new MockDatabase();
+  const missingRes = await commit(missingDb, {
+    productId: "missing",
+    imageDataUrl: tinyPngDataUrl(),
+    autoCutout: false,
+  });
+  assert.equal(missingRes.status, 404);
+  assert.equal(
+    missingDb.calls.filter((call) =>
+      call.sql.includes("INSERT INTO product_assets"),
+    ).length,
+    0,
+  );
+
+  // Invalid inputs.
+  const noProductRes = await commit(new MockDatabase(), {
+    imageDataUrl: tinyPngDataUrl(),
+  });
+  assert.equal(noProductRes.status, 400);
+
+  const badImageRes = await commit(new MockDatabase(), {
+    productId: "product-1",
+    imageDataUrl: "data:text/plain;base64,QUJD",
+  });
+  assert.equal(badImageRes.status, 415);
+
+  const claimsRes = await commit(new MockDatabase(), {
+    productId: "product-1",
+    imageDataUrl: tinyPngDataUrl(),
+    autoCutout: false,
+    benefits: ["ترطيب عميق"],
+  });
+  assert.equal(claimsRes.status, 400);
+
+  const malformedRes = await postCommitMatch(
+    context(new MockDatabase(), url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{not-json",
+    }),
+  );
+  assert.equal(malformedRes.status, 400);
+
+  const multipartRes = await postCommitMatch(
+    context(new MockDatabase(), url, {
+      method: "POST",
+      body: new FormData(),
+    }),
+  );
+  assert.equal(multipartRes.status, 415);
+}
+
 async function run() {
   // --- Existing read endpoints ------------------------------------------------
   const database = new MockDatabase();
@@ -1228,15 +1634,19 @@ async function run() {
   assert.equal(allowed.status, 200);
 
   // Asset uploads are writes: protected when the key is configured…
-  const assetDenied = await adminMiddleware({
-    request: new Request("https://example.test/api/assets/upload", {
-      method: "POST",
-    }),
-    env: { DB: new MockDatabase(), ADMIN_API_KEY: "secret-key" },
-    next: async () =>
-      new Response(JSON.stringify({ success: true }), { status: 200 }),
-  } as any);
-  assert.equal(assetDenied.status, 401);
+  for (const path of [
+    "/api/assets/upload",
+    "/api/assets/vision-match",
+    "/api/assets/commit-match",
+  ]) {
+    const denied = await adminMiddleware({
+      request: new Request(`https://example.test${path}`, { method: "POST" }),
+      env: { DB: new MockDatabase(), ADMIN_API_KEY: "secret-key" },
+      next: async () =>
+        new Response(JSON.stringify({ success: true }), { status: 200 }),
+    } as any);
+    assert.equal(denied.status, 401, `${path} must require the admin key`);
+  }
 
   // …and tagged in preview mode so the dashboard can warn.
   const assetPreview = await adminMiddleware({
@@ -1250,6 +1660,19 @@ async function run() {
   assert.equal(assetPreview.status, 200);
   assert.equal(
     assetPreview.headers.get("X-Auth-Mode"),
+    "unconfigured-preview",
+  );
+
+  const visionPreview = await adminMiddleware({
+    request: new Request("https://example.test/api/assets/vision-match", {
+      method: "POST",
+    }),
+    env: { DB: new MockDatabase() },
+    next: async () =>
+      new Response(JSON.stringify({ success: true }), { status: 200 }),
+  } as any);
+  assert.equal(
+    visionPreview.headers.get("X-Auth-Mode"),
     "unconfigured-preview",
   );
 
@@ -1393,6 +1816,10 @@ async function run() {
   await testFilenameMatching();
   await testAssetEndpoints();
 
+  // --- Smart vision asset matcher --------------------------------------------
+  await testVisionEndpoints();
+  await testCommitMatchEndpoint();
+
   // --- Lightweight client guard (server-side bg removal) --------------------
   const repoRoot = process.cwd();
   const pkgJson = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")) as {
@@ -1408,7 +1835,7 @@ async function run() {
   assert.equal(exportSource.includes("@imgly/background-removal"), false, "Client export must not import @imgly/background-removal.");
 
   console.log(
-    "D1 API tests passed: pagination, filters, validation, stats, brands, research, ingest, admin auth 401/unconfigured-preview, promos, 48h calendar, bulk ingest, campaign random selection + verified primary assets, product asset upload (R2/embedded, cutout fallback, grounded claims, filename matching), socialCaption, and batch run/persistence.",
+    "D1 API tests passed: pagination, filters, validation, stats, brands, research, ingest, admin auth 401/unconfigured-preview, promos, 48h calendar, bulk ingest, campaign random selection + verified primary assets, product asset upload (R2/embedded, cutout fallback, grounded claims, filename matching), smart vision matching (Gemini, Workers AI, label and filename fallbacks), commit-match (verified primary image, BRIA cutout, provenance), socialCaption, and batch run/persistence.",
   );
 }
 
