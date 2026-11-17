@@ -100,15 +100,13 @@ type ApiResult<T> =
   | { success: false; error?: string; detail?: string; message?: string };
 
 const ART_STYLE_LABELS: Record<string, string> = {
-  "simple-botanical-horizon": "أفق نباتي بسيط",
-  "sunlit-travertine": "ترافرتين مشمس",
-  "aqua-splash-minimal": "أكوا سبلاش",
-  "luxury-amber-noir": "عنبر فاخر داكن",
-  "botanical-terracotta": "نباتي تيراكوتا",
-  "modern-clinical-glow": "توهج سريري عصري",
+  "coastal-sunlit-stone-caustics": "حجر ساحلي مشمس وانكسارات ضوئية",
+  "botanical-horizon-reflection": "أفق نباتي بانعكاس",
+  "noir-basalt-golden-rim": "بازلت داكن وإضاءة ذهبية محيطية",
 };
 
 const ENGINE_LABELS: Record<string, string> = {
+  "cloudflare-ai": "Cloudflare Workers AI",
   "workers-ai-flux": "Workers AI FLUX",
   "gemini-flash-image": "Gemini Flash Image",
   "nano-banana": "Nano Banana",
@@ -121,12 +119,10 @@ const ENGINE_LABELS: Record<string, string> = {
 };
 
 const VARIANT_LABELS: Record<string, string> = {
-  "al-rahma/simple-botanical-horizon": "تصميم 1 — أفق نباتي بسيط",
-  "al-rahma/sunlit-travertine": "تصميم بديل — ترافرتين مشمس",
-  "al-rahma/aqua-splash-minimal": "تصميم بديل — أكوا سبلاش",
-  "al-rahma/luxury-amber-noir": "تصميم بديل — عنبر فاخر داكن",
-  "al-rahma/botanical-terracotta": "تصميم بديل — نباتي تيراكوتا",
-  "al-rahma/modern-clinical-glow": "تصميم بديل — توهج سريري عصري",
+  "al-rahma/simple-botanical-horizon": "أفق نباتي بانعكاس",
+  "al-rahma/botanical-arch-frame": "حجر ساحلي مشمس وانكسارات ضوئية",
+  "al-rahma/editorial-beauty-card": "بازلت داكن وإضاءة ذهبية محيطية",
+  "al-rahma/silver-podium-botanical": "أفق نباتي بانعكاس",
   "1": "نسخة 1",
   "2": "نسخة 2",
 };

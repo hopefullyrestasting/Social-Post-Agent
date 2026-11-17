@@ -138,13 +138,24 @@ const BOTANICAL_ENV: EditorialEnvironment = {
     "lush sunlit botanical garden bokeh with warm natural sunbeams",
 };
 
-// Style hints retained for API compatibility with existing callers/tests.
+// Style-driven environments for the three rotating luxury art directions.
 const STYLE_ENVIRONMENT_HINT: Partial<Record<ArtDirectionStyleId, EditorialEnvironment>> = {
-  "luxury-amber-noir": OUD_WARM_ENV,
-  "aqua-splash-minimal": MARINE_FRESH_ENV,
-  "sunlit-travertine": BOTANICAL_ENV,
-  "botanical-terracotta": BOTANICAL_ENV,
-  "modern-clinical-glow": BOTANICAL_ENV,
+  "coastal-sunlit-stone-caustics": {
+    surfaceMaterial: "sun-drenched rough coastal sandstone/limestone ledge",
+    environmentalBackdrop:
+      "deep blue Mediterranean sea and airy sky with soft sea spray atmosphere in warm golden-hour light",
+  },
+  "botanical-horizon-reflection": {
+    surfaceMaterial:
+      "glossy mirror floor in front of a color-matched monochrome sage/pastel studio wall, with fresh mint and botanical leaves clustered at the base and soft floating clouds above",
+    environmentalBackdrop:
+      "airy sunlit garden bokeh with gentle sunbeams and a clean, bright horizon reflection",
+  },
+  "noir-basalt-golden-rim": {
+    surfaceMaterial: "dark architectural basalt stone slab",
+    environmentalBackdrop:
+      "warm golden-amber rim light, subtle atmospheric mist and a cinematic noir-to-amber glow",
+  },
 };
 
 function contextHaystack(context?: ProductCompositeContext): string {
@@ -158,6 +169,11 @@ export function resolveEditorialEnvironment(
   context?: ProductCompositeContext,
   styleId?: ArtDirectionStyleId,
 ): EditorialEnvironment {
+  // Prefer the explicitly selected rotating art style so variants stay distinct.
+  if (styleId && STYLE_ENVIRONMENT_HINT[styleId]) {
+    return STYLE_ENVIRONMENT_HINT[styleId] as EditorialEnvironment;
+  }
+
   const haystack = contextHaystack(context);
 
   // Marine / Fresh perfumes (e.g. Assaf Wild Colt, blue/fresh scents).
@@ -188,7 +204,7 @@ export function resolveEditorialEnvironment(
     return BOTANICAL_ENV;
   }
 
-  return (styleId && STYLE_ENVIRONMENT_HINT[styleId]) || BOTANICAL_ENV;
+  return BOTANICAL_ENV;
 }
 
 /**
@@ -199,7 +215,7 @@ export function resolveEditorialEnvironment(
 export function buildProductCompositePrompt(
   input: ProductCompositePromptInput = {},
 ): string {
-  const styleId = input.styleId ?? "simple-botanical-horizon";
+  const styleId = input.styleId ?? "coastal-sunlit-stone-caustics";
   const env = resolveEditorialEnvironment(input.context, styleId);
   const name = (input.context?.name || "").trim() || "product";
   const brand = (input.context?.brand || "").trim();
@@ -222,7 +238,7 @@ export function buildProductCompositePrompt(
 function buildCompactCompositePrompt(
   input: ProductCompositePromptInput = {},
 ): string {
-  const styleId = input.styleId ?? "simple-botanical-horizon";
+  const styleId = input.styleId ?? "coastal-sunlit-stone-caustics";
   const env = resolveEditorialEnvironment(input.context, styleId);
   return [
     "Edit the reference photo into a photorealistic 9:16 luxury product advertisement.",
@@ -477,6 +493,20 @@ function errorMessage(error: unknown): string {
             }
           })();
   return raw.slice(0, 300);
+}
+
+async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`timeout_${ms}ms`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 function pushAttempt(
@@ -764,13 +794,16 @@ async function generateWithWorkersAi(
       form.append("guidance", "5");
       const serialized = new Response(form);
 
-      const result = await env.AI.run(attempt.model, {
-        multipart: {
-          body: serialized.body,
-          contentType:
-            serialized.headers.get("content-type") ?? "multipart/form-data",
-        },
-      });
+      const result = await withTimeout(
+        env.AI.run(attempt.model, {
+          multipart: {
+            body: serialized.body,
+            contentType:
+              serialized.headers.get("content-type") ?? "multipart/form-data",
+          },
+        }),
+        55_000,
+      );
       const image = await extractImageFromUnknown(result);
       if (image) {
         pushAttempt(attempts, diagnostics, {
@@ -935,12 +968,9 @@ function noStoreJson(payload: unknown, status = 200): Response {
 }
 
 const KNOWN_STYLE_IDS: ReadonlySet<string> = new Set([
-  "simple-botanical-horizon",
-  "sunlit-travertine",
-  "aqua-splash-minimal",
-  "luxury-amber-noir",
-  "botanical-terracotta",
-  "modern-clinical-glow",
+  "coastal-sunlit-stone-caustics",
+  "botanical-horizon-reflection",
+  "noir-basalt-golden-rim",
 ]);
 
 function isStyleId(value: unknown): value is ArtDirectionStyleId {
@@ -1023,7 +1053,7 @@ export const onRequestPost: PagesFunction<ProductCompositeEnv> = async ({
     success: true,
     provider: outcome.provider,
     model: outcome.model,
-    styleId: styleId ?? "simple-botanical-horizon",
+    styleId: styleId ?? "coastal-sunlit-stone-caustics",
     image: outcome.image,
     kind: "reference-conditioned-data-uri",
     usedReference: outcome.usedReference,

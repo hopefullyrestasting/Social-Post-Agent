@@ -258,13 +258,19 @@ function dualToneHeadline(
 }
 
 function isTransparentCutout(productUrl: string): boolean {
-  if (productUrl.startsWith("data:image/png")) return true;
+  const clean = productUrl.trim().toLowerCase();
+  // BRIA/remove.bg and local alpha cutouts are PNG data URIs.
+  if (clean.startsWith("data:image/png")) return true;
   try {
     const url = new URL(productUrl);
-    return url.searchParams.get("cutout") === "1";
+    if (url.searchParams.get("cutout") === "1") return true;
+    // PNG URLs are alpha-capable; treat as clean cutout to avoid destructive
+    // multiply blending that erodes white/light label colors on dark scenes.
+    if (url.pathname.toLowerCase().endsWith(".png")) return true;
   } catch {
-    return false;
+    // ignore
   }
+  return false;
 }
 
 function heroPackshot(
@@ -294,17 +300,24 @@ function heroPackshot(
   }
 
   const cutout = isTransparentCutout(productUrl);
-  const blendStyle = cutout ? "" : ' style="mix-blend-mode:multiply"';
-  const imageFilter = cutout ? ' filter="url(#soft-drop)"' : "";
-  const rimWrapOpen = cutout ? '<g filter="url(#rim-light)" data-rim="true">' : "<g>";
+  // Never use mix-blend-mode:multiply: it erodes white/light labels and mutes
+  // authentic packaging colors on dark or colored AI scenes. Render the product
+  // at 100% vibrancy; prefer clean alpha cutouts (BRIA RMBG) for true separation.
+  const blendStyle = "";
+  const blendMarker = cutout ? "cutout" : "alpha-preserve";
+  const imageFilter = cutout
+    ? ' filter="url(#soft-drop)"'
+    : ' filter="url(#soft-drop)"';
+  const rimWrapOpen = cutout
+    ? '<g filter="url(#rim-light)" data-rim="true">'
+    : '<g data-rim="soft">';
   const rimWrapClose = "</g>";
-  const blendMarker = cutout ? "cutout" : "multiply";
 
   const metallicFloor = `
       <g id="metallic-floor" data-metallic="true">
         <rect x="0" y="${reflectFrom}" width="${width}" height="250" fill="url(#metallic-floor-sheen)" />
         <rect x="140" y="${reflectFrom + 2}" width="${width - 280}" height="3" fill="url(#metallic-horizon-highlight)" />
-        ${cutout ? `<ellipse id="metallic-contact-shadow" cx="${cx}" cy="${reflectFrom - 4}" rx="300" ry="30" fill="url(#metallic-contact-shadow-gradient)" />` : ""}
+        ${cutout ? `<ellipse id="metallic-contact-shadow" cx="${cx}" cy="${reflectFrom - 4}" rx="300" ry="30" fill="url(#metallic-contact-shadow-gradient)" />` : `<ellipse id="metallic-contact-shadow-soft" cx="${cx}" cy="${reflectFrom - 4}" rx="280" ry="24" fill="url(#metallic-contact-shadow-gradient)" fill-opacity="0.55" />`}
       </g>`;
 
   return `

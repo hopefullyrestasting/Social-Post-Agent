@@ -1,4 +1,4 @@
-import {
+﻿import {
   ArabicCopywriter,
   GeneratedArabicCopy,
   PostAngle,
@@ -105,8 +105,8 @@ export interface ProductionResult {
 }
 
 const AVAILABILITY_LABELS: Record<string, string> = {
-  in_stock: "متوفر في المخزن",
-  out_of_stock: "غير متوفر حالياً",
+  in_stock: "Ù…ØªÙˆÙØ± ÙÙŠ Ø§Ù„Ù…Ø®Ø²Ù†",
+  out_of_stock: "ØºÙŠØ± Ù…ØªÙˆÙØ± Ø­Ø§Ù„ÙŠØ§Ù‹",
 };
 
 function availabilityText(status: string | undefined): string {
@@ -131,7 +131,7 @@ export class ProductionEngine {
     return ProductionEngine.build(request, variantNumber, template);
   }
 
-  /** Two required creative variants per product: 1 = simple-botanical-horizon, 2 alternates. */
+  /** Two required creative variants per product, rotating across the three luxury styles. */
   public static executeVariants(
     request: ProductionVariantsRequest,
   ): ProductionResult[] {
@@ -230,7 +230,7 @@ export class ProductionEngine {
 
     const blockers: string[] = [];
     if (!productImageUrl && !stagedImageUrl) {
-      blockers.push("صورة المنتج الأصلية (packshot) مطلوبة لتركيب الإعلان.");
+      blockers.push("ØµÙˆØ±Ø© Ø§Ù„Ù…Ù†ØªØ¬ Ø§Ù„Ø£ØµÙ„ÙŠØ© (packshot) Ù…Ø·Ù„ÙˆØ¨Ø© Ù„ØªØ±ÙƒÙŠØ¨ Ø§Ù„Ø¥Ø¹Ù„Ø§Ù†.");
     }
     if (promotionEvaluation.status === "invalid") {
       blockers.push(promotionEvaluation.reason);
@@ -301,3 +301,4 @@ export class ProductionEngine {
     };
   }
 }
+
