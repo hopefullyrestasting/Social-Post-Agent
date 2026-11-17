@@ -33,6 +33,7 @@ type ArtDirectionMeta = {
   compositeModel?: string | null;
   compositeFallbackReason?: string | null;
   compositeAttempts?: CompositeAttempt[];
+  conditioningCanvas?: boolean;
 };
 
 type CampaignCreative = ExportCreative & {
@@ -71,39 +72,63 @@ type Campaign = {
   total_products: number | null;
   total_images: number | null;
   error_summary?: string | null;
-  created_at?: number | null;
+  selected_product_ids?: string[] | string | null;
   creatives: CampaignCreative[];
+};
+
+type PlanSlot = {
+  slot: number;
+  totalSlots: number;
+  productId: string;
+  product_name_arabic: string;
+  brand_arabic: string;
+  brand_slug?: string;
+  image_url: string;
+  variantIndex: 1 | 2;
+};
+
+type SlotFailure = {
+  slot: number;
+  productId: string;
+  variantIndex: number;
+  product_name_arabic: string;
+  error: string;
 };
 
 type ApiResult<T> =
   | ({ success: true } & T)
   | { success: false; error?: string; detail?: string; message?: string };
 
-const VARIANT_LABELS: Record<string, string> = {
-  "simple-botanical-horizon": "نسخة 1 — أفق نباتي بسيط",
-  "silver-podium-botanical": "نسخة بديلة — منصة فضية ونباتات",
-  "botanical-arch-frame": "نسخة 2 — إطار قوسي نباتي",
-  "editorial-beauty-card": "نسخة 2 — بطاقة تحريرية تجميلية",
-  "1": "نسخة 1 — أفق نباتي بسيط",
-  "2": "نسخة 2 — قالب بديل",
-};
-
 const ART_STYLE_LABELS: Record<string, string> = {
-  "simple-botanical-horizon": "بسيط — أفق نباتي",
-  "sunlit-travertine": "شمس الترافرتين",
-  "aqua-splash-minimal": "ماء وأكريليك",
-  "luxury-amber-noir": "فخامة العنبر الداكن",
-  "botanical-terracotta": "نباتات وتيراكوتا",
-  "modern-clinical-glow": "صيدلية عصرية",
+  "simple-botanical-horizon": "أفق نباتي بسيط",
+  "sunlit-travertine": "ترافرتين مشمس",
+  "aqua-splash-minimal": "أكوا سبلاش",
+  "luxury-amber-noir": "عنبر فاخر داكن",
+  "botanical-terracotta": "نباتي تيراكوتا",
+  "modern-clinical-glow": "توهج سريري عصري",
 };
 
 const ENGINE_LABELS: Record<string, string> = {
-  "cloudflare-ai": "FLUX — Workers AI",
+  "workers-ai-flux": "Workers AI FLUX",
   "gemini-flash-image": "Gemini Flash Image",
   "nano-banana": "Nano Banana",
-  "deterministic-studio": "استوديو SVG احتياطي",
-  "studio-fallback": "استوديو SVG احتياطي",
-  "bundled-studio-stage": "استوديو SVG احتياطي",
+  "deterministic-studio": "استوديو (خلفية ثابتة)",
+  "studio-fallback": "استوديو (خلفية ثابتة)",
+  "gemini-image-edit": "Gemini (تحرير مرجعي)",
+  "workers-ai-img2img": "Workers AI (تركيب مرجعي)",
+  "huggingface-img2img": "Hugging Face (تركيب مرجعي)",
+  "reference-conditioned-composite": "تركيب مرجعي (AI)",
+};
+
+const VARIANT_LABELS: Record<string, string> = {
+  "al-rahma/simple-botanical-horizon": "تصميم 1 — أفق نباتي بسيط",
+  "al-rahma/sunlit-travertine": "تصميم بديل — ترافرتين مشمس",
+  "al-rahma/aqua-splash-minimal": "تصميم بديل — أكوا سبلاش",
+  "al-rahma/luxury-amber-noir": "تصميم بديل — عنبر فاخر داكن",
+  "al-rahma/botanical-terracotta": "تصميم بديل — نباتي تيراكوتا",
+  "al-rahma/modern-clinical-glow": "تصميم بديل — توهج سريري عصري",
+  "1": "نسخة 1",
+  "2": "نسخة 2",
 };
 
 function creativeArtMeta(creative: CampaignCreative): ArtDirectionMeta | null {
@@ -115,7 +140,6 @@ function creativeArtMeta(creative: CampaignCreative): ArtDirectionMeta | null {
       parsed = {};
     }
   }
-
   const fromNotes =
     parsed.artDirection && typeof parsed.artDirection === "object"
       ? (parsed.artDirection as ArtDirectionMeta)
@@ -130,7 +154,7 @@ function creativeArtMeta(creative: CampaignCreative): ArtDirectionMeta | null {
     fromNotes?.engine ??
     (typeof parsed.sceneProvider === "string" ? parsed.sceneProvider : undefined);
 
-  if (!styleId && !engine) return null;
+  if (!styleId && !engine) return fromNotes ?? null;
 
   return {
     ...fromNotes,
@@ -149,8 +173,6 @@ function creativeSvgMarkup(creative: CampaignCreative): string | null {
 }
 
 function campaignsUrl(): string {
-  // Cache-buster + no-store: the dashboard must never show a stale stored SVG
-  // after a new full-bleed campaign is generated.
   return `/api/db/campaigns?limit=10&v=phase18&t=${Date.now()}`;
 }
 
@@ -178,6 +200,84 @@ function groupByProduct(creatives: CampaignCreative[]) {
     );
   }
   return Array.from(groups.entries());
+}
+
+async function loadImageElement(src: string): Promise<HTMLImageElement> {
+  return await new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.decoding = "async";
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("failed to load image"));
+    img.src = src;
+  });
+}
+
+/**
+ * Build a 768x1344 (9:16) conditioning canvas for reference-conditioned img2img:
+ * neutral studio backdrop with the BRIA cutout placed centered-bottom in the
+ * hero area, leaving the upper ~35% open for headline and bottom ~12% for the
+ * contact bar. The model paints the outdoor/editorial environment around the
+ * authentic bottle while the prompt enforces label/geometry preservation.
+ */
+async function buildConditioningCanvas(
+  sourceImageUrl: string,
+  cutoutDataUrl?: string | null,
+): Promise<string | null> {
+  if (typeof document === "undefined") return null;
+  try {
+    const cutout =
+      cutoutDataUrl ||
+      await (async () => {
+        try {
+          const res = await fetch("/api/ai/remove-bg", {
+            method: "POST",
+            headers: adminWriteHeaders({ "Content-Type": "application/json", Accept: "application/json" }),
+            body: JSON.stringify({ imageUrl: sourceImageUrl }),
+          });
+          const body = (await res.json()) as { success?: boolean; cutout?: string };
+          return body.success && typeof body.cutout === "string" ? body.cutout : null;
+        } catch {
+          return null;
+        }
+      })();
+
+    const img = await loadImageElement(cutout || sourceImageUrl);
+    const W = 768;
+    const H = 1344;
+    const canvas = document.createElement("canvas");
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+
+    // Neutral studio background (prompt-guided outdoor scene remains the fallback path).
+    const bg = ctx.createLinearGradient(0, 0, 0, H);
+    bg.addColorStop(0, "#f8fafc");
+    bg.addColorStop(0.55, "#ffffff");
+    bg.addColorStop(1, "#eef2f7");
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+
+    // Soft grounding ellipse in lower hero zone.
+    ctx.fillStyle = "rgba(148,163,184,0.22)";
+    ctx.beginPath();
+    ctx.ellipse(W / 2, Math.round(H * 0.82), Math.round(W * 0.28), Math.round(H * 0.03), 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Place cutout centered-bottom: occupy ~58% of height, bottom near 86%.
+    const targetH = Math.round(H * 0.58);
+    const scale = targetH / Math.max(1, img.naturalHeight || img.height || 1);
+    const drawW = Math.round((img.naturalWidth || img.width || 1) * scale);
+    const drawH = targetH;
+    const dx = Math.round((W - drawW) / 2);
+    const dy = Math.round(H * 0.86 - drawH);
+    ctx.drawImage(img, dx, dy, drawW, drawH);
+
+    return canvas.toDataURL("image/png");
+  } catch {
+    return null;
+  }
 }
 
 function CreativeCard({
@@ -240,7 +340,7 @@ function CreativeCard({
   async function handleCopyCaption() {
     const caption = (creative.socialCaption || creative.copy_arabic || "").trim();
     if (!caption) {
-      onError("لا يوجد نص بوست جاهز للنسخ لهذا الإعلان.");
+      onError("لا يوجد نص بوست جاهز لنسخ هذا الإعلان.");
       return;
     }
     setCopying(true);
@@ -329,6 +429,11 @@ function CreativeCard({
               ✂️ قص خلفية
             </span>
           )}
+          {artMeta?.conditioningCanvas && (
+            <span className="rounded-full bg-indigo-50 px-2 py-1 text-[11px] font-bold text-indigo-800">
+              🖼️ conditioning 9:16
+            </span>
+          )}
         </div>
       )}
 
@@ -398,8 +503,10 @@ export default function CampaignGallery() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
+  const [progress, setProgress] = useState<string>("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [slotFailures, setSlotFailures] = useState<SlotFailure[]>([]);
   const [downloadingZip, setDownloadingZip] = useState<string>("");
 
   const load = useCallback(async () => {
@@ -449,46 +556,164 @@ export default function CampaignGallery() {
     };
   }, []);
 
-  async function runBatch(fresh = false) {
+  async function runSingleSlot(
+    slot: PlanSlot,
+    campaignId: string,
+    conditioningImage: string | null,
+  ): Promise<CampaignCreative> {
+    const response = await fetch("/api/db/campaigns/run", {
+      method: "POST",
+      headers: adminWriteHeaders({
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      }),
+      body: JSON.stringify({
+        campaignId,
+        productId: slot.productId,
+        variantIndex: slot.variantIndex,
+        ...(conditioningImage ? { conditioningImage } : {}),
+      }),
+      cache: "no-store",
+    });
+    const body = (await response.json()) as ApiResult<{
+      creative?: CampaignCreative;
+    }>;
+    if (!response.ok || !body.success || !body.creative) {
+      const msg =
+        response.status === 401
+          ? "المفتاح الإداري مطلوب أو غير صحيح. أدخل المفتاح من أعلى لوحة التحكم."
+          : (body as { detail?: string; error?: string }).detail ||
+            (body as { error?: string }).error ||
+            `تعذر تشغيل الإعلان (${response.status})`;
+      throw new Error(msg);
+    }
+    return body.creative;
+  }
+
+  async function runSequentialBatch(fresh = false) {
     setRunning(true);
     setError("");
-    setNotice(fresh ? "جارٍ توليد دفعة جديدة بتصميم Phase 17..." : "");
+    setSlotFailures([]);
+    setNotice(fresh ? "جارٍ مسح المعاينة وتوليد دفعة جديدة بالتسلسل..." : "");
+    setProgress("جارٍ تجهيز خطة الحملة...");
+
     try {
-      const response = await fetch("/api/db/campaigns/run", {
+      const planRes = await fetch("/api/db/campaigns/run", {
         method: "POST",
         headers: adminWriteHeaders({
           Accept: "application/json",
           "Content-Type": "application/json",
         }),
-        body: JSON.stringify({}),
+        body: JSON.stringify({ planOnly: true }),
         cache: "no-store",
       });
-      const body = (await response.json()) as ApiResult<{
+      const planBody = (await planRes.json()) as ApiResult<{
         campaign?: Campaign;
-        creatives?: CampaignCreative[];
+        slots?: PlanSlot[];
+        totalSlots?: number;
         message?: string;
       }>;
 
-      if (!response.ok || !body.success) {
-        throw new Error(
-          response.status === 401
+      if (!planRes.ok || !planBody.success) {
+        const msg =
+          planRes.status === 401
             ? "المفتاح الإداري مطلوب أو غير صحيح. أدخل المفتاح من أعلى لوحة التحكم."
-            : (body as { detail?: string; error?: string }).detail ||
-                (body as { error?: string }).error ||
-                `تعذر تشغيل الدفعة (${response.status})`,
-        );
+            : (planBody as { detail?: string; error?: string }).detail ||
+              (planBody as { error?: string }).error ||
+              `تعذر إنشاء خطة الحملة (${planRes.status})`;
+        throw new Error(msg);
       }
 
-      const previewNote =
-        response.headers.get("X-Auth-Mode") === "unconfigured-preview"
-          ? " — وضع المعاينة: لم يُضبط مفتاح الإدارة بعد."
+      const slots = planBody.slots ?? [];
+      const campaignId = planBody.campaign?.id;
+      const total = planBody.totalSlots ?? slots.length;
+
+      if (!campaignId || slots.length === 0) {
+        setNotice(planBody.message || "لا توجد منتجات موثّقة متاحة للتوليد حالياً.");
+        await load();
+        return;
+      }
+
+      // Seed a live campaign shell so results appear progressively.
+      setCampaigns((prev) => [
+        {
+          id: campaignId,
+          campaign_date: planBody.campaign?.campaign_date || "",
+          status: "running",
+          total_products: planBody.campaign?.total_products ?? null,
+          total_images: 0,
+          selected_product_ids: planBody.campaign?.selected_product_ids ?? null,
+          creatives: [],
+        },
+        ...prev.filter((c) => c.id !== campaignId),
+      ]);
+
+      const failures: SlotFailure[] = [];
+      const conditioningCache = new Map<string, string | null>();
+
+      for (let i = 0; i < slots.length; i++) {
+        const slot = slots[i];
+        setProgress(`جاري تصميم الإعلان ${i + 1} من ${total}…`);
+
+        // Build conditioning canvas (768x1344, BRIA cutout at center-bottom) once per product.
+        let conditioning: string | null = conditioningCache.get(slot.productId) ?? null;
+        if (!conditioningCache.has(slot.productId)) {
+          conditioning = await buildConditioningCanvas(slot.image_url);
+          conditioningCache.set(slot.productId, conditioning);
+        }
+
+        let creative: CampaignCreative | null = null;
+        let lastErr = "";
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            creative = await runSingleSlot(slot, campaignId, conditioning);
+            break;
+          } catch (e) {
+            lastErr = e instanceof Error ? e.message : "فشل غير معروف";
+            if (attempt === 0) {
+              setProgress(`إعادة محاولة الإعلان ${i + 1} من ${total}…`);
+            }
+          }
+        }
+
+        if (creative) {
+          setCampaigns((prev) => {
+            const idx = prev.findIndex((c) => c.id === campaignId);
+            if (idx === -1) return prev;
+            const next = [...prev];
+            const current = next[idx];
+            next[idx] = {
+              ...current,
+              status: "running",
+              total_images: (current.total_images ?? 0) + 1,
+              creatives: [...current.creatives, creative as CampaignCreative],
+            };
+            return next;
+          });
+        } else {
+          failures.push({
+            slot: slot.slot,
+            productId: slot.productId,
+            variantIndex: slot.variantIndex,
+            product_name_arabic: slot.product_name_arabic,
+            error: lastErr || "تعذر توليد الإعلان",
+          });
+          setSlotFailures([...failures]);
+        }
+      }
+
+      setProgress("");
+      const okCount = total - failures.length;
+      const failNote =
+        failures.length > 0
+          ? ` — تعذر توليد ${failures.length} إعلان (تم تسجيل السبب لكل خانة).`
           : "";
-      const freshNote = fresh
-        ? "تم استبدال المعاينة بأحدث دفعة كاملة (منتج ممتد بلا بوديوم ولا مربع أبيض). "
-        : "";
-      setNotice(`${freshNote}${body.message || "تم تشغيل دفعة اليوم بنجاح."}${previewNote}`);
+      setNotice(
+        `${fresh ? "تم استبدال المعاينة بدفعة جديدة. " : ""}تم توليد ${okCount} من ${total} إعلاناً بالتسلسل مع حفظ كل إعلان فوراً في D1.${failNote}`,
+      );
       await load();
     } catch (err) {
+      setProgress("");
       setError(err instanceof Error ? err.message : "تعذر تشغيل الدفعة.");
     } finally {
       setRunning(false);
@@ -524,13 +749,13 @@ export default function CampaignGallery() {
           <h3 className="text-lg font-extrabold">معرض الحملات وتوليد دفعة اليوم</h3>
           <p className="mt-1 text-sm text-slate-500">
             توليد يدوي لدفعة يومية: حتى 5 منتجات موثّقة × نسختين (10 إعلانات 1080×1920)
-            بخلفيات استوديو AI وتركيب قصّ العبوة والهوية. لا يوجد تشغيل تلقائي (Cron).
+            بخلفيات استوديو AI وتركيب لصق العبوة والقوالب. التوليد بالتسلسل مع حفظ فوري لكل إعلان.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={() => void runBatch(true)}
+            onClick={() => void runSequentialBatch(true)}
             disabled={running}
             className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-black text-white shadow-sm transition hover:bg-emerald-600 disabled:opacity-50"
           >
@@ -538,7 +763,7 @@ export default function CampaignGallery() {
           </button>
           <button
             type="button"
-            onClick={() => void runBatch(false)}
+            onClick={() => void runSequentialBatch(false)}
             disabled={running}
             className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-emerald-500 disabled:opacity-50"
           >
@@ -554,6 +779,15 @@ export default function CampaignGallery() {
         </div>
       </div>
 
+      {progress && (
+        <div
+          role="status"
+          className="mb-4 rounded-xl border border-sky-200 bg-sky-50 p-4 font-bold text-sky-900"
+        >
+          {progress}
+        </div>
+      )}
+
       {notice && (
         <div
           role="status"
@@ -568,6 +802,19 @@ export default function CampaignGallery() {
           className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-red-800"
         >
           {error}
+        </div>
+      )}
+
+      {slotFailures.length > 0 && (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
+          <p className="font-extrabold">إعلانات تعذر توليدها (بعد إعادة محاولة واحدة لكل خانة):</p>
+          <ul className="mt-2 list-disc space-y-1 pr-5 text-sm">
+            {slotFailures.map((f) => (
+              <li key={`${f.slot}-${f.productId}-${f.variantIndex}`}>
+                إعلان {f.slot} — {f.product_name_arabic} (نسخة {f.variantIndex}): {f.error}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
