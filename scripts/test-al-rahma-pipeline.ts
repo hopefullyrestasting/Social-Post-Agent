@@ -54,7 +54,7 @@ assert.equal(brand.visual.format.height, 1920);
 assert.equal(brand.visual.format.orientation, "portrait");
 assert.equal(brand.visual.background.style, "clean-white");
 assert.equal(brand.visual.background.baseColor, "#FFFFFF");
-assert.equal(brand.visual.themeName, "pro-designer-studio");
+assert.equal(brand.visual.themeName, "luxury-editorial-outdoor");
 assert.equal(brand.commercial.currencyLabel, "ج.م");
 assert.equal(brand.commercial.timezone, "Africa/Cairo");
 assert.deepEqual(JSON.parse(JSON.stringify(brand)), brand, "BrandConfig must stay plain JSON-serializable data.");
@@ -234,142 +234,52 @@ assert.notEqual(variants[0].svgOverlay, variants[1].svgOverlay, "Variants must d
     assert.deepEqual(result.metadata.dimensions, { width: 1080, height: 1920 });
     assert.ok(result.svgOverlay.includes(verifiedProduct.productImageUrl));
     assert.ok(result.svgOverlay.includes(brand.contact.phone), "Exact phone number must render.");
-    assert.ok(result.svgOverlay.includes("\u200Fللتواصل:"), "Contact label must render with proper RTL formatting.");
+    assert.ok(result.svgOverlay.includes(brand.contact.label), "Contact label must render.");
+    assert.ok(result.svgOverlay.includes(`${brand.brandName} - للطلب والتواصل:`), "Bottom contact lockup must render brand and request label.");
     assert.equal(result.svgOverlay.includes("..."), false, "No truncation ellipsis allowed in rendered SVG.");
     assert.equal(result.svgOverlay.includes("…"), false, "No unicode ellipsis allowed in rendered SVG.");
-    assert.ok(result.svgOverlay.includes("متاح توصيل"), "Header/subtitle must include متاح توصيل.");
     assert.ok(result.svgOverlay.includes("#FFFFFF"));
     assert.ok(result.svgOverlay.includes('data-template="'), "Template marker must be present.");
     assert.ok(result.svgOverlay.includes('data-packshot="true"'), "Packshot must be marked for compositing.");
 
-    // Phase 18: hero seated flush on the horizon with a true mirror reflection,
-    // no podium, no white box, zero white rectangle in main or reflection.
-    assert.equal(result.svgOverlay.includes('id="shader-podium"'), false, "No shader podium allowed in Phase 18.");
-    assert.equal(result.svgOverlay.includes('id="studio-podium"'), false, "No studio podium allowed in Phase 18.");
-    assert.equal(/id="[^"]*podium[^"]*"/.test(result.svgOverlay), false, "No podium element markup allowed in Phase 18.");
+    // Fallback packshot hero remains podium-free with a true mirror reflection.
+    assert.equal(/id="[^"]*podium[^"]*"/.test(result.svgOverlay), false, "No podium element markup allowed.");
     assert.ok(
       result.svgOverlay.includes('x="190" y="380" width="700" height="860"'),
-      "Hero packshot must use Simple geometry (x=190,y=380,w=700,h=860) seated on y=1240.",
+      "Fallback hero packshot must keep stable geometry (x=190,y=380,w=700,h=860).",
     );
-    assert.equal(result.svgOverlay.includes('height="1200"'), false, "Phase 17 full-bleed hero must be gone.");
     assert.ok(result.svgOverlay.includes('id="packshot-reflection"'), "Hero must render a clipped mirror reflection group.");
     assert.ok(result.svgOverlay.includes('data-reflection="true"'), "Reflection image must be marked data-reflection=true for PNG export.");
     assert.ok(
       result.svgOverlay.includes('transform="translate(0, 2480) scale(1, -1)"'),
       "Reflection must flip the packshot vertically about y=1240.",
     );
-    assert.ok(
-      result.svgOverlay.includes('data-reflect-from="1240"') &&
-        result.svgOverlay.includes('data-reflect-to="1510"'),
-      "Reflection must be clipped to y=1240..1510.",
-    );
+    assert.ok(result.svgOverlay.includes('data-reflect-from="1240"') && result.svgOverlay.includes('data-reflect-to="1510"'));
     assert.ok(result.svgOverlay.includes('mask="url(#reflection-fade)"'), "Reflection must use the alpha-fade mask.");
     assert.ok(result.svgOverlay.includes('filter="url(#reflection-blur)"'), "Reflection must use the blur filter.");
     assert.ok(result.svgOverlay.includes('stdDeviation="2.5"'), "Reflection blur must be 2.5px.");
     assert.ok(result.svgOverlay.includes('stop-opacity="0.34"'), "Reflection must start at 0.34 alpha.");
-    // External (non-transparent PNG data URI) packshots use multiply to melt white padding.
-    assert.ok(result.svgOverlay.includes('mix-blend-mode:multiply'), "Non-cutout packshot must use mix-blend-mode:multiply to remove white box.");
+    assert.ok(result.svgOverlay.includes('mix-blend-mode:multiply'), "Non-cutout packshot must use mix-blend-mode:multiply.");
     assert.ok(result.svgOverlay.includes('data-blend="multiply"'), "Non-cutout packshot must be marked data-blend=multiply.");
+    assert.ok(result.svgOverlay.includes('id="metallic-floor"'), "Fallback hero must sit on a metallic floor plate.");
+    assert.ok(result.svgOverlay.includes('data-metallic="true"'), "Metallic stage/contact markers must be present.");
 
-    // Metallic/rim-lit stage: polished silver floor plate under the hero and a
-    // real rim-light filter definition, without tinting the authentic label.
-    assert.ok(result.svgOverlay.includes('id="metallic-floor"'), "Hero must sit on a metallic silver floor plate.");
-    assert.ok(result.svgOverlay.includes('data-metallic="true"'), "Metallic stage must be marked for visual regression.");
-    assert.ok(result.svgOverlay.includes('url(#metallic-horizon-highlight)'), "Metallic horizon line must use the silver highlight gradient.");
-    assert.ok(result.svgOverlay.includes('<feMerge>') && result.svgOverlay.includes('in="SourceGraphic"'), "Rim light must merge white edge glow with the source graphic.");
-    assert.equal(
-      result.svgOverlay.includes('data-rim="true"'),
-      false,
-      "Multiply-blended originals must not get a rim light (it would outline the white padding).",
-    );
-
-    assert.ok(result.svgOverlay.includes('id="top-header-pill"'), "Top dark-emerald header pill must render.");
-    assert.ok(result.svgOverlay.includes('data-3d="true"'), "Brand wordmark must be marked as a 3D lockup.");
-    assert.ok(
-      result.svgOverlay.includes('filter="url(#brand-3d)"') &&
-        result.svgOverlay.includes('fill="url(#brand-3d-gradient)"'),
-      "Brand wordmark must use the white-to-silver 3D gradient and depth filter.",
-    );
-    assert.ok(
-      result.svgOverlay.includes('id="brand-emblem"') && result.svgOverlay.includes('data-emblem="true"'),
-      "Brand header must include the metallic emblem.",
-    );
-    assert.ok(result.svgOverlay.includes('id="metallic-gold-gradient"'), "Metallic gold gradient must be defined.");
-    assert.ok(result.svgOverlay.includes('stop-color="#F6E27A"'), "Gold gradient must start at #F6E27A.");
-    assert.ok(result.svgOverlay.includes('stop-color="#D4AF37"'), "Gold gradient must include #D4AF37.");
-    assert.ok(result.svgOverlay.includes('stop-color="#8A5A10"'), "Gold gradient must end at #8A5A10.");
-    assert.ok(
-      result.svgOverlay.includes('x="40" y="36" width="1000" height="120"'),
-      "Header glass pill must use Simple geometry (y=36..156).",
-    );
-    assert.ok(
-      result.svgOverlay.includes('fill="#0C3024"') && result.svgOverlay.includes('fill-opacity="0.85"'),
-      "Header must use translucent dark-emerald glass (#0C3024 at 0.85).",
-    );
-    assert.ok(
-      result.svgOverlay.includes('id="header-divider"') &&
-        result.svgOverlay.includes('x1="685"') &&
-        result.svgOverlay.includes('y1="56"') &&
-        result.svgOverlay.includes('x2="685"') &&
-        result.svgOverlay.includes('y2="136"'),
-      "Header must include vertical divider at approved coordinates.",
-    );
-    assert.ok(
-      result.svgOverlay.includes('x="655" y="99"') &&
-        result.svgOverlay.includes('font-size="24"') &&
-        result.svgOverlay.includes('fill="#E2E8F0"'),
-      "Header tagline must use approved coordinates/typography.",
-    );
-    assert.ok(result.svgOverlay.includes("مستحضرات تجميل ومستلزمات الصيدليات - متاح توصيل"), "Header activity/delivery text must match approved lockup.");
-    assert.ok(result.svgOverlay.includes('id="product-title"'), "Product title block must render.");
-    assert.ok(
-      result.svgOverlay.includes('font-size="58"') &&
-        result.svgOverlay.includes('fill="#FFFFFF"') &&
-        result.svgOverlay.includes('filter="url(#title-soft-shadow)"'),
-      "Product title must use pure-white 58px Cairo 900 with soft shadow.",
-    );
-    assert.equal(result.svgOverlay.includes("تركيبة طبيعية"), false, "Side feature pills must be removed.");
-    assert.equal(result.svgOverlay.includes("جودة مضمونة"), false, "Side feature pills must be removed.");
-    assert.equal(result.svgOverlay.includes('id="feature-pills"'), false, "Side feature pills group must be removed.");
-    assert.ok(result.svgOverlay.includes('id="sales-copy-editorial"'), "Editorial sales copy must render directly over photography.");
-    assert.equal(result.svgOverlay.includes('id="sales-copy-card"'), false, "Bulky white sales copy card must be removed.");
-    assert.ok(
-      result.svgOverlay.includes('font-size="46"') &&
-        result.svgOverlay.includes('font-weight="800"') &&
-        result.svgOverlay.includes('fill="url(#metallic-gold-gradient)"') &&
-        result.svgOverlay.includes('filter="url(#metallic-text-depth)"'),
-      "Benefit line must use the metallic gold gradient with deep layered shadow.",
-    );
-    assert.ok(
-      result.svgOverlay.includes('data-metallic-gold="true"'),
-      "Metallic gold typography must be marked for visual regression.",
-    );
-    assert.ok(
-      result.svgOverlay.includes('id="contact-block" data-metallic="true"'),
-      "Contact bar must carry the metallic accent.",
-    );
-    assert.ok(result.svgOverlay.includes('bottom-editorial-vignette'), "Sales copy must include subtle bottom vignette/scrim.");
-    assert.equal(
-      result.svgOverlay.includes('id="availability-pill"'),
-      result.template !== "simple-botanical-horizon",
-      "Simple variant suppresses the availability pill; secondary templates keep it.",
-    );
-    assert.equal(
-      result.svgOverlay.includes('id="cta-pill"'),
-      result.template !== "simple-botanical-horizon",
-      "Simple variant suppresses the CTA pill; secondary templates keep it.",
-    );
-    assert.ok(result.svgOverlay.includes('y="1745"') && result.svgOverlay.includes('height="175"'), "Bottom contact bar must use Simple geometry.");
-    assert.ok(result.svgOverlay.includes('fill="#0D3829"'), "Contact bar must use deep dark-emerald #0D3829.");
-    assert.ok(result.svgOverlay.includes('x="955"') && result.svgOverlay.includes('font-size="42"'), "Contact label must use approved coordinates/typography.");
-    assert.ok(result.svgOverlay.includes('x="540"') && result.svgOverlay.includes('font-size="52"'), "Phone number must be centered with approved coordinates/typography.");
-    assert.ok(
-      result.svgOverlay.includes('cx="240" cy="1833"') && result.svgOverlay.includes('cx="150" cy="1833"') && result.svgOverlay.includes('r="30"'),
-      "Contact icons must be placed away from phone digits with r=30.",
-    );
-    assert.ok(result.svgOverlay.includes("\u200Fللتواصل:") && result.svgOverlay.includes(brand.contact.phone), "Contact bar must render label and phone.");
+    // Master art-direction overlay: floating emblem, dual-tone 3D headline, atmospheric contact bar.
+    assert.ok(result.svgOverlay.includes('id="floating-emblem"'), "Floating emblem must render (no solid header bar).");
+    assert.ok(result.svgOverlay.includes('filter="url(#emblem-ambient-shadow)"'), "Floating emblem must carry a subtle ambient shadow.");
+    assert.ok(result.svgOverlay.includes('id="dual-tone-headline"'), "Dual-tone headline group must render.");
+    assert.ok(result.svgOverlay.includes('id="headline-line-1"'), "Headline line 1 (silver-white) must render.");
+    assert.ok(result.svgOverlay.includes('id="headline-line-2"'), "Headline line 2 (metallic gold) must render.");
+    assert.ok(result.svgOverlay.includes('fill="url(#headline-silver-gradient)"'), "Line 1 must use the silver-white gradient.");
+    assert.ok(result.svgOverlay.includes('fill="url(#headline-gold-gradient)"'), "Line 2 must use the metallic gold gradient.");
+    assert.ok(result.svgOverlay.includes('font-size="76"') && result.svgOverlay.includes('filter="url(#headline-silver-depth)"'));
+    assert.ok(result.svgOverlay.includes('font-size="78"') && result.svgOverlay.includes('filter="url(#headline-gold-bevel)"'));
+    assert.ok(result.svgOverlay.includes('data-metallic-gold="true"'), "Gold headline must be marked for visual regression.");
+    assert.ok(result.svgOverlay.includes('id="contact-block"') && result.svgOverlay.includes('data-layout="atmospheric-contact-bar"'), "Atmospheric contact bar must render.");
+    assert.ok(result.svgOverlay.includes('id="contact-vignette"') && result.svgOverlay.includes('url(#bottom-atmospheric-vignette)'), "Contact bar must use the dark navy/emerald vignette gradient.");
+    assert.ok(result.svgOverlay.includes('y="1770"'), "Contact vignette must start at y=1770.");
+    assert.ok(result.svgOverlay.includes('fill="#FBBF24"'), "Contact label must render in warm gold.");
     assert.equal(result.svgOverlay.includes('href="/studio-scenes/'), false, "External studio scene URLs must never be emitted in SVG (PNG export safety).");
-    assert.ok(result.svgOverlay.includes("#059669"), "Contact icons must include emerald accent styling.");
     assert.ok(result.copy.socialCaption && result.copy.socialCaption.includes(result.copy.ctaShort), "Each creative must include a ready-to-copy socialCaption with CTA.");
     assert.ok((result.copy.socialCaption.match(/•/g) || []).length >= 3, "socialCaption must include 3 benefit lines.");
     assert.ok(result.copy.socialCaption.includes("#"), "socialCaption must include hashtags.");
@@ -380,10 +290,10 @@ assert.notEqual(variants[0].svgOverlay, variants[1].svgOverlay, "Variants must d
     assert.equal(result.svgOverlay.includes("occasion-ribbon"), false, "No greeting without an in-window occasion.");
   }
 
-assert.equal(/id="[^"]*podium[^"]*"/.test(variants[0].svgOverlay), false, "Variant 1 must have no podium markup in Phase 18.");
-assert.equal(variants[0].svgOverlay.includes('id="packshot-hero"'), true, "Variant 1 must include the Simple hero packshot.");
+assert.equal(/id="[^"]*podium[^"]*"/.test(variants[0].svgOverlay), false, "Variant 1 must have no podium markup.");
+assert.equal(variants[0].svgOverlay.includes('id="packshot-hero"'), true, "Variant 1 must include the fallback hero packshot when no AI composite is provided.");
 assert.equal(variants[0].svgOverlay.includes('data-blend="multiply"'), true, "Variant 1 non-cutout packshot must be multiply-blended.");
-assert.ok(variants[0].svgOverlay.includes('id="simple-botanical-horizon"'), "Variant 1 must use the simple-botanical-horizon scene.");
+assert.ok(variants[0].svgOverlay.includes('id="simple-botanical-horizon"'), "Variant 1 must use the simple-botanical-horizon fallback scene.");
 assert.ok(variants[0].svgOverlay.includes('data-horizon-y="1240"'), "Simple scene horizon must sit at y=1240.");
 assert.ok(variants[0].svgOverlay.includes('id="horizon-line"'), "Simple scene must render the glossy horizon line.");
 assert.ok(variants[0].svgOverlay.includes('id="botanical-base"'), "Simple scene must render the botanical base cluster.");
@@ -392,9 +302,9 @@ assert.ok(
   "Simple scene must render both volumetric clouds.",
 );
 assert.ok(variants[0].svgOverlay.includes('data-palette="golden-sage"'), "Haircare product must resolve to the golden-sage palette.");
-assert.equal(variants[0].svgOverlay.includes('id="availability-pill"'), false, "Simple variant must not render the availability pill.");
-assert.equal(variants[0].svgOverlay.includes('id="cta-pill"'), false, "Simple variant must not render the CTA pill.");
-assert.ok(variants[1].svgOverlay.includes('id="cta-pill"'), "Secondary variant keeps the CTA pill.");
+assert.equal(variants[0].svgOverlay.includes('id="availability-pill"'), false, "Availability pill is not part of the master overlay.");
+assert.equal(variants[0].svgOverlay.includes('id="cta-pill"'), false, "CTA pill is not part of the master overlay.");
+assert.ok(variants[1].svgOverlay.includes('id="dual-tone-headline"'), "Variant 2 must render the dual-tone headline.");
 
 // Transparent PNG cutout renders normally (no multiply, with soft drop shadow).
 const cutoutOverlay = OverlaySystem.generateOverlaySvg({
@@ -407,7 +317,7 @@ const cutoutOverlay = OverlaySystem.generateOverlaySvg({
   ctaText: "اطلب عبر واتساب",
   availabilityText: "متوفر في المخزن",
 });
-assert.ok(cutoutOverlay.includes('x="190" y="380" width="700" height="860"'), "Cutout hero must use Simple geometry.");
+assert.ok(cutoutOverlay.includes('x="190" y="380" width="700" height="860"'), "Cutout hero must use stable geometry.");
 assert.ok(cutoutOverlay.includes('data-blend="cutout"'), "Transparent cutout must be marked data-blend=cutout.");
 assert.equal(cutoutOverlay.includes('mix-blend-mode:multiply'), false, "Transparent cutout must not use multiply blend.");
 assert.ok(cutoutOverlay.includes('filter="url(#soft-drop)"'), "Transparent cutout must render with soft drop shadow.");
@@ -451,7 +361,7 @@ for (const result of invalidVariants) {
   assert.equal(result.svgOverlay.includes("promo-badge"), false);
 }
 
-// 48h occasion greeting ribbon in-window.
+// 48h occasion greeting is injected into copy (overlay remains clean per master layout).
 const occasionInput = {
   id: "cc-eg-eid-al-fitr",
   occasionName: "عيد الفطر المبارك",
@@ -463,8 +373,6 @@ const occasionInput = {
 const occasionVariants = ProductionEngine.executeVariants({ product: verifiedProduct, occasion: occasionInput, today: fixedToday });
 for (const result of occasionVariants) {
   assert.equal(result.success, true, result.blockers.join(" | "));
-  assert.ok(result.svgOverlay.includes("occasion-ribbon"));
-  assert.ok(result.svgOverlay.includes("عيد الفطر المبارك"));
   assert.ok(result.copy.fullPostText.includes("كل عام وأنتم بخير"));
   assert.ok(result.metadata.occasion);
 }
@@ -593,42 +501,23 @@ const overlay = OverlaySystem.generateOverlaySvg({
 });
 assert.ok(overlay.includes(brand.brandName));
 assert.ok(overlay.includes(brand.contact.phone));
-assert.ok(overlay.includes("\u200Fللتواصل:"));
-assert.ok(overlay.includes("متاح توصيل"));
+assert.ok(overlay.includes(brand.contact.label));
 assert.ok(overlay.includes("ترطيب") && overlay.includes("عميق"), "Benefit line text must render in overlay.");
 assert.ok(overlay.includes('data-packshot="true"'));
-assert.equal(/id="[^"]*podium[^"]*"/.test(overlay), false, "Overlay must have no podium markup in Phase 18.");
+assert.equal(/id="[^"]*podium[^"]*"/.test(overlay), false, "Overlay must have no podium markup.");
 assert.ok(overlay.includes('x="190" y="380" width="700" height="860"'));
-assert.equal(overlay.includes('height="1200"'), false);
 assert.ok(overlay.includes('id="packshot-reflection"'));
 assert.ok(overlay.includes('transform="translate(0, 2480) scale(1, -1)"'));
 assert.ok(overlay.includes('mask="url(#reflection-fade)"') && overlay.includes('filter="url(#reflection-blur)"'));
-assert.ok(overlay.includes('stdDeviation="2.5"'));
-assert.ok(overlay.includes('mix-blend-mode:multiply'), "Non-cutout overlay packshot must multiply-blend white padding.");
-assert.ok(overlay.includes('data-blend="multiply"'));
-assert.ok(overlay.includes('id="top-header-pill"'));
-assert.ok(overlay.includes('fill="#0C3024"') && overlay.includes('fill-opacity="0.85"'));
-assert.ok(overlay.includes('id="header-divider"') && overlay.includes('x1="685"') && overlay.includes('y1="56"'));
-assert.ok(overlay.includes("مستحضرات تجميل ومستلزمات الصيدليات - متاح توصيل"));
-assert.ok(overlay.includes('id="product-title"'));
-assert.ok(overlay.includes('font-size="58"') && overlay.includes('filter="url(#title-soft-shadow)"'));
-assert.equal(overlay.includes("تركيبة طبيعية"), false);
-assert.equal(overlay.includes("جودة مضمونة"), false);
-assert.equal(overlay.includes('id="feature-pills"'), false);
-assert.ok(overlay.includes('id="sales-copy-editorial"'));
-assert.equal(overlay.includes('id="sales-copy-card"'), false);
-assert.ok(
-  overlay.includes('font-size="46"') &&
-    overlay.includes('font-weight="800"') &&
-    overlay.includes('fill="url(#metallic-gold-gradient)"'),
-  "Benefit headline must use the metallic gold gradient.",
-);
-assert.equal(overlay.includes('id="cta-pill"'), false, "Simple overlay suppresses the CTA pill.");
-assert.equal(overlay.includes('id="availability-pill"'), false, "Simple overlay suppresses the availability pill.");
-assert.ok(overlay.includes('y="1745"') && overlay.includes('height="175"') && overlay.includes('fill="#0D3829"'));
-assert.ok(overlay.includes('x="955"'));
-assert.ok(overlay.includes('x="540"'));
-assert.ok(overlay.includes('cx="240" cy="1833"') && overlay.includes('cx="150" cy="1833"') && overlay.includes('r="30"'));
+assert.ok(overlay.includes('mix-blend-mode:multiply') && overlay.includes('data-blend="multiply"'));
+assert.ok(overlay.includes('id="floating-emblem"'), "Floating emblem must render.");
+assert.ok(overlay.includes('id="dual-tone-headline"'));
+assert.ok(overlay.includes('id="headline-line-1"') && overlay.includes('fill="url(#headline-silver-gradient)"'));
+assert.ok(overlay.includes('id="headline-line-2"') && overlay.includes('fill="url(#headline-gold-gradient)"'));
+assert.ok(overlay.includes('font-size="76"') && overlay.includes('font-size="78"'));
+assert.ok(overlay.includes('id="sales-copy-editorial"') && overlay.includes('data-metallic-gold="true"'));
+assert.ok(overlay.includes('id="contact-block"') && overlay.includes('id="contact-vignette"'));
+assert.ok(overlay.includes('y="1770"') && overlay.includes('fill="#FBBF24"'));
 assert.equal(overlay.includes('href="/studio-scenes/'), false);
 assert.equal(overlay.includes("..."), false);
 
@@ -652,13 +541,14 @@ assert.equal(
 );
 assert.ok(compositeOverlay.includes('data-staged-product="true"'), "Composite scene must be marked data-staged-product=true.");
 assert.ok(compositeOverlay.includes('data-ai-composite="true"'), "Composite scene must be marked data-ai-composite=true.");
-assert.ok(compositeOverlay.includes('id="sales-copy-editorial"'), "Metallic sales copy must sit on top of the composite.");
+assert.ok(compositeOverlay.includes('id="sales-copy-editorial"'), "Headline/copy layer must sit on top of the composite.");
 assert.ok(compositeOverlay.includes('id="contact-block"'), "Contact bar must sit on top of the composite.");
+assert.ok(compositeOverlay.includes('id="dual-tone-headline"'), "Dual-tone headline must render over the composite.");
 
 const defaultOverlay = OverlaySystem.generateOverlaySvg({ width: 1080, height: 1920 });
 assert.ok(defaultOverlay.includes(brand.contact.phone));
-assert.ok(defaultOverlay.includes("\u200Fللتواصل:"));
-assert.ok(defaultOverlay.includes('id="simple-botanical-horizon"'), "Default overlay must use the Simple botanical horizon theme.");
+assert.ok(defaultOverlay.includes(brand.contact.label));
+assert.ok(defaultOverlay.includes('id="simple-botanical-horizon"'), "Default overlay must use the Simple botanical horizon fallback theme.");
 
 // --- Single-source guard ----------------------------------------------------
 
@@ -685,7 +575,7 @@ assert.deepEqual(
 );
 
 console.log(
-  "Al Rahma pipeline tests passed: BrandConfig, 4-8 benefit-only copy (no usage, no ellipsis), Simple botanical-horizon theme (horizon y=1240, volumetric clouds, botanical base, true mirror reflection, 3D white brand lockup, metallic gold 46px headline, composite-aware hero), adaptive palettes, multiply white-box protection, secondary variations, no podium or side pills, socialCaption, quality gate, promos, 48h cultural greeting, and single-source brand identity.",
+  "Al Rahma pipeline tests passed: BrandConfig, 4-8 benefit-only copy (no usage, no ellipsis), luxury editorial/outdoor art direction (floating emblem, dual-tone 3D headline, atmospheric contact vignette), fallback botanical-horizon hero with mirror reflection, composite-aware hero, adaptive palettes, multiply white-box protection, socialCaption, quality gate, promos, 48h cultural greeting, and single-source brand identity.",
 );
 })().catch((error) => {
   console.error(error);

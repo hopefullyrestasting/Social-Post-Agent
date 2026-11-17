@@ -67,21 +67,30 @@ not redesign or replace it.
 
 - Canvas: **1080 × 1920** vertical (`portrait`), defined in
   `AL_RAHMA_BRAND_CONFIG.visual.format`.
-- Background: clean white `#FFFFFF` with a **subtle silver mesh** `#CBD5E1`
-  (low opacity). No loud gradients, no dark backgrounds for product ads.
+- Scene: **photorealistic outdoor/editorial luxury** (9:16), reference-conditioned
+  via image-to-image. Place the authentic product naturally on real, tactile
+  surfaces with crisp natural golden-hour sunlight, realistic directional shadows
+  and colored glass/light caustics, and creamy cinematic shallow depth of field
+  (85mm f/1.8). Category environments: marine/fresh perfumes → sunlit coastal
+  sandstone with Mediterranean sea spray bokeh; oud/warm/oriental → dark basalt
+  with golden-amber haze/incense smoke; skincare/botanicals → sun-dappled wet
+  travertine with mint/leaves/dew and garden bokeh. Keep the upper 35% clean/open
+  for headline typography and the bottom 12% darker for contact text. No fake
+  podiums, no flat studio backdrop, no generated text/watermarks/extra bottles.
 - Product: reference-conditioned composite — the authentic cutout is the
-  image-to-image conditioning input, so lighting, shadows, mist and botanicals
-  interact with the real package. The model must preserve the label; if no model
-  is available, fall back to a background plate with the authentic packshot
-  centred, generous margins, and the label fully legible. No text-to-image
-  redraw, no AI-restyled package.
-- Typography: strict **Arabic RTL** (`dir="rtl"`), Cairo/Tajawal from
-  `brandConfig.visual.fonts`; clear hierarchy (bold 3D white brand header →
-  metallic gold `#F6E27A → #D4AF37 → #8A5A10` benefit/promo headline with deep
-  layered shadow → clean contact bar); no faux-Arabic glyphs, no Latin fallback
-  for Arabic text.
-- Overlay elements: brand chip, one badge, optional verified-only copy, footer
-  contact bar. Keep safe zones clear of platform UI.
+  image-to-image conditioning input. The model must preserve bottle shape, cap,
+  glass/packaging colors and the original label text/logos **100% authentic and
+  undistorted**; if no model is available, fall back to a deterministic
+  background plate with the authentic SVG packshot (no text-to-image redraw).
+- Typography/layout (agency-grade, no boxy containers): floating Al-Rahma
+  emerald-and-gold emblem top-right (subtle ambient shadow, no solid header bar);
+  upper-center dual-tone 3D headline — Line 1 silver-white `#FFFFFF→#E2E8F0`
+  (76px Cairo 900, depth shadow), Line 2 metallic gold `#FDE68A→#D97706→#92400E`
+  (78px Cairo 900, bevel shadow), Line 3 crisp white `#F8FAFC` (42px Cairo 700,
+  verified benefit, 4–6 words, no ellipsis); bottom atmospheric contact bar
+  (dark navy/emerald vignette `rgba(6,24,38,0)→0.92`, single-line 42px Cairo
+  lockup: brand/request in warm gold `#FBBF24` + phone in bold white). Strict
+  **Arabic RTL** (`dir="rtl"`), Cairo/Tajawal; no faux-Arabic glyphs.
 
 ## D1 and API rules
 

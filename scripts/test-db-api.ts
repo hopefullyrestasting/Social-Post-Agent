@@ -821,7 +821,8 @@ async function testCompositeCampaignWiring() {
       "A composite must not be duplicated by a flat SVG packshot.",
     );
     assert.ok(
-      String(creative.svg).includes("url(#metallic-gold-gradient)"),
+      String(creative.svg).includes("url(#headline-gold-gradient)") ||
+        String(creative.svg).includes("url(#metallic-gold-gradient)"),
       "Metallic gold typography must render over the composite.",
     );
   }

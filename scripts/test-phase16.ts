@@ -384,34 +384,42 @@ async function testProductComposite() {
   // real shadows/reflections, and absolutely no new text or packaging redraw.
   const prompt = buildProductCompositePrompt({
     styleId: "simple-botanical-horizon",
-    context: { category: "haircare", name: "شامبو" },
+    context: { category: "haircare", name: "شامبو", brand: "فاتيكا" },
   });
-  assert.match(prompt, /image-to-image/i);
-  assert.match(prompt, /attached image is the ONLY authentic reference/i);
-  assert.match(prompt, /Preserve the product exactly/i);
-  assert.match(prompt, /every Arabic and Latin letter of the label/i);
+  assert.match(prompt, /Commercial luxury product photography/i);
+  assert.match(prompt, /reference image/i);
+  assert.match(prompt, /Strictly preserve the exact bottle shape/i);
+  assert.match(prompt, /original label text and logos/i);
+  assert.match(prompt, /Copy every Arabic and Latin letter pixel-for-pixel/i);
   assert.match(prompt, /Never redraw, reletter, translate/i);
-  assert.match(prompt, /1080x1920/i);
   assert.match(prompt, /9:16/i);
-  assert.match(prompt, /contact shadow/i);
-  assert.match(prompt, /mirror reflection/i);
-  assert.match(prompt, /soft white studio mist/i);
-  assert.match(prompt, /Palette lock/i);
-  assert.match(prompt, /bright neutral white \(#FFFFFF\)/i);
-  assert.match(prompt, /no warm, beige, cream, brown, orange or grey colour cast/i);
-  assert.match(prompt, /Copy the label typography pixel-for-pixel/i);
-  assert.match(prompt, /Do not add any new text or typography/i);
-  assert.match(prompt, /no duplicates/i);
+  assert.match(prompt, /upper 35%.*clean, open, and softly lit/i);
+  assert.match(prompt, /bottom 12%.*darker/i);
+  assert.match(prompt, /directional shadows and colored glass light refraction \(caustics\)/i);
+  assert.match(prompt, /shallow depth of field \(85mm f\/1\.8 lens\)/i);
+  assert.match(prompt, /No generated text, no watermarks, no extra bottles/i);
+  assert.match(prompt, /One single authentic product only/i);
   assert.equal(
     /no product|no bottle|no packaging/i.test(prompt),
     false,
     "The composite prompt includes the product (unlike background-only prompts).",
   );
+  // Skincare/haircare defaults to sun-dappled wet travertine botanical environment.
+  assert.match(prompt, /sun-dappled wet travertine stone/i);
+  assert.match(prompt, /lush sunlit botanical garden bokeh/i);
 
-  // The noir direction keeps its smoke; bright directions never get dark haze.
-  const noirPrompt = buildProductCompositePrompt({ styleId: "luxury-amber-noir" });
-  assert.match(noirPrompt, /drifting volumetric smoke/i);
-  assert.equal(/soft white studio mist/i.test(noirPrompt), false);
+  // Category/environment mapping (master art direction).
+  const marine = buildProductCompositePrompt({
+    context: { category: "perfume", name: "Assaf Wild Colt", brand: "Assaf" },
+  });
+  assert.match(marine, /sunlit rough coastal sandstone rock/i);
+  assert.match(marine, /deep blue Mediterranean sea waves/i);
+
+  const oud = buildProductCompositePrompt({
+    context: { category: "perfume", name: "Khamriya Oud", brand: "Lattafa" },
+  });
+  assert.match(oud, /dark textured basalt stone slab/i);
+  assert.match(oud, /golden-amber sunset haze and subtle drifting incense smoke/i);
 
   // No provider configured -> graceful fallback, no reference leaves the app.
   const offline = await compositeProductScene({}, reference, { category: "skincare" });
@@ -471,7 +479,8 @@ async function testProductComposite() {
       true,
       "The authentic packshot must be sent to the model as the reference.",
     );
-    assert.match(sentBody, /Preserve the product exactly/i);
+    assert.match(sentBody, /Strictly preserve the exact bottle shape/i);
+    assert.match(sentBody, /Copy every Arabic and Latin letter pixel-for-pixel/i);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -517,7 +526,9 @@ async function testProductComposite() {
     "The authentic packshot must be attached as the input_image_0 reference.",
   );
   assert.match(multipartText, /name="prompt"/);
-  assert.match(multipartText, /Preserve the product exactly/i);
+  assert.match(multipartText, /Strictly preserve the exact bottle shape/i);
+  assert.match(multipartText, /upper 35%/i);
+  assert.match(multipartText, /bottom 12%/i);
   assert.match(multipartText, /name="width"\r\n\r\n768/);
   assert.match(multipartText, /name="height"\r\n\r\n1344/);
   assert.ok(String(workers.image).startsWith("data:image/png;base64,"));

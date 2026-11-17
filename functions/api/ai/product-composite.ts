@@ -101,19 +101,42 @@ const ALLOWED_MIMES = new Set([
   "image/avif",
 ]);
 
-const COMPOSITE_SCENE_BY_STYLE: Record<ArtDirectionStyleId, string> = {
-  "simple-botanical-horizon":
-    "bright white and pale silver studio, a subtle silver mesh backdrop, a glossy reflective floor in the lower third, fresh green mint and botanical leaves curling around the base, soft volumetric white mist",
-  "sunlit-travertine":
-    "warm sunlit travertine and limestone studio, golden-hour light, soft palm and monstera leaf shadows, brushed brass and cream tones, gentle dust motes in the air",
-  "aqua-splash-minimal":
-    "pale aqua and pearl-white spa studio, fresh water caustics and suspended droplets, dewy mint leaves, crisp clean daylight reflections",
-  "luxury-amber-noir":
-    "dark smoked stone architectural studio, dramatic amber rim light, drifting volumetric smoke, deep noir shadows and warm gold reflections",
-  "botanical-terracotta":
-    "warm sand-beige plaster studio, terracotta surface, diffused daylight with eucalyptus leaf shadows, natural linen and clay textures",
-  "modern-clinical-glow":
-    "pearl-white and soft silver clinical studio, frosted glass glow, gentle emerald rim light, polished metal surface with clean reflections",
+/**
+ * Master art-direction environments (outdoor/editorial luxury). The authentic
+ * packshot is relit and placed naturally onto a real tactile surface — never on
+ * a fake podium and never against a flat studio backdrop.
+ */
+interface EditorialEnvironment {
+  surfaceMaterial: string;
+  environmentalBackdrop: string;
+}
+
+const MARINE_FRESH_ENV: EditorialEnvironment = {
+  surfaceMaterial: "sunlit rough coastal sandstone rock",
+  environmentalBackdrop:
+    "deep blue Mediterranean sea waves crashing with soft white sea-spray mist under a clear warm sky",
+};
+
+const OUD_WARM_ENV: EditorialEnvironment = {
+  surfaceMaterial: "dark textured basalt stone slab",
+  environmentalBackdrop:
+    "warm golden-amber sunset haze and subtle drifting incense smoke",
+};
+
+const BOTANICAL_ENV: EditorialEnvironment = {
+  surfaceMaterial:
+    "sun-dappled wet travertine stone with fresh mint/botanical leaves and morning dew droplets",
+  environmentalBackdrop:
+    "lush sunlit botanical garden bokeh with warm natural sunbeams",
+};
+
+// Style hints retained for API compatibility with existing callers/tests.
+const STYLE_ENVIRONMENT_HINT: Partial<Record<ArtDirectionStyleId, EditorialEnvironment>> = {
+  "luxury-amber-noir": OUD_WARM_ENV,
+  "aqua-splash-minimal": MARINE_FRESH_ENV,
+  "sunlit-travertine": BOTANICAL_ENV,
+  "botanical-terracotta": BOTANICAL_ENV,
+  "modern-clinical-glow": BOTANICAL_ENV,
 };
 
 function contextHaystack(context?: ProductCompositeContext): string {
@@ -123,53 +146,64 @@ function contextHaystack(context?: ProductCompositeContext): string {
     .toLowerCase();
 }
 
-function categoryMood(context?: ProductCompositeContext): string {
+export function resolveEditorialEnvironment(
+  context?: ProductCompositeContext,
+  styleId?: ArtDirectionStyleId,
+): EditorialEnvironment {
   const haystack = contextHaystack(context);
-  if (/(perfume|fragrance|oud|عود|عطر|برفان|بارفان|luxury|فخم)/.test(haystack)) {
-    return "Sophisticated Arabian luxury fragrance campaign mood with rich amber depth.";
-  }
-  if (/(hair|shampoo|conditioner|oil|زيت|شعر|شامبو|بلسم|أطفال|اطفال)/.test(haystack)) {
-    return "Fresh clean botanical haircare campaign mood with natural ingredient energy.";
-  }
-  if (/(skin|cream|moistur|بشرة|كريم|مرطب|ترطيب|aloe|ألو)/.test(haystack)) {
-    return "Fresh hydrated skincare campaign mood with clean spa freshness.";
-  }
-  return "Premium Egyptian beauty retail campaign mood.";
-}
 
-/**
- * Atmosphere is style-locked so a bright studio never drifts into dark smoke
- * and the noir style never loses its smoke.
- */
-function atmosphereForStyle(styleId: ArtDirectionStyleId): string {
-  return styleId === "luxury-amber-noir"
-    ? "drifting volumetric smoke catching the amber light"
-    : "soft white studio mist and a faint haze catching the light";
+  // Marine / Fresh perfumes (e.g. Assaf Wild Colt, blue/fresh scents).
+  if (
+    /(wild colt|marine|fresh|aquatic|ocean|sea|blue|بحر|بحري|منعش|فريش|أزرق|ازرق)/.test(
+      haystack,
+    )
+  ) {
+    return MARINE_FRESH_ENV;
+  }
+
+  // Oud / Warm / Oriental perfumes (e.g. Dior Sauvage, Khamriya).
+  if (
+    /(oud|oriental|warm|amber|noir|smoke|incense|tobacco|spice|sauvage|khamriya|عود|شرقي|دافئ|عنبر|خمريا)/.test(
+      haystack,
+    ) ||
+    /(perfume|fragrance|عطر|برفان|بارفان)/.test(haystack)
+  ) {
+    return OUD_WARM_ENV;
+  }
+
+  // Skincare / Moisturizers / Botanicals (default commercial category).
+  if (
+    /(skin|cream|moistur|lotion|serum|shampoo|conditioner|hair|mask|aloe|botanical|بشرة|كريم|مرطب|شعر|شامبو|بلسم|ماسك|عناية|صابون|غسول)/.test(
+      haystack,
+    )
+  ) {
+    return BOTANICAL_ENV;
+  }
+
+  return (styleId && STYLE_ENVIRONMENT_HINT[styleId]) || BOTANICAL_ENV;
 }
 
 /**
  * Builds the reference-conditioned compositing prompt. Exported so tests can
  * pin the policy contract (preserve the label, 9:16 guide, real shadows and
- * reflections) without calling a model.
+ * caustic light) without calling a model.
  */
 export function buildProductCompositePrompt(
   input: ProductCompositePromptInput = {},
 ): string {
-  const width = input.width ?? 1080;
-  const height = input.height ?? 1920;
   const styleId = input.styleId ?? "simple-botanical-horizon";
-  const scene = COMPOSITE_SCENE_BY_STYLE[styleId] ?? COMPOSITE_SCENE_BY_STYLE["simple-botanical-horizon"];
+  const env = resolveEditorialEnvironment(input.context, styleId);
+  const name = (input.context?.name || "").trim() || "product";
+  const brand = (input.context?.brand || "").trim();
+  const productName = [brand, name].filter(Boolean).join(" ");
 
   return [
-    "Reference-conditioned commercial product compositing (image-to-image relighting and outpainting), not a flat sticker paste.",
-    "The attached image is the ONLY authentic reference for the product packaging. Insert that exact product into the scene below.",
-    "Preserve the product exactly: the brand name, every Arabic and Latin letter of the label, the logo, the packaging colours, material, cap and proportions must stay identical to the reference. Copy the label typography pixel-for-pixel: never redraw, reletter, translate, replace, crop or invent any packaging element. Keep every printed letter razor sharp and fully legible.",
-    `Scene: ${scene}. ${categoryMood(input.context)}`,
-    "Palette lock: the backdrop must stay bright neutral white (#FFFFFF) with only a pale silver mesh texture — absolutely no warm, beige, cream, brown, orange or grey colour cast, and no dark background. Gold appears only as a thin rim highlight on the package edges, never as a backdrop tint.",
-    `Lighting and physics: cinematic studio lighting, soft white key light, a subtle pale-gold rim light tracing the package edges, a real 3D perspective contact shadow on the surface, a glossy mirror reflection directly beneath the product, ${atmosphereForStyle(styleId)}, and botanical leaves wrapping around the base with believable depth of field.`,
-    `Composition guide (${width}x${height}, vertical 9:16): place the product upright, centred and fully visible, occupying about 62% of the frame height, roughly x=20%..80% and y=18%..68%. Keep the top 18% clean for Arabic headline typography and the bottom 22% clean and uncluttered for a contact bar.`,
-    "Do not add any new text or typography: no headline, no price, no discount, no watermark, no logo overlay. The only text in the image must be the authentic label already printed on the product.",
-    "One single product only, no duplicates, no extra bottles or jars, no floating cut-out edges, no platform edge, photorealistic 8k commercial advertising photography.",
+    `Commercial luxury product photography of the exact ${productName} bottle from the reference image standing upright on a natural ${env.surfaceMaterial} ledge, bathed in crisp natural golden-hour sunlight.`,
+    "Realistic directional shadows and colored glass light refraction (caustics) cast across the textured surface.",
+    `Background features ${env.environmentalBackdrop} rendered in creamy cinematic shallow depth of field (85mm f/1.8 lens).`,
+    "Leave the upper 35% of the vertical 9:16 frame clean, open, and softly lit for bold Arabic headline typography, and keep the bottom 12% darker for contact text.",
+    "Strictly preserve the exact bottle shape, cap, glass color, colors, and original label text and logos from the reference image 100% authentic and undistorted. Copy every Arabic and Latin letter pixel-for-pixel: never redraw, reletter, translate, replace, crop or invent any packaging element; keep all printed text razor sharp and fully legible.",
+    "No generated text, no watermarks, no extra bottles, no fake podium, no flat studio backdrop. One single authentic product only, photorealistic 8k commercial advertising photography.",
   ].join(" ");
 }
 
@@ -794,8 +828,17 @@ function noStoreJson(payload: unknown, status = 200): Response {
   });
 }
 
+const KNOWN_STYLE_IDS: ReadonlySet<string> = new Set([
+  "simple-botanical-horizon",
+  "sunlit-travertine",
+  "aqua-splash-minimal",
+  "luxury-amber-noir",
+  "botanical-terracotta",
+  "modern-clinical-glow",
+]);
+
 function isStyleId(value: unknown): value is ArtDirectionStyleId {
-  return typeof value === "string" && value in COMPOSITE_SCENE_BY_STYLE;
+  return typeof value === "string" && KNOWN_STYLE_IDS.has(value);
 }
 
 export const onRequestPost: PagesFunction<ProductCompositeEnv> = async ({
