@@ -491,9 +491,10 @@ async function testProductComposite() {
     PNG_BASE64,
     "img2img must receive the authentic cutout as image_b64.",
   );
-  assert.equal(aiCalls[0].input.strength, 0.45);
-  assert.equal(aiCalls[0].input.width, 720);
-  assert.equal(aiCalls[0].input.height, 1280);
+  assert.equal(aiCalls[0].input.strength, 0.6);
+  assert.equal(aiCalls[0].input.width, 512);
+  assert.equal(aiCalls[0].input.height, 896);
+  assert.equal(aiCalls[0].input.num_steps, 6);
   assert.match(String(aiCalls[0].input.prompt), /Preserve the product exactly/i);
   assert.ok(String(workers.image).startsWith("data:image/png;base64,"));
 

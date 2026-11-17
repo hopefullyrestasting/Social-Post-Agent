@@ -563,8 +563,10 @@ async function generateWithWorkersAi(
     "blurry label, distorted text, misspelled letters, extra bottles, duplicate product, watermark, price tag, low quality, deformed packaging";
 
   // SDXL Base 1.0 exposes a real img2img path (`image_b64` + strength), which
-  // preserves the reference layout far better than a text-only model. The
-  // retired Runway img2img endpoint is kept as a last resort.
+  // preserves the reference layout far better than a text-only model. Inference
+  // must stay inside the Workers AI request budget, so the pass is deliberately
+  // light (512x896, 6 steps): heavier settings returned `3046: Request timeout`.
+  // The retired Runway img2img endpoint is kept as a last resort.
   const attempts: { model: string; input: Record<string, unknown> }[] = [
     {
       model: MODEL_WORKERS_IMG2IMG,
@@ -572,11 +574,11 @@ async function generateWithWorkersAi(
         prompt,
         negative_prompt: negativePrompt,
         image_b64: reference.base64,
-        strength: 0.45,
-        guidance: 7.5,
-        num_steps: 20,
-        width: 720,
-        height: 1280,
+        strength: 0.6,
+        guidance: 6.5,
+        num_steps: 6,
+        width: 512,
+        height: 896,
       },
     },
     {
@@ -585,9 +587,9 @@ async function generateWithWorkersAi(
         prompt,
         negative_prompt: negativePrompt,
         image: Array.from(reference.bytes),
-        strength: 0.38,
-        guidance: 7.5,
-        num_steps: 20,
+        strength: 0.5,
+        guidance: 7,
+        num_steps: 6,
         width: 512,
         height: 896,
       },

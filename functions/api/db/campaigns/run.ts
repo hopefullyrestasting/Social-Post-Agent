@@ -367,11 +367,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       ]);
 
       // Authorized reference-conditioned compositing (AGENTS.md rule #4): the
-      // authentic cutout is sent as the image-to-image conditioning input so the
-      // model paints real perspective shadows, floor reflections, rim light,
+      // authentic packshot is sent as the image-to-image conditioning input so
+      // the model paints real perspective shadows, floor reflections, rim light,
       // mist and botanicals around the genuine package while preserving the
-      // label. When no provider is configured we fall back to a background-only
-      // plate plus the authentic SVG packshot composite.
+      // label. The photographic source is preferred over the transparent cutout
+      // because img2img needs real pixels where the scene will be extended;
+      // the BRIA cutout remains the authentic packshot for the fallback overlay.
+      // When no provider is configured we fall back to a background-only plate
+      // plus the authentic SVG packshot composite.
       let cutoutImage: string | null = null;
       try {
         cutoutImage = await removePackshotBackgroundServer(env, product.image_url);
@@ -389,8 +392,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       };
 
       const [composite1, composite2] = await Promise.all([
-        compositeProductScene(env, productImageUrl, sceneContext, { styleId: style1 }),
-        compositeProductScene(env, productImageUrl, sceneContext, { styleId: style2 }),
+        compositeProductScene(env, product.image_url, sceneContext, { styleId: style1 }),
+        compositeProductScene(env, product.image_url, sceneContext, { styleId: style2 }),
       ]);
 
       // Background plate (only for variants the compositor could not produce):
