@@ -59,9 +59,31 @@ function commonDefs(): string {
         <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#0F172A" flood-opacity="0.10" />
       </filter>
       <filter id="rim-light" x="-25%" y="-25%" width="150%" height="150%">
-        <feDropShadow dx="0" dy="-2" stdDeviation="6" flood-color="#FFFFFF" flood-opacity="0.22" />
-        <feDropShadow dx="0" dy="0" stdDeviation="10" flood-color="#E2E8F0" flood-opacity="0.18" />
+        <feDropShadow dx="0" dy="-2" stdDeviation="6" flood-color="#FFFFFF" flood-opacity="0.38" result="rim-top" />
+        <feDropShadow dx="0" dy="0" stdDeviation="10" flood-color="#CBD5E1" flood-opacity="0.30" result="rim-glow" />
+        <feMerge>
+          <feMergeNode in="rim-glow" />
+          <feMergeNode in="rim-top" />
+          <feMergeNode in="SourceGraphic" />
+        </feMerge>
       </filter>
+      <linearGradient id="metallic-floor-sheen" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#F8FAFC" stop-opacity="0.38" />
+        <stop offset="45%" stop-color="#CBD5E1" stop-opacity="0.18" />
+        <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0" />
+      </linearGradient>
+      <linearGradient id="metallic-horizon-highlight" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0" />
+        <stop offset="22%" stop-color="#FFFFFF" stop-opacity="0.55" />
+        <stop offset="50%" stop-color="#E2E8F0" stop-opacity="0.85" />
+        <stop offset="78%" stop-color="#FFFFFF" stop-opacity="0.55" />
+        <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0" />
+      </linearGradient>
+      <radialGradient id="metallic-contact-shadow-gradient" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="#0F172A" stop-opacity="0.38" />
+        <stop offset="60%" stop-color="#0F172A" stop-opacity="0.16" />
+        <stop offset="100%" stop-color="#0F172A" stop-opacity="0" />
+      </radialGradient>
       <filter id="contact-shadow-tight" x="-40%" y="-160%" width="180%" height="420%">
         <feGaussianBlur stdDeviation="4.5" />
       </filter>
@@ -206,12 +228,31 @@ function heroPackshot(
   // Transparent cutouts get a soft studio drop shadow; multiply-blended originals
   // melt their white padding into the backdrop, so no shadow frame is drawn.
   const imageFilter = cutout ? ' filter="url(#soft-drop)"' : "";
+  // A true rim light only reads on transparent cutouts. On a multiply-blended
+  // original it would outline the white padding and reveal a box, so it is
+  // reserved for cutouts and never restyles the packaging itself.
+  const rimWrapOpen = cutout ? '<g filter="url(#rim-light)" data-rim="true">' : "<g>";
+  const rimWrapClose = "</g>";
   const blendMarker = cutout ? "cutout" : "multiply";
 
+  // Metallic silver floor plate: sits under the hero and its reflection so the
+  // product appears seated on a polished metal horizon (y=1240) with a grounded
+  // contact shadow for cutouts. Drawn behind the packshot, so it never tints the
+  // authentic label.
+  const metallicFloor = `
+      <g id="metallic-floor" data-metallic="true">
+        <rect x="0" y="${reflectFrom}" width="${width}" height="250" fill="url(#metallic-floor-sheen)" />
+        <rect x="140" y="${reflectFrom + 2}" width="${width - 280}" height="3" fill="url(#metallic-horizon-highlight)" />
+        ${cutout ? `<ellipse id="metallic-contact-shadow" cx="${cx}" cy="${reflectFrom - 4}" rx="300" ry="30" fill="url(#metallic-contact-shadow-gradient)" />` : ""}
+      </g>`;
+
   return `
-    <g id="packshot-hero" data-blend="${blendMarker}">
+    <g id="packshot-hero" data-blend="${blendMarker}" data-metallic="true">
+      ${metallicFloor}
       <g id="packshot" data-packshot="true">
+        ${rimWrapOpen}
         <image data-packshot="true" data-blend="${blendMarker}" href="${escapeXml(productUrl)}" x="${packshotX}" y="${packshotY}" width="${packshotW}" height="${packshotH}" preserveAspectRatio="xMidYMid meet"${imageFilter}${blendStyle} />
+        ${rimWrapClose}
       </g>
       <!-- True vertical mirror reflection on the glossy floor ("translate(0, 2480) scale(1, -1)" mirrors about y=1240) -->
       <g id="packshot-reflection" clip-path="url(#reflection-clip)" mask="url(#reflection-fade)" filter="url(#reflection-blur)" data-reflect-from="${reflectFrom}" data-reflect-to="${reflectTo}">

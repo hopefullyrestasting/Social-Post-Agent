@@ -271,6 +271,18 @@ assert.notEqual(variants[0].svgOverlay, variants[1].svgOverlay, "Variants must d
     assert.ok(result.svgOverlay.includes('mix-blend-mode:multiply'), "Non-cutout packshot must use mix-blend-mode:multiply to remove white box.");
     assert.ok(result.svgOverlay.includes('data-blend="multiply"'), "Non-cutout packshot must be marked data-blend=multiply.");
 
+    // Metallic/rim-lit stage: polished silver floor plate under the hero and a
+    // real rim-light filter definition, without tinting the authentic label.
+    assert.ok(result.svgOverlay.includes('id="metallic-floor"'), "Hero must sit on a metallic silver floor plate.");
+    assert.ok(result.svgOverlay.includes('data-metallic="true"'), "Metallic stage must be marked for visual regression.");
+    assert.ok(result.svgOverlay.includes('url(#metallic-horizon-highlight)'), "Metallic horizon line must use the silver highlight gradient.");
+    assert.ok(result.svgOverlay.includes('<feMerge>') && result.svgOverlay.includes('in="SourceGraphic"'), "Rim light must merge white edge glow with the source graphic.");
+    assert.equal(
+      result.svgOverlay.includes('data-rim="true"'),
+      false,
+      "Multiply-blended originals must not get a rim light (it would outline the white padding).",
+    );
+
     assert.ok(result.svgOverlay.includes('id="top-header-pill"'), "Top dark-emerald header pill must render.");
     assert.ok(
       result.svgOverlay.includes('x="40" y="36" width="1000" height="120"'),
@@ -376,6 +388,8 @@ assert.ok(cutoutOverlay.includes('x="190" y="380" width="700" height="860"'), "C
 assert.ok(cutoutOverlay.includes('data-blend="cutout"'), "Transparent cutout must be marked data-blend=cutout.");
 assert.equal(cutoutOverlay.includes('mix-blend-mode:multiply'), false, "Transparent cutout must not use multiply blend.");
 assert.ok(cutoutOverlay.includes('filter="url(#soft-drop)"'), "Transparent cutout must render with soft drop shadow.");
+assert.ok(cutoutOverlay.includes('data-rim="true"'), "Transparent cutout must receive the metallic rim light.");
+assert.ok(cutoutOverlay.includes('id="metallic-contact-shadow"'), "Transparent cutout must cast a grounded metallic contact shadow.");
 assert.ok(cutoutOverlay.includes('id="packshot-reflection"'), "Cutout must also render a mirror reflection.");
 
 const single = ProductionEngine.execute({ product: verifiedProduct, today: fixedToday });

@@ -1,13 +1,16 @@
 /**
  * POST /api/ai/nano-banana-stage
  *
- * Server-side photorealistic product staging via Google Gemini image generation
- * ("Nano Banana"). Places the authentic product bottle onto a studio podium
- * scene without altering labels/text. Falls back gracefully to the existing
- * BRIA cutout + studio-scene pipeline when unavailable.
+ * Background-only photorealistic stage generation via Google Gemini image
+ * generation ("Nano Banana").
+ *
+ * IMPORTANT: no product photo is ever sent to the model and the prompt never
+ * asks for a bottle/box/packaging. An image model must never redraw packaging
+ * (repository hard constraint #4): this endpoint produces a clean background
+ * plate only, and the authentic packshot is composited afterwards by the SVG
+ * overlay (`packshot-hero`). Campaigns use this as an optional background
+ * provider; the FLUX/deterministic `studio-scene` pipeline remains the fallback.
  */
-
-import { validateRemoteImageUrl } from "./remove-bg";
 
 export interface NanoBananaEnv {
   GEMINI_API_KEY?: string;
@@ -28,28 +31,23 @@ export interface NanoBananaArtDirection {
   benefits?: string[] | null;
 }
 
-const MAX_BYTES = 10 * 1024 * 1024; // 10 MB
-
-const ALLOWED_IMAGE_TYPES = new Set([
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-  "image/avif",
-]);
-
 const MODEL_PRIMARY = "gemini-2.5-flash-image";
 const MODEL_FALLBACK = "gemini-2.0-flash-exp-image-generation";
 
-const STRICT_STAGING_SUFFIX =
-  'Commercial beauty advertisement photography featuring the exact product bottle/packaging from the reference image standing large and dominant in the center-middle of a 9:16 vertical frame. Strictly preserve the original product shape, cap, proportions, colors, and label typography 100% untouched and undistorted. Keep the top 25% and bottom 28% clean, softly lit, uncluttered negative space for Arabic editorial typography. No text, no watermarks, no random letters anywhere.';
+/**
+ * Hard background-only contract. Every generated plate has to stay free of the
+ * product so the real packshot can be placed on top without duplication.
+ */
+const BACKGROUND_ONLY_SUFFIX =
+  "Pure empty background plate for a commercial beauty advertisement: no product, no bottle, no jar, no tube, no box, no sachet, no packaging, no label, no cap, no text, no letters, no logo, no watermark anywhere in the frame. No podium, no plinth, no pedestal, no stage, no platform, no table, no shelf. Keep the central area open, softly lit and uncluttered so a real product packshot can be composited on top later, with generous clean negative space at the top for Arabic editorial typography. Vertical 9:16, photorealistic 8k commercial studio photography.";
 
-type StageStyle = "haircare-botanical" | "luxury-perfume" | "skincare-spa" | "default";
+type StageMood = "haircare-botanical" | "luxury-perfume" | "skincare-spa" | "default";
 
 function normalizeText(value: string | null | undefined): string {
   return (value ?? "").trim().toLowerCase();
 }
 
-function detectStageStyle(context: NanoBananaArtDirection): StageStyle {
+function detectStageMood(context: NanoBananaArtDirection): StageMood {
   const haystack = [context.brand, context.category, context.name, ...(context.benefits ?? [])]
     .map((v) => normalizeText(v))
     .join(" ");
@@ -64,86 +62,45 @@ function detectStageStyle(context: NanoBananaArtDirection): StageStyle {
   return "default";
 }
 
-function stageSceneDescription(style: StageStyle): string {
-  switch (style) {
+function templateDescription(template: TemplateId): string {
+  switch (template) {
+    case "simple-botanical-horizon":
+      return "Smooth monochrome sage-green studio wall meeting a glossy reflective glass horizon floor in the lower third, two small soft white volumetric clouds floating in the upper sky, fresh green mint and botanical leaves clustered along the horizon, subtle white and silver mesh highlights, bright airy editorial daylight.";
+    case "botanical-arch-frame":
+      return "Warm sunlit limestone and travertine wall with a soft botanical arch frame, golden-hour light casting delicate palm and monstera leaf shadows, creamy sage and beige tones, airy editorial depth, subtle brushed-silver accents.";
+    case "editorial-beauty-card":
+      return "Fresh spa editorial backdrop with pale aqua and pearl-white seamless gradient, dewy caustics and soft silver specular highlights, crisp natural daylight, clean minimal pharmacy-beauty mood.";
+    case "silver-podium-botanical":
+    default:
+      return "Premium clinical beauty backdrop with pearl-white and soft silver architectural wall, frosted-glass glow, gentle emerald rim light, subtle metallic mesh texture, bright even studio lighting.";
+  }
+}
+
+function moodModifier(mood: StageMood): string {
+  switch (mood) {
     case "haircare-botanical":
-      return "Sunlit warm botanical editorial stage — textured travertine stone plinth, golden sunbeams casting crisp palm/monstera leaf shadows, natural argan/shea/botanical accents, warm creamy/sage studio depth, 85mm macro lens, shallow depth of field.";
+      return "Warm botanical haircare mood with argan and shea leaf accents.";
     case "luxury-perfume":
-      return "Moody architectural luxury stage — dark smoked-travertine & brushed brass pedestal, warm amber rim lighting, subtle agarwood/floral mist accents, dramatic editorial shadows.";
+      return "Sophisticated Arabian luxury fragrance mood with smoky amber and brushed-brass light.";
     case "skincare-spa":
-      return "Fresh spa & hydration editorial stage — sculpted matte ceramic & water-rippled marble surface, dewy water droplets, fresh aloe/botanical leaves, crisp natural daylight.";
+      return "Hydration and spa freshness mood with dewy droplets and aloe leaves.";
     case "default":
     default:
-      return "Clean premium beauty editorial studio stage with refined stone/ceramic surfaces, soft directional studio lighting, subtle botanical accents, and elegant depth of field.";
+      return "Clean premium beauty editorial mood.";
   }
 }
 
-function buildStagingPrompt(context: NanoBananaArtDirection): string {
-  void context;
-  const style = detectStageStyle(context);
-  return `${stageSceneDescription(style)} ${STRICT_STAGING_SUFFIX}`;
-}
-
-function base64FromBytes(bytes: Uint8Array): string {
-  let binary = "";
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
-  }
-  return btoa(binary);
-}
-
-function normalizeImageContentType(value: string | null): string | null {
-  if (!value) return null;
-  const mime = value.split(";")[0]?.trim().toLowerCase() ?? "";
-  return ALLOWED_IMAGE_TYPES.has(mime) ? mime : null;
-}
-
-async function fetchSourceImage(imageUrl: string): Promise<{ bytes: Uint8Array; mimeType: string } | null> {
-  const validation = validateRemoteImageUrl(imageUrl);
-  if (!validation.ok) return null;
-
-  let upstream: Response;
-  try {
-    upstream = await fetch(validation.url.toString(), {
-      method: "GET",
-      redirect: "follow",
-      headers: {
-        Accept: "image/png,image/jpeg,image/webp,image/avif,image/*;q=0.8,*/*;q=0.5",
-        "User-Agent": "AlRahma-NanoBanana/1.0",
-      },
-    });
-  } catch {
-    return null;
-  }
-
-  try {
-    const finalUrl = new URL(upstream.url || validation.url.toString());
-    if ((finalUrl.protocol !== "http:" && finalUrl.protocol !== "https:")) return null;
-    const recheck = validateRemoteImageUrl(finalUrl.toString());
-    if (!recheck.ok) return null;
-  } catch {
-    // ignore
-  }
-
-  if (!upstream.ok) return null;
-
-  const mimeType = normalizeImageContentType(upstream.headers.get("content-type"));
-  if (!mimeType) return null;
-
-  const lengthHeader = upstream.headers.get("content-length");
-  if (lengthHeader) {
-    const length = Number(lengthHeader);
-    if (Number.isFinite(length) && length > MAX_BYTES) return null;
-  }
-
-  try {
-    const ab = await upstream.arrayBuffer();
-    if (!ab || ab.byteLength === 0 || ab.byteLength > MAX_BYTES) return null;
-    return { bytes: new Uint8Array(ab), mimeType };
-  } catch {
-    return null;
-  }
+/**
+ * Builds the background-only prompt. Exported so tests can pin the contract
+ * (no product / no packaging / vertical 9:16) without calling the model.
+ */
+export function buildBackgroundPrompt(
+  context: NanoBananaArtDirection = {},
+  template: TemplateId = "simple-botanical-horizon",
+): string {
+  return [templateDescription(template), moodModifier(detectStageMood(context)), BACKGROUND_ONLY_SUFFIX]
+    .filter(Boolean)
+    .join(" ");
 }
 
 function extractInlineImage(result: unknown): string | null {
@@ -175,7 +132,7 @@ function asEmbeddedDataUri(value: string): string | null {
   const v = value.trim();
   if (!v) return null;
   if (v.startsWith("data:image/")) return v;
-  // Ensure a real embedded data URI for PNG-safe export when model returns raw base64
+  // Ensure a real embedded data URI for PNG-safe export when model returns raw base64.
   return `data:image/png;base64,${v}`;
 }
 
@@ -193,27 +150,17 @@ function shouldRetryWithFallbackModel(status: number, bodyText: string): boolean
   );
 }
 
+/**
+ * Text-to-image only: the Gemini request never carries an image of the product.
+ */
 async function callGeminiImageModel(
   key: string,
   model: string,
-  source: { bytes: Uint8Array; mimeType: string },
   prompt: string,
 ): Promise<string | null> {
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
   const body = {
-    contents: [
-      {
-        parts: [
-          {
-            inline_data: {
-              mime_type: source.mimeType,
-              data: base64FromBytes(source.bytes),
-            },
-          },
-          { text: prompt },
-        ],
-      },
-    ],
+    contents: [{ parts: [{ text: prompt }] }],
     generationConfig: {
       responseModalities: ["IMAGE"],
     },
@@ -238,64 +185,54 @@ async function callGeminiImageModel(
   return extracted ? asEmbeddedDataUri(extracted) : null;
 }
 
-export async function stageProductWithNanoBananaDetailed(
+/**
+ * Generates one background-only plate. Returns `studio-fallback` with a null
+ * image when Gemini is not configured or unavailable, so callers can fall back
+ * to the FLUX/deterministic studio pipeline. The authentic packshot is never
+ * passed in or modified.
+ */
+export async function generateBackgroundWithNanoBananaDetailed(
   env: NanoBananaEnv,
-  productImageUrl: string,
   template: TemplateId,
   context: NanoBananaArtDirection = {},
 ): Promise<{ image: string | null; provider: NanoBananaStageProvider; model?: string }> {
-  void template;
   const key = env.GEMINI_API_KEY?.trim();
   if (!key) {
     return { image: null, provider: "studio-fallback" };
   }
 
-  const imageUrl = typeof productImageUrl === "string" ? productImageUrl.trim() : "";
-  if (!imageUrl) {
-    return { image: null, provider: "studio-fallback" };
-  }
+  const prompt = buildBackgroundPrompt(context, template);
 
   try {
-    const source = await fetchSourceImage(imageUrl);
-    if (!source) {
-      return { image: null, provider: "studio-fallback" };
-    }
-    const prompt = buildStagingPrompt(context);
-
-    try {
-      const image = await callGeminiImageModel(key, MODEL_PRIMARY, source, prompt);
-      if (image) return { image, provider: "nano-banana", model: MODEL_PRIMARY };
-      console.warn(`Nano Banana ${MODEL_PRIMARY} returned no inline image, falling back to studio pipeline.`);
-      return { image: null, provider: "studio-fallback" };
-    } catch (error) {
-      const retryable = Boolean((error as { retryable?: boolean } | null)?.retryable);
-      if (retryable) {
-        console.warn(`Nano Banana ${MODEL_PRIMARY} unavailable, retrying with ${MODEL_FALLBACK}.`, error);
-        try {
-          const image = await callGeminiImageModel(key, MODEL_FALLBACK, source, prompt);
-          if (image) return { image, provider: "nano-banana", model: MODEL_FALLBACK };
-          console.warn(`Nano Banana ${MODEL_FALLBACK} returned no inline image, falling back to studio pipeline.`);
-        } catch (fallbackError) {
-          console.error(`Nano Banana ${MODEL_FALLBACK} failed, falling back to studio pipeline.`, fallbackError);
-        }
-      } else {
-        console.error("Nano Banana staging failed, falling back.", error);
-      }
-    }
+    const image = await callGeminiImageModel(key, MODEL_PRIMARY, prompt);
+    if (image) return { image, provider: "nano-banana", model: MODEL_PRIMARY };
+    console.warn(`Nano Banana ${MODEL_PRIMARY} returned no inline background image, falling back to studio pipeline.`);
+    return { image: null, provider: "studio-fallback" };
   } catch (error) {
-    console.error("Nano Banana staging failed, falling back.", error);
+    const retryable = Boolean((error as { retryable?: boolean } | null)?.retryable);
+    if (retryable) {
+      console.warn(`Nano Banana ${MODEL_PRIMARY} unavailable, retrying with ${MODEL_FALLBACK}.`, error);
+      try {
+        const image = await callGeminiImageModel(key, MODEL_FALLBACK, prompt);
+        if (image) return { image, provider: "nano-banana", model: MODEL_FALLBACK };
+        console.warn(`Nano Banana ${MODEL_FALLBACK} returned no inline background image, falling back to studio pipeline.`);
+      } catch (fallbackError) {
+        console.error(`Nano Banana ${MODEL_FALLBACK} failed, falling back to studio pipeline.`, fallbackError);
+      }
+    } else {
+      console.error("Nano Banana background staging failed, falling back.", error);
+    }
   }
 
   return { image: null, provider: "studio-fallback" };
 }
 
-export async function stageProductWithNanoBanana(
+export async function generateBackgroundWithNanoBanana(
   env: NanoBananaEnv,
-  productImageUrl: string,
   template: TemplateId,
   context: NanoBananaArtDirection = {},
 ): Promise<string | null> {
-  const result = await stageProductWithNanoBananaDetailed(env, productImageUrl, template, context);
+  const result = await generateBackgroundWithNanoBananaDetailed(env, template, context);
   return result.image;
 }
 
@@ -312,23 +249,33 @@ export const onRequestPost: PagesFunction<NanoBananaEnv> = async ({ request, env
   }
 
   const body = (payload && typeof payload === "object" ? payload : {}) as Record<string, unknown>;
-  const imageUrl = typeof body.imageUrl === "string" ? body.imageUrl.trim() : "";
+  if (body.imageUrl || body.productImageUrl) {
+    return Response.json(
+      {
+        success: false,
+        error:
+          "Background-only endpoint: do not send a product image. Image models never redraw packaging; composite the authentic packshot with the SVG overlay instead.",
+      },
+      { status: 400 },
+    );
+  }
+
   const template = (typeof body.template === "string" ? body.template : "simple-botanical-horizon") as TemplateId;
-  if (!imageUrl) {
-    return Response.json({ success: false, error: "Missing required imageUrl." }, { status: 400 });
-  }
+  const context: NanoBananaArtDirection = {
+    brand: typeof body.brand === "string" ? body.brand : null,
+    category: typeof body.category === "string" ? body.category : null,
+    name: typeof body.name === "string" ? body.name : null,
+    benefits: Array.isArray(body.benefits)
+      ? body.benefits.filter((item): item is string => typeof item === "string")
+      : null,
+  };
 
-  const validation = validateRemoteImageUrl(imageUrl);
-  if (!validation.ok) {
-    return Response.json({ success: false, error: validation.error }, { status: validation.status });
-  }
-
-  const staged = await stageProductWithNanoBananaDetailed(env, imageUrl, template, {});
+  const staged = await generateBackgroundWithNanoBananaDetailed(env, template, context);
   if (!staged.image) {
     return Response.json(
       {
         success: false,
-        error: "Nano Banana staging unavailable; fallback to existing pipeline.",
+        error: "Nano Banana background staging unavailable; fallback to existing studio pipeline.",
         fallback: true,
         stageProvider: staged.provider,
       },
@@ -343,6 +290,7 @@ export const onRequestPost: PagesFunction<NanoBananaEnv> = async ({ request, env
     stageProvider: staged.provider,
     template,
     image: staged.image,
-    kind: "data-uri",
+    kind: "background-only-data-uri",
+    containsProduct: false,
   });
 };

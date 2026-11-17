@@ -9,7 +9,7 @@ import {
 } from "../../../../src/lib/al-rahma";
 import { removePackshotBackgroundServer } from "../../ai/remove-bg";
 import {
-  stageProductWithNanoBananaDetailed,
+  generateBackgroundWithNanoBananaDetailed,
   type NanoBananaStageProvider,
 } from "../../ai/nano-banana-stage";
 import {
@@ -355,43 +355,59 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       selectedIds.push(product.id);
       const seedBase = Array.from(product.id).reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
       const [style1, style2] = variantStylePair(product.id);
-      // The Simple theme composites the authentic packshot over a colour-matched
-      // scene with a true mirror reflection, so AI product staging is skipped for
-      // that primary direction (it would duplicate/redraw the packaging).
-      const simplePrimary =
-        ART_DIRECTION_STYLES[style1]?.template === "simple-botanical-horizon";
       const [promotion, research] = await Promise.all([
         loadActivePromotion(env, product.id, today),
         loadResearch(env, product.id),
       ]);
 
-      // Try Nano Banana photorealistic staging first when GEMINI_API_KEY is configured.
-      // Fallback: server-side BRIA cutout + FLUX (Workers AI) multi-style studio scene.
-      let productImageUrl = product.image_url;
-      let staged1: string | null = null;
-      let staged2: string | null = null;
+      // Background-only AI pipeline. The authentic packshot is always cut out
+      // and composited by the SVG overlay; no AI model ever receives or redraws
+      // the packaging (repository hard constraint #4).
+      let cutoutImage: string | null = null;
+      try {
+        cutoutImage = await removePackshotBackgroundServer(env, product.image_url);
+      } catch (error) {
+        console.error("Server-side packshot cutout failed, using original image.", error);
+      }
+      const cutoutApplied = Boolean(cutoutImage);
+      const productImageUrl = cutoutImage ?? product.image_url;
+
+      const sceneContext = {
+        brand: product.brand_arabic,
+        category: product.category,
+        name: product.name_arabic,
+        benefits: research.verifiedBenefits,
+      };
+
+      // Background plate: FLUX (Workers AI) first, Gemini flash image second,
+      // deterministic vector studio last. Nano Banana is an optional final
+      // background-only pass when both studio providers produce nothing.
       let stageProvider: NanoBananaStageProvider = "studio-fallback";
       let stageModel: string | undefined;
+      let backgroundImage: string | null = null;
 
-      if (env.GEMINI_API_KEY?.trim() && !simplePrimary) {
+      let scene1: SceneOutcome | null = null;
+      let scene2: SceneOutcome | null = null;
+
+      const [generated1, generated2] = await Promise.all([
+        generateArtDirectedScene(env, style1, sceneContext, { seed: seedBase }),
+        generateArtDirectedScene(env, style2, sceneContext, { seed: seedBase + 1 }),
+      ]);
+      scene1 = generated1;
+      scene2 = generated2;
+
+      if (!scene1?.image && !scene2?.image && env.GEMINI_API_KEY?.trim()) {
         try {
-          const staged = await stageProductWithNanoBananaDetailed(
+          const staged = await generateBackgroundWithNanoBananaDetailed(
             env,
-            product.image_url,
             ART_DIRECTION_STYLES[style1].template,
-            {
-              brand: product.brand_arabic,
-              category: product.category,
-              name: product.name_arabic,
-              benefits: research.verifiedBenefits,
-            },
+            sceneContext,
           );
-          staged1 = staged.image;
-          staged2 = staged.image; // reuse successful staged composition for both variants
+          backgroundImage = staged.image;
           stageProvider = staged.provider;
           stageModel = staged.model;
         } catch (error) {
-          console.error("Nano Banana staging failed, falling back to cutout+scene pipeline.", error);
+          console.error("Nano Banana background staging failed, falling back to the deterministic studio.", error);
         }
       }
 
@@ -400,19 +416,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       }
       stageProvidersByProduct[product.id] = stageProvider;
 
-      // Always cut the packshot background server-side so the authentic bottle
-      // never keeps a white box, even if a previous asset had one baked in.
-      let cutoutImage: string | null = null;
-      try {
-        cutoutImage = await removePackshotBackgroundServer(env, product.image_url);
-      } catch (error) {
-        console.error("Server-side packshot cutout failed, using original image.", error);
-      }
-      const cutoutApplied = Boolean(cutoutImage);
-      if (!staged1 && !staged2 && cutoutImage) {
-        productImageUrl = cutoutImage;
-      }
-
       const details: ProductDetails = {
         title: product.name_arabic,
         category: product.category ?? "",
@@ -420,31 +423,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         verificationStatus: product.verification_status,
         verifiedBenefits: research.verifiedBenefits,
         verifiedUsage: research.verifiedUsage,
-        // Keep authentic source URL for provenance/quality checks; staged image avoids duplicate bottle rendering.
-        productImageUrl: staged1 || staged2 ? product.image_url : productImageUrl,
+        // Always the authentic packshot (cut out when BRIA succeeded).
+        productImageUrl,
         warehouseStockStatus: (product.warehouse_stock_status ?? "unknown") as
           | "in_stock"
           | "out_of_stock"
           | "unknown",
       };
-
-      let scene1: SceneOutcome | null = null;
-      let scene2: SceneOutcome | null = null;
-
-      if (!staged1 && !staged2) {
-        const sceneContext = {
-          brand: product.brand_arabic,
-          category: product.category,
-          name: product.name_arabic,
-          benefits: research.verifiedBenefits,
-        };
-        const [generated1, generated2] = await Promise.all([
-          generateArtDirectedScene(env, style1, sceneContext, { seed: seedBase }),
-          generateArtDirectedScene(env, style2, sceneContext, { seed: seedBase + 1 }),
-        ]);
-        scene1 = generated1;
-        scene2 = generated2;
-      }
 
       const variants = ProductionEngine.executeVariants({
         product: details,
@@ -452,8 +437,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         occasion,
         today,
         brandLogoUrl,
-        sceneImageUrls: { 1: scene1?.image ?? null, 2: scene2?.image ?? null },
-        stagedImageUrls: { 1: staged1, 2: staged2 },
+        sceneImageUrls: {
+          1: backgroundImage ?? scene1?.image ?? null,
+          2: backgroundImage ?? scene2?.image ?? null,
+        },
       });
 
       for (const variant of variants) {
@@ -476,7 +463,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           engine: aiEngine,
           ...(aiEngineModel ? { model: aiEngineModel } : {}),
           cutoutApplied,
-          stagedProduct: stageProvider === "nano-banana",
+          // The authentic packshot is composited by the overlay; AI only ever
+          // produces the background plate.
+          stagedProduct: false,
+          backgroundOnly: true,
+          backgroundProvider: stageProvider === "nano-banana"
+            ? "nano-banana"
+            : (sceneOutcome?.provider ?? "deterministic-studio"),
         };
         const qualityNotes = JSON.stringify({
           score: variant.qualityReport.overallScore,
