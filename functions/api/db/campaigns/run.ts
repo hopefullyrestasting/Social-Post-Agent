@@ -9,6 +9,10 @@ import {
 } from "../../../../src/lib/al-rahma";
 import { removePackshotBackgroundServer } from "../../ai/remove-bg";
 import {
+  compositeProductScene,
+  type ProductCompositeOutcome,
+} from "../../ai/product-composite";
+import {
   generateBackgroundWithNanoBananaDetailed,
   type NanoBananaStageProvider,
 } from "../../ai/nano-banana-stage";
@@ -36,6 +40,8 @@ interface Env {
   };
   REMOVE_BG_API_KEY?: string;
   GEMINI_API_KEY?: string;
+  HF_TOKEN?: string;
+  HF_COMPOSITE_MODEL?: string;
 }
 
 interface EligibleProductRow {
@@ -360,9 +366,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         loadResearch(env, product.id),
       ]);
 
-      // Background-only AI pipeline. The authentic packshot is always cut out
-      // and composited by the SVG overlay; no AI model ever receives or redraws
-      // the packaging (repository hard constraint #4).
+      // Authorized reference-conditioned compositing (AGENTS.md rule #4): the
+      // authentic cutout is sent as the image-to-image conditioning input so the
+      // model paints real perspective shadows, floor reflections, rim light,
+      // mist and botanicals around the genuine package while preserving the
+      // label. When no provider is configured we fall back to a background-only
+      // plate plus the authentic SVG packshot composite.
       let cutoutImage: string | null = null;
       try {
         cutoutImage = await removePackshotBackgroundServer(env, product.image_url);
@@ -379,24 +388,39 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         benefits: research.verifiedBenefits,
       };
 
-      // Background plate: FLUX (Workers AI) first, Gemini flash image second,
-      // deterministic vector studio last. Nano Banana is an optional final
-      // background-only pass when both studio providers produce nothing.
+      const [composite1, composite2] = await Promise.all([
+        compositeProductScene(env, productImageUrl, sceneContext, { styleId: style1 }),
+        compositeProductScene(env, productImageUrl, sceneContext, { styleId: style2 }),
+      ]);
+
+      // Background plate (only for variants the compositor could not produce):
+      // FLUX (Workers AI) first, Gemini flash image second, deterministic vector
+      // studio last. Nano Banana is an optional final background-only pass.
       let stageProvider: NanoBananaStageProvider = "studio-fallback";
       let stageModel: string | undefined;
       let backgroundImage: string | null = null;
 
       let scene1: SceneOutcome | null = null;
       let scene2: SceneOutcome | null = null;
+      const needsScene1 = !composite1.image;
+      const needsScene2 = !composite2.image;
 
-      const [generated1, generated2] = await Promise.all([
-        generateArtDirectedScene(env, style1, sceneContext, { seed: seedBase }),
-        generateArtDirectedScene(env, style2, sceneContext, { seed: seedBase + 1 }),
-      ]);
-      scene1 = generated1;
-      scene2 = generated2;
+      if (needsScene1 || needsScene2) {
+        const [generated1, generated2] = await Promise.all([
+          needsScene1
+            ? generateArtDirectedScene(env, style1, sceneContext, { seed: seedBase })
+            : Promise.resolve(null),
+          needsScene2
+            ? generateArtDirectedScene(env, style2, sceneContext, { seed: seedBase + 1 })
+            : Promise.resolve(null),
+        ]);
+        scene1 = generated1;
+        scene2 = generated2;
+      }
 
-      if (!scene1?.image && !scene2?.image && env.GEMINI_API_KEY?.trim()) {
+      const stillNeedsBackground =
+        (needsScene1 && !scene1?.image) || (needsScene2 && !scene2?.image);
+      if (stillNeedsBackground && env.GEMINI_API_KEY?.trim()) {
         try {
           const staged = await generateBackgroundWithNanoBananaDetailed(
             env,
@@ -441,6 +465,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           1: backgroundImage ?? scene1?.image ?? null,
           2: backgroundImage ?? scene2?.image ?? null,
         },
+        stagedImageUrls: {
+          1: composite1.image,
+          2: composite2.image,
+        },
+        stagedImageContainsProductByVariant: {
+          1: Boolean(composite1.image),
+          2: Boolean(composite2.image),
+        },
       });
 
       for (const variant of variants) {
@@ -449,12 +481,24 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         const variantStyle = variant.variantNumber === 1 ? style1 : style2;
         const styleMeta = ART_DIRECTION_STYLES[variantStyle];
         const sceneOutcome = variant.variantNumber === 1 ? scene1 : scene2;
-        const aiEngine =
-          stageProvider === "nano-banana"
+        const compositeOutcome: ProductCompositeOutcome =
+          variant.variantNumber === 1 ? composite1 : composite2;
+        const aiComposite = Boolean(compositeOutcome.image);
+        const aiEngine = aiComposite
+          ? compositeOutcome.provider
+          : stageProvider === "nano-banana"
             ? "nano-banana"
             : (sceneOutcome?.provider ?? "deterministic-studio");
-        const aiEngineModel =
-          stageProvider === "nano-banana" ? stageModel : sceneOutcome?.model;
+        const aiEngineModel = aiComposite
+          ? compositeOutcome.model
+          : stageProvider === "nano-banana"
+            ? stageModel
+            : sceneOutcome?.model;
+        const backgroundProvider = aiComposite
+          ? "reference-conditioned-composite"
+          : stageProvider === "nano-banana"
+            ? "nano-banana"
+            : (sceneOutcome?.provider ?? "deterministic-studio");
         const artDirection = {
           styleId: variantStyle,
           styleLabelAr: styleMeta.labelAr,
@@ -463,13 +507,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           engine: aiEngine,
           ...(aiEngineModel ? { model: aiEngineModel } : {}),
           cutoutApplied,
-          // The authentic packshot is composited by the overlay; AI only ever
-          // produces the background plate.
-          stagedProduct: false,
-          backgroundOnly: true,
-          backgroundProvider: stageProvider === "nano-banana"
-            ? "nano-banana"
-            : (sceneOutcome?.provider ?? "deterministic-studio"),
+          // Reference-conditioned composite already contains the authentic
+          // product; background-only variants keep the authentic SVG packshot.
+          stagedProduct: aiComposite,
+          backgroundOnly: !aiComposite,
+          aiComposite,
+          containsProduct: aiComposite,
+          usedReference: aiComposite && compositeOutcome.usedReference,
+          compositeProvider: aiComposite ? compositeOutcome.provider : null,
+          compositeModel: aiComposite ? (compositeOutcome.model ?? null) : null,
+          backgroundProvider,
         };
         const qualityNotes = JSON.stringify({
           score: variant.qualityReport.overallScore,
@@ -535,6 +582,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           ai_engine: aiEngine,
           ai_engine_model: aiEngineModel,
           cutout_applied: cutoutApplied,
+          ai_composite: aiComposite,
+          contains_product: aiComposite,
+          used_reference: aiComposite && compositeOutcome.usedReference,
+          composite_provider: aiComposite ? compositeOutcome.provider : null,
+          composite_model: aiComposite ? (compositeOutcome.model ?? null) : null,
           artDirection,
           qualityReport: variant.qualityReport,
         });

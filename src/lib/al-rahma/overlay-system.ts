@@ -24,6 +24,8 @@ export interface OverlayOptions {
    * duplicated; typography/UI layers are rendered on top.
    */
   stagedImageUrl?: string | null;
+  /** True when stagedImageUrl is a reference-conditioned composite that already contains the product. */
+  stagedImageContainsProduct?: boolean;
   /** Uploaded brand logo (URL or data URI) shown in the top brand badge. */
   brandLogoUrl?: string | null;
   productImageUrl?: string | null;
@@ -118,6 +120,37 @@ function commonDefs(): string {
       <filter id="reflection-blur" x="-15%" y="-15%" width="130%" height="130%">
         <feGaussianBlur stdDeviation="2.5" />
       </filter>
+      <!-- Agency-grade metallic typography: gold gradient + layered depth. -->
+      <linearGradient id="metallic-gold-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#F6E27A" />
+        <stop offset="48%" stop-color="#D4AF37" />
+        <stop offset="100%" stop-color="#8A5A10" />
+      </linearGradient>
+      <linearGradient id="metallic-gold-rim" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#FFF6C9" />
+        <stop offset="55%" stop-color="#D4AF37" />
+        <stop offset="100%" stop-color="#6B4208" />
+      </linearGradient>
+      <linearGradient id="brand-3d-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#FFFFFF" />
+        <stop offset="62%" stop-color="#FFFFFF" />
+        <stop offset="100%" stop-color="#DCE6F2" />
+      </linearGradient>
+      <filter id="brand-3d" x="-30%" y="-90%" width="160%" height="280%">
+        <feDropShadow dx="0" dy="-1.5" stdDeviation="1" flood-color="#FFFFFF" flood-opacity="0.65" />
+        <feDropShadow dx="0" dy="5" stdDeviation="4.5" flood-color="#03120D" flood-opacity="0.55" />
+        <feDropShadow dx="0" dy="1" stdDeviation="0.6" flood-color="#03120D" flood-opacity="0.5" />
+      </filter>
+      <filter id="metallic-text-depth" x="-25%" y="-70%" width="150%" height="240%">
+        <feDropShadow dx="0" dy="7" stdDeviation="6" flood-color="#2A1A02" flood-opacity="0.68" />
+        <feDropShadow dx="0" dy="2" stdDeviation="1.6" flood-color="#2A1A02" flood-opacity="0.58" />
+        <feDropShadow dx="0" dy="-1" stdDeviation="0.8" flood-color="#FFF6C9" flood-opacity="0.5" />
+      </filter>
+      <linearGradient id="contact-bar-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#08261D" />
+        <stop offset="50%" stop-color="#0D3829" />
+        <stop offset="100%" stop-color="#08261D" />
+      </linearGradient>
     </defs>
   `;
 }
@@ -144,17 +177,20 @@ function headerPill(width: number, brandLogoUrl?: string | null): string {
 
   const logoNode = logo
     ? `<image href="${escapeXml(logo)}" x="${logoX}" y="${logoY}" width="${logoSize}" height="${logoSize}" preserveAspectRatio="xMidYMid meet" />
-       <rect x="${logoX}" y="${logoY}" width="${logoSize}" height="${logoSize}" rx="20" fill="#FFFFFF" fill-opacity="0.10" stroke="#FFFFFF" stroke-opacity="0.18" />`
-    : `<rect x="${logoX}" y="${logoY}" width="${logoSize}" height="${logoSize}" rx="20" fill="#FFFFFF" fill-opacity="0.12" stroke="#FFFFFF" stroke-opacity="0.18" />
-       <circle cx="${logoX + logoSize / 2}" cy="${logoY + logoSize / 2}" r="23" fill="#059669" />
-       <path d="M ${logoX + 30} ${logoY + 43} L ${logoX + 40} ${logoY + 54} L ${logoX + 57} ${logoY + 32}" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />`;
+       <rect x="${logoX}" y="${logoY}" width="${logoSize}" height="${logoSize}" rx="20" fill="#FFFFFF" fill-opacity="0.10" stroke="url(#metallic-gold-rim)" stroke-opacity="0.85" stroke-width="2" />`
+    : `<g id="brand-emblem" data-emblem="true">
+         <rect x="${logoX}" y="${logoY}" width="${logoSize}" height="${logoSize}" rx="22" fill="#FFFFFF" fill-opacity="0.12" stroke="url(#metallic-gold-rim)" stroke-width="2.2" />
+         <circle cx="${logoX + logoSize / 2}" cy="${logoY + logoSize / 2}" r="26" fill="none" stroke="url(#metallic-gold-rim)" stroke-width="3" />
+         <path d="M ${logoX + 42} ${logoY + 62} C ${logoX + 34} ${logoY + 44}, ${logoX + 50} ${logoY + 30}, ${logoX + 64} ${logoY + 32} C ${logoX + 64} ${logoY + 48}, ${logoX + 54} ${logoY + 60}, ${logoX + 42} ${logoY + 62} Z" fill="#059669" />
+         <path d="M ${logoX + 42} ${logoY + 62} L ${logoX + 62} ${logoY + 34}" fill="none" stroke="#F6E27A" stroke-width="1.6" stroke-linecap="round" />
+       </g>`;
 
   return `
     <g id="top-header-pill">
       <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="32" fill="#0C3024" fill-opacity="0.85" />
       <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="32" fill="none" stroke="#FFFFFF" stroke-opacity="0.12" stroke-width="1.5" />
       ${logoNode}
-      <text x="${brandX}" y="${brandY}" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="36" font-weight="900" fill="#FFFFFF" text-anchor="end">${escapeXml(BRAND.brandName)}</text>
+      <text data-3d="true" x="${brandX}" y="${brandY}" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="38" font-weight="900" fill="url(#brand-3d-gradient)" stroke="#03120D" stroke-opacity="0.32" stroke-width="0.9" paint-order="stroke" filter="url(#brand-3d)" text-anchor="end">${escapeXml(BRAND.brandName)}</text>
       <line id="header-divider" x1="${dividerX}" y1="${dividerY1}" x2="${dividerX}" y2="${dividerY2}" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="2" />
       <text x="${taglineX}" y="${taglineY}" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="24" font-weight="700" fill="#E2E8F0" text-anchor="end">${escapeXml(HEADER_ACTIVITY)}</text>
     </g>
@@ -278,9 +314,9 @@ function editorialSalesCopy(width: number, height: number, text: string): string
     .join("");
 
   return `
-    <g id="sales-copy-editorial">
+    <g id="sales-copy-editorial" data-metallic-gold="true">
       <rect x="0" y="${Math.max(0, height - 760)}" width="${width}" height="760" fill="url(#bottom-editorial-vignette)" />
-      <text x="${x}" y="${y}" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="${size}" font-weight="800" fill="#FFFFFF" text-anchor="middle" direction="rtl" filter="url(#editorial-text-shadow)">${tspans}</text>
+      <text x="${x}" y="${y}" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="${size}" font-weight="800" fill="url(#metallic-gold-gradient)" stroke="url(#metallic-gold-rim)" stroke-opacity="0.45" stroke-width="1.1" paint-order="stroke" text-anchor="middle" direction="rtl" filter="url(#metallic-text-depth)">${tspans}</text>
     </g>
   `;
 }
@@ -326,13 +362,13 @@ function promoBadge(width: number, y: number, promotion: ValidPromotion): string
   const height = 120;
   const currency = BRAND.commercial.currencyLabel;
   return `
-    <g id="promo-badge" transform="translate(${x}, ${y})" filter="url(#card-shadow)">
-      <rect width="${badgeWidth}" height="${height}" rx="24" fill="#FFFFFF" stroke="#F59E0B" stroke-width="2.5" />
+    <g id="promo-badge" data-metallic-gold="true" transform="translate(${x}, ${y})" filter="url(#card-shadow)">
+      <rect width="${badgeWidth}" height="${height}" rx="24" fill="#FFFFFF" stroke="url(#metallic-gold-rim)" stroke-width="3" />
       <g transform="translate(24, 34)">
         <rect width="160" height="46" rx="23" fill="#DC2626" />
         <text x="80" y="31" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="20" font-weight="900" fill="#FFFFFF" text-anchor="middle">خصم ${promotion.discountPercent}%</text>
       </g>
-      <text x="${badgeWidth - 28}" y="74" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="44" font-weight="900" fill="#065F46" text-anchor="end">${escapeXml(formatPriceValue(promotion.promoPrice))} ${escapeXml(currency)}</text>
+      <text x="${badgeWidth - 28}" y="74" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="44" font-weight="900" fill="url(#metallic-gold-gradient)" stroke="url(#metallic-gold-rim)" stroke-opacity="0.5" stroke-width="0.9" paint-order="stroke" filter="url(#metallic-text-depth)" text-anchor="end">${escapeXml(formatPriceValue(promotion.promoPrice))} ${escapeXml(currency)}</text>
       <text x="24" y="98" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="20" font-weight="700" fill="#334155" fill-opacity="0.72" text-anchor="start" text-decoration="line-through">${escapeXml(formatPriceValue(promotion.originalPrice))} ${escapeXml(currency)}</text>
     </g>
   `;
@@ -369,6 +405,7 @@ function circularIcon(cx: number, cy: number, type: "phone" | "whatsapp"): strin
     return `
       <g>
         <circle cx="${cx}" cy="${cy}" r="${r}" fill="#059669" />
+        <circle cx="${cx}" cy="${cy}" r="${r + 6}" fill="none" stroke="url(#metallic-gold-rim)" stroke-width="2.2" />
         <g transform="translate(${cx - 12},${cy - 12})">
           <path d="M17.2 14.2c-.3-.1-1.7-.8-1.9-.9-.3-.1-.5-.1-.7.1-.2.3-.8.9-.9 1.1-.2.2-.3.2-.6.1-.3-.1-1.2-.4-2.3-1.4-.8-.7-1.4-1.7-1.6-2-.2-.3 0-.5.1-.6.1-.1.3-.3.4-.5.1-.1.2-.3.3-.4.1-.2 0-.3 0-.5-.1-.1-.7-1.6-.9-2.2-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.4s1 2.8 1.2 3c.1.2 2 3.1 4.9 4.3.7.3 1.2.5 1.7.6.7.2 1.3.2 1.8.1.6-.1 1.7-.7 1.9-1.3.2-.6.2-1.2.2-1.3-.1-.1-.3-.2-.5-.3z" fill="#FFFFFF"/>
           <path d="M12 3.5a8.5 8.5 0 0 0-7.3 12.8L3.5 20.5l4.3-1.1A8.5 8.5 0 1 0 12 3.5z" fill="none" stroke="#FFFFFF" stroke-width="1.6"/>
@@ -379,6 +416,7 @@ function circularIcon(cx: number, cy: number, type: "phone" | "whatsapp"): strin
   return `
     <g>
       <circle cx="${cx}" cy="${cy}" r="${r}" fill="#059669" />
+      <circle cx="${cx}" cy="${cy}" r="${r + 6}" fill="none" stroke="url(#metallic-gold-rim)" stroke-width="2.2" />
       <g transform="translate(${cx - 12},${cy - 12})" stroke="#FFFFFF" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round">
         <path d="M22 16.92v3a2 2 0 0 1-2.18 2A19.8 19.8 0 0 1 11.19 19a19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.78.62 2.63a2 2 0 0 1-.45 2.11L8 9.91a16 16 0 0 0 6 6l1.45-1.28a2 2 0 0 1 2.11-.45c.85.29 1.73.5 2.63.62A2 2 0 0 1 22 16.92z" fill="#FFFFFF" fill-opacity="0.08"/>
       </g>
@@ -393,8 +431,10 @@ function contactBlock(width: number): string {
   const phone = BRAND.contact.phone;
   const centerY = y + barH / 2;
   return `
-    <g id="contact-block">
+    <g id="contact-block" data-metallic="true">
       <rect x="0" y="${y}" width="${width}" height="${barH}" fill="#0D3829" />
+      <rect x="0" y="${y}" width="${width}" height="${barH}" fill="url(#contact-bar-gradient)" fill-opacity="0.9" />
+      <rect x="0" y="${y}" width="${width}" height="3" fill="url(#metallic-gold-gradient)" />
       <text x="955" y="${Math.round(centerY + 15)}" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="42" font-weight="800" fill="#FFFFFF" text-anchor="end" direction="rtl">${escapeXml(CONTACT_LABEL)}</text>
       <text x="540" y="${Math.round(centerY + 18)}" font-family="${escapeXml(BRAND.visual.fonts.primary)}" font-size="52" font-weight="900" fill="#FFFFFF" text-anchor="middle" direction="ltr">${escapeXml(phone)}</text>
       ${circularIcon(240, Math.round(centerY), "whatsapp")}
@@ -416,6 +456,7 @@ export class OverlaySystem {
     const promotion = opts.promotion ?? null;
     const occasion = opts.occasion ?? null;
     const stagedImageUrl = opts.stagedImageUrl?.trim() || null;
+    const stagedContainsProduct = Boolean(stagedImageUrl && opts.stagedImageContainsProduct);
     const productUrl = opts.productImageUrl?.trim() || null;
     // The Simple theme is a clean editorial layout: badges/status pills are
     // suppressed so nothing floats over the glossy floor and pure-white type.
@@ -437,7 +478,7 @@ export class OverlaySystem {
     return `
       <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" role="img" aria-label="${escapeXml(BRAND.brandName)}">
         ${commonDefs()}
-        <g id="scene-background" data-template="${template}">${background.markup}</g>
+        <g id="scene-background" data-template="${template}" data-staged-product="${stagedContainsProduct ? "true" : "false"}"${stagedContainsProduct ? ' data-ai-composite="true"' : ""}>${background.markup}</g>
         ${opts.showLogo === false ? "" : headerPill(width, opts.brandLogoUrl)}
         ${occasion ? occasionRibbon(width, occasion) : ""}
         ${productTitle(width, headline)}

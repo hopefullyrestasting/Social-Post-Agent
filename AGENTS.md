@@ -27,6 +27,7 @@ not redesign or replace it.
 | `src/lib/al-rahma/background-provider.ts` | Background seam: deterministic studio + optional env adapters |
 | `src/components/al-rahma/` | Dashboard verify modal and 2-variant ad preview |
 | `functions/api/db/` | Pages Functions: `stats`, `brands`, `products`, `research`, `research/ingest` |
+| `functions/api/ai/product-composite.ts` | Reference-conditioned img2img product compositing (Gemini edit → Hugging Face → Workers AI img2img) |
 | `migrations/` | `0000_baseline.sql` (captured schema), `0001_product_research.sql` |
 | `scripts/` | Test entrypoints run by `npm test` |
 | `.opencode/skills/` | Project skills for D1/Pages, research, and ad composition |
@@ -43,10 +44,17 @@ not redesign or replace it.
 3. **Never hardcode brand names, phone numbers, or WhatsApp links outside
    `src/lib/al-rahma/brand-core.ts`.** Import `AL_RAHMA_BRAND_CONFIG`. The test
    suite enforces this with a filesystem scan.
-4. **Never let an AI image model redraw product packaging, labels, or logos.**
-   Product imagery must be the authentic packshot, composited (background
-   removal, scaling, placement) — never regenerated. Generated imagery is only
-   for backgrounds/decorative layers.
+4. **Authentic packshot conditioning — never redraw packaging.** The authentic
+   product cutout **may and should** be passed to an image-to-image model as a
+   reference/conditioning input for relighting, shadow/reflection generation,
+   outpainting, and scene compositing. Every generation prompt must instruct the
+   model to preserve the brand name, label typography, package colours and
+   geometry exactly, and must forbid invented/translated labels, extra products,
+   new text, prices, discounts, and watermarks. Background-only generation stays
+   allowed. A composite must record `containsProduct` / `aiComposite` /
+   `usedReference` provenance, keep the authentic source URL in D1, and fall back
+   to a background plate plus the authentic SVG packshot when the model is
+   unavailable. Never let a text-to-image model invent a package.
 5. **No unverified claims.** Benefits, usage, ingredients, and medical
    assertions may appear in output only when backed by a `verified` claim whose
    source is also `verified`.
@@ -61,11 +69,17 @@ not redesign or replace it.
   `AL_RAHMA_BRAND_CONFIG.visual.format`.
 - Background: clean white `#FFFFFF` with a **subtle silver mesh** `#CBD5E1`
   (low opacity). No loud gradients, no dark backgrounds for product ads.
-- Product: authentic packshot compositing, centered, generous margins, label
-  fully legible; no AI restyling of the package.
+- Product: reference-conditioned composite — the authentic cutout is the
+  image-to-image conditioning input, so lighting, shadows, mist and botanicals
+  interact with the real package. The model must preserve the label; if no model
+  is available, fall back to a background plate with the authentic packshot
+  centred, generous margins, and the label fully legible. No text-to-image
+  redraw, no AI-restyled package.
 - Typography: strict **Arabic RTL** (`dir="rtl"`), Cairo/Tajawal from
-  `brandConfig.visual.fonts`; clear hierarchy (headline → details → CTA);
-  no faux-Arabic glyphs, no Latin fallback for Arabic text.
+  `brandConfig.visual.fonts`; clear hierarchy (bold 3D white brand header →
+  metallic gold `#F6E27A → #D4AF37 → #8A5A10` benefit/promo headline with deep
+  layered shadow → clean contact bar); no faux-Arabic glyphs, no Latin fallback
+  for Arabic text.
 - Overlay elements: brand chip, one badge, optional verified-only copy, footer
   contact bar. Keep safe zones clear of platform UI.
 

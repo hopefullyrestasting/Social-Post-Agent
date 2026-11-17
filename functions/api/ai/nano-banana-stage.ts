@@ -4,12 +4,13 @@
  * Background-only photorealistic stage generation via Google Gemini image
  * generation ("Nano Banana").
  *
- * IMPORTANT: no product photo is ever sent to the model and the prompt never
- * asks for a bottle/box/packaging. An image model must never redraw packaging
- * (repository hard constraint #4): this endpoint produces a clean background
- * plate only, and the authentic packshot is composited afterwards by the SVG
- * overlay (`packshot-hero`). Campaigns use this as an optional background
- * provider; the FLUX/deterministic `studio-scene` pipeline remains the fallback.
+ * IMPORTANT: this endpoint is text-to-image only and produces a clean background
+ * plate; it never receives the product photo. Reference-conditioned product
+ * compositing (the authentic cutout as an img2img conditioning input) lives in
+ * `/api/ai/product-composite` under the updated AGENTS.md rule #4. This
+ * background-only path remains the fallback when no compositing provider is
+ * available, and the authentic packshot is then composited by the SVG overlay
+ * (`packshot-hero`).
  */
 
 export interface NanoBananaEnv {
@@ -254,7 +255,7 @@ export const onRequestPost: PagesFunction<NanoBananaEnv> = async ({ request, env
       {
         success: false,
         error:
-          "Background-only endpoint: do not send a product image. Image models never redraw packaging; composite the authentic packshot with the SVG overlay instead.",
+          "Background-only endpoint: do not send a product image. Use /api/ai/product-composite for reference-conditioned compositing; this endpoint only paints a clean plate.",
       },
       { status: 400 },
     );

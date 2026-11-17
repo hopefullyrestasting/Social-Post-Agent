@@ -34,6 +34,8 @@ export interface ProductionRequest {
    * When provided, used as the scene and the packshot is not duplicated.
    */
   stagedImageUrl?: string | null;
+  /** True when the staged image is a reference-conditioned composite that already contains the product. */
+  stagedImageContainsProduct?: boolean;
   /** Uploaded brand logo (URL or data URI) rendered in the top brand badge. */
   brandLogoUrl?: string | null;
   width?: number;
@@ -51,6 +53,8 @@ export type ProductionVariantsRequest = Omit<ProductionRequest, "variant" | "tem
   sceneImageUrls?: Partial<Record<1 | 2, string | null>>;
   /** Per-variant full staged images (background + product composed). */
   stagedImageUrls?: Partial<Record<1 | 2, string | null>>;
+  /** Per-variant marker: the staged image already contains the authentic product. */
+  stagedImageContainsProductByVariant?: Partial<Record<1 | 2, boolean>>;
 };
 
 export interface ProductionResult {
@@ -142,6 +146,8 @@ export class ProductionEngine {
           ...request,
           sceneImageUrl: request.sceneImageUrls?.[variantNumber] ?? null,
           stagedImageUrl: request.stagedImageUrls?.[variantNumber] ?? null,
+          stagedImageContainsProduct:
+            request.stagedImageContainsProductByVariant?.[variantNumber] ?? false,
         },
         variantNumber,
         template,
@@ -203,6 +209,7 @@ export class ProductionEngine {
       palette,
       sceneImageUrl: effectiveSceneImageUrl,
       stagedImageUrl,
+      stagedImageContainsProduct: request.stagedImageContainsProduct ?? Boolean(stagedImageUrl),
       brandLogoUrl: request.brandLogoUrl ?? null,
       productImageUrl,
       headline: copy.headline,
