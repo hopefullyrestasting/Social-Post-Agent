@@ -32,6 +32,9 @@ export function isProtectedRequest(request: Request): boolean {
   const url = new URL(request.url);
   if (!MUTATING_METHODS.has(request.method.toUpperCase())) return false;
   if (url.pathname.startsWith("/api/db/")) return true;
+  // Product asset writes spend Workers AI quota and mutate D1, so they use the
+  // same admin-key gate as dashboard writes.
+  if (url.pathname.startsWith("/api/assets/")) return true;
   // AI write endpoints mutate D1 or spend provider quota, so they share the
   // same admin-key gate as dashboard writes.
   return url.pathname === "/api/ai/harvest-random";

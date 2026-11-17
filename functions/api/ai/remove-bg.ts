@@ -315,6 +315,19 @@ export async function removePackshotBackgroundServer(
   return null;
 }
 
+/**
+ * Reusable server-side helper for bytes that never had a public URL (dashboard
+ * uploads). Returns a transparent PNG data URI, or null when Workers AI is not
+ * bound/the model fails, so the caller can keep the original photo.
+ */
+export async function removePackshotBackgroundFromBytes(
+  env: RemoveBgEnv,
+  bytes: Uint8Array,
+): Promise<string | null> {
+  if (!bytes || bytes.length === 0 || bytes.length > MAX_BYTES) return null;
+  return tryWorkersAi(env, { bytes });
+}
+
 export const onRequestPost: PagesFunction<RemoveBgEnv> = async ({ request, env }) => {
   let payload: unknown = {};
   try {

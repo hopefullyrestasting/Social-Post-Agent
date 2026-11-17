@@ -11,9 +11,9 @@ interface Env extends AuthEnv {
 /**
  * Applies to every route under `/api`.
  *
- * Reads pass through untouched. Writes under `/api/db/*` require the admin key
- * whenever `ADMIN_API_KEY` is bound; in preview mode the response is tagged so
- * the dashboard can warn that writes are still open.
+ * Reads pass through untouched. Writes under `/api/db/*` and `/api/assets/*`
+ * require the admin key whenever `ADMIN_API_KEY` is bound; in preview mode the
+ * response is tagged so the dashboard can warn that writes are still open.
  */
 export const onRequest: PagesFunction<Env> = async (context) => {
   const decision = await authorizeAdminRequest(context.request, context.env);
@@ -27,6 +27,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   if (
     decision.mode === "unconfigured-preview" &&
     (new URL(context.request.url).pathname.startsWith("/api/db/") ||
+      new URL(context.request.url).pathname.startsWith("/api/assets/") ||
       new URL(context.request.url).pathname === "/api/ai/harvest-random") &&
     ["POST", "PUT", "PATCH", "DELETE"].includes(
       context.request.method.toUpperCase(),
