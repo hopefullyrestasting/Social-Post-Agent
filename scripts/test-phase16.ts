@@ -21,6 +21,11 @@ import {
   sanitizeBenefitLines,
   type HarvestEnv,
 } from "../functions/api/ai/harvest-random";
+import {
+  buildBackgroundPrompt,
+  generateBackgroundWithNanoBananaDetailed,
+  onRequestPost as postNanoBananaStage,
+} from "../functions/api/ai/nano-banana-stage";
 
 /**
  * Phase 16 regression tests:
@@ -77,6 +82,27 @@ function testArtDirectionStyles() {
   });
   assert.ok(freshPrompt.includes("smooth monochrome sage-green wall"));
   assert.ok(freshPrompt.includes("fresh lush green mint and botanical leaves"));
+
+  // Hard constraint #4: an image model must never redraw packaging. Every
+  // background prompt forbids the product and never asks to preserve it.
+  for (const template of [
+    "simple-botanical-horizon",
+    "silver-podium-botanical",
+    "botanical-arch-frame",
+    "editorial-beauty-card",
+  ] as const) {
+    const prompt = buildBackgroundPrompt({ category: "haircare", name: "شامبو" }, template);
+    assert.ok(/no product/i.test(prompt), `Nano Banana ${template} must forbid the product.`);
+    assert.ok(/no bottle/i.test(prompt), `Nano Banana ${template} must forbid the bottle.`);
+    assert.ok(/no packaging/i.test(prompt), `Nano Banana ${template} must forbid packaging.`);
+    assert.ok(/no text|no letters/i.test(prompt), `Nano Banana ${template} must forbid text.`);
+    assert.ok(/9:16/i.test(prompt), `Nano Banana ${template} must request a vertical plate.`);
+    assert.equal(
+      /preserve the original product|reference image/i.test(prompt),
+      false,
+      `Nano Banana ${template} must never ask the model to recreate packaging.`,
+    );
+  }
 
   const luxuryPrompt = buildScenePrompt("simple-botanical-horizon", {
     category: "fragrance",
@@ -290,17 +316,73 @@ function testAdminProtection() {
   assert.equal(isProtectedRequest(scenePost), false, "Scene reads need no admin key.");
 }
 
+async function testBackgroundOnlyNanoBanana() {
+  // No key -> graceful fallback, never an attempt to draw the product.
+  const offline = await generateBackgroundWithNanoBananaDetailed({}, "simple-botanical-horizon", {
+    category: "skincare",
+  });
+  assert.equal(offline.provider, "studio-fallback");
+  assert.equal(offline.image, null);
+
+  // The HTTP endpoint rejects product images outright.
+  const rejected = await postNanoBananaStage({
+    request: new Request("https://example.test/api/ai/nano-banana-stage", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ imageUrl: "https://example.test/packshot.png" }),
+    }),
+    env: {},
+  } as any);
+  assert.equal(rejected.status, 400);
+  const body = (await rejected.json()) as Record<string, unknown>;
+  assert.match(String(body.error), /Background-only/i);
+
+  // Text-to-image request carries no inline product image.
+  const originalFetch = globalThis.fetch;
+  let sentBody = "";
+  globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+    sentBody = String(init?.body ?? "");
+    return new Response(
+      JSON.stringify({
+        candidates: [
+          {
+            content: {
+              parts: [{ inlineData: { mimeType: "image/png", data: "AAAA" } }],
+            },
+          },
+        ],
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  }) as typeof fetch;
+
+  try {
+    const generated = await generateBackgroundWithNanoBananaDetailed(
+      { GEMINI_API_KEY: "test-key" },
+      "simple-botanical-horizon",
+      { category: "skincare" },
+    );
+    assert.equal(generated.provider, "nano-banana");
+    assert.ok(String(generated.image).startsWith("data:image/png;base64,"));
+    assert.equal(/inline_data|inlineData/.test(sentBody), false, "No product image may be sent to the image model.");
+    assert.match(sentBody, /no product/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
 async function run() {
   testArtDirectionStyles();
   testStyleRotation();
   testMimeDetection();
   await testSceneGeneration();
+  await testBackgroundOnlyNanoBanana();
   testHarvestHelpers();
   await testHarvestSelection();
   testAdminProtection();
 
   console.log(
-    "Phase 16 tests passed: Simple primary art direction + five legacy styles, distinct variant styles, colour-adapted FLUX prompts, data URIs, mime detection, harvest safety filters, random selection, and admin protection.",
+    "Phase 16 tests passed: Simple primary art direction + five legacy styles, distinct variant styles, colour-adapted FLUX prompts, background-only Nano Banana plates (no packaging redraw), data URIs, mime detection, harvest safety filters, random selection, and admin protection.",
   );
 }
 
