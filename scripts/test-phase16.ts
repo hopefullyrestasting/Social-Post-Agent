@@ -533,14 +533,14 @@ async function testProductComposite() {
   assert.match(multipartText, /name="height"\r\n\r\n1344/);
   assert.ok(String(workers.image).startsWith("data:image/png;base64,"));
 
-  // Legacy SDXL img2img stays available as a lighter fallback when the edit
-  // model is unavailable.
-  const legacyCalls: { model: string; input: Record<string, unknown> }[] = [];
-  const legacy = await compositeProductScene(
+  // When klein-4b fails, the compositor retries with the larger 9B edit model
+  // (compact prompt) before falling back, improving resilience to safety flags.
+  const retryCalls: { model: string; input: Record<string, unknown> }[] = [];
+  const retried = await compositeProductScene(
     {
       AI: {
         run: async (model: string, input: Record<string, unknown>) => {
-          legacyCalls.push({ model, input });
+          retryCalls.push({ model, input });
           if (model === "@cf/black-forest-labs/flux-2-klein-4b") {
             throw new Error("edit model unavailable");
           }
@@ -551,15 +551,13 @@ async function testProductComposite() {
     reference,
     { category: "skincare" },
   );
-  assert.equal(legacy.provider, "workers-ai-img2img");
-  assert.equal(legacy.model, "@cf/stabilityai/stable-diffusion-xl-base-1.0");
-  const sdxlCall = legacyCalls.find(
-    (call) => call.model === "@cf/stabilityai/stable-diffusion-xl-base-1.0",
+  assert.equal(retried.provider, "workers-ai-img2img");
+  assert.equal(retried.model, "@cf/black-forest-labs/flux-2-klein-9b");
+  assert.equal(retried.usedReference, true);
+  assert.ok(
+    retryCalls.some((call) => call.model === "@cf/black-forest-labs/flux-2-klein-9b"),
+    "FLUX.2 klein-9b must be attempted when klein-4b fails.",
   );
-  assert.ok(sdxlCall, "SDXL img2img must be attempted after the edit model fails.");
-  assert.equal(sdxlCall?.input.image_b64, PNG_BASE64);
-  assert.equal(sdxlCall?.input.strength, 0.6);
-  assert.equal(sdxlCall?.input.num_steps, 6);
 
   // HTTP endpoint validation + graceful 502 fallback.
   const missing = await postProductComposite({

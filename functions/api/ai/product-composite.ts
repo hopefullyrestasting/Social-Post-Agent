@@ -86,8 +86,7 @@ const MODEL_GEMINI_FALLBACK = "gemini-2.0-flash-exp-image-generation";
  * function budget. This is the primary zero-key compositor.
  */
 const MODEL_WORKERS_EDIT = "@cf/black-forest-labs/flux-2-klein-4b";
-const MODEL_WORKERS_IMG2IMG = "@cf/stabilityai/stable-diffusion-xl-base-1.0";
-const MODEL_WORKERS_IMG2IMG_LEGACY = "@cf/runwayml/stable-diffusion-v1-5-img2img";
+const MODEL_WORKERS_EDIT_LARGE = "@cf/black-forest-labs/flux-2-klein-9b";
 const DEFAULT_HF_MODELS = [
   "lllyasviel/ic-light",
   "black-forest-labs/FLUX.1-dev",
@@ -204,6 +203,24 @@ export function buildProductCompositePrompt(
     "Leave the upper 35% of the vertical 9:16 frame clean, open, and softly lit for bold Arabic headline typography, and keep the bottom 12% darker for contact text.",
     "Strictly preserve the exact bottle shape, cap, glass color, colors, and original label text and logos from the reference image 100% authentic and undistorted. Copy every Arabic and Latin letter pixel-for-pixel: never redraw, reletter, translate, replace, crop or invent any packaging element; keep all printed text razor sharp and fully legible.",
     "No generated text, no watermarks, no extra bottles, no fake podium, no flat studio backdrop. One single authentic product only, photorealistic 8k commercial advertising photography.",
+  ].join(" ");
+}
+
+/**
+ * Compact, safety-friendlier variant used as a retry when the full prompt is
+ * flagged. Keeps the same environment, 9:16 safe areas and preservation rules.
+ */
+function buildCompactCompositePrompt(
+  input: ProductCompositePromptInput = {},
+): string {
+  const styleId = input.styleId ?? "simple-botanical-horizon";
+  const env = resolveEditorialEnvironment(input.context, styleId);
+  return [
+    "Edit the reference photo into a photorealistic 9:16 luxury product advertisement.",
+    `Place the exact same product from the image upright on ${env.surfaceMaterial} in natural golden-hour sunlight with realistic directional shadows and light caustics, and ${env.environmentalBackdrop} in soft bokeh (85mm f/1.8).`,
+    "Keep the upper 35% clean and softly lit for Arabic headline text and the bottom 12% darker for contact text.",
+    "Preserve the bottle shape, cap, colors and every letter of the original label and logo exactly as in the reference image, fully legible and undistorted.",
+    "No generated text, no watermark, no extra products, no podium. One authentic product only.",
   ].join(" ");
 }
 
@@ -608,15 +625,17 @@ async function generateWithWorkersAi(
   reference: ReferenceImage,
   prompt: string,
   diagnostics: string[],
+  options: { styleId?: ArtDirectionStyleId; context?: ProductCompositeContext } = {},
 ): Promise<{ image: string; model: string } | null> {
   if (!env.AI || typeof env.AI.run !== "function") return null;
 
-  // 1. FLUX.2 [klein]: real reference-conditioned editing. The authentic
-  //    packshot is the binary `input_image_0` reference and the model paints a
-  //    new 9:16 scene around the genuine package (4 fixed steps, ~9s).
+  // FLUX.2 [klein]: true reference-conditioned editing. The authentic packshot
+  // is the binary `input_image_0` reference and the model paints a new 9:16
+  // scene around the genuine package (4 fixed steps, ~9s).
   //
-  //    The safety classifier occasionally flags a benign studio output; that is
-  //    nondeterministic, so a single retry is attempted before giving up.
+  // The output safety classifier can flag a benign result nondeterministically
+  // or be sensitive to a long prompt, so we retry with a compact prompt and, if
+  // needed, the larger 9B model before falling back.
   const extension =
     reference.mime === "image/png"
       ? "png"
@@ -626,10 +645,21 @@ async function generateWithWorkersAi(
           ? "avif"
           : "jpg";
 
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
+  const compactPrompt = buildCompactCompositePrompt({
+    styleId: options.styleId,
+    context: options.context,
+  });
+
+  const editAttempts: { model: string; editPrompt: string; label: string }[] = [
+    { model: MODEL_WORKERS_EDIT, editPrompt: prompt, label: "attempt 1" },
+    { model: MODEL_WORKERS_EDIT, editPrompt: compactPrompt, label: "attempt 2 (compact)" },
+    { model: MODEL_WORKERS_EDIT_LARGE, editPrompt: compactPrompt, label: "attempt 3 (9b)" },
+  ];
+
+  for (const attempt of editAttempts) {
     try {
       const form = new FormData();
-      form.append("prompt", prompt);
+      form.append("prompt", attempt.editPrompt);
       form.append(
         "input_image_0",
         new Blob([Uint8Array.from(reference.bytes)], { type: reference.mime }),
@@ -640,7 +670,7 @@ async function generateWithWorkersAi(
       form.append("guidance", "5");
       const serialized = new Response(form);
 
-      const result = await env.AI.run(MODEL_WORKERS_EDIT, {
+      const result = await env.AI.run(attempt.model, {
         multipart: {
           body: serialized.body,
           contentType:
@@ -648,63 +678,14 @@ async function generateWithWorkersAi(
         },
       });
       const image = await extractImageFromUnknown(result);
-      if (image) return { image, model: MODEL_WORKERS_EDIT };
-      diagnostics.push(`workers-ai ${MODEL_WORKERS_EDIT}: no image in response`);
-    } catch (error) {
-      diagnostics.push(
-        `workers-ai ${MODEL_WORKERS_EDIT} attempt ${attempt}: ${errorMessage(error)}`,
-      );
-      console.warn(
-        `Workers AI ${MODEL_WORKERS_EDIT} reference editing attempt ${attempt} failed.`,
-        error,
-      );
-    }
-  }
-
-  const negativePrompt =
-    "blurry label, distorted text, misspelled letters, extra bottles, duplicate product, watermark, price tag, low quality, deformed packaging";
-
-  // 2. SDXL Base 1.0 legacy img2img path (image_b64 + strength). It must stay
-  //    light to fit the request budget; the retired Runway endpoint is last.
-  const attempts: { model: string; input: Record<string, unknown> }[] = [
-    {
-      model: MODEL_WORKERS_IMG2IMG,
-      input: {
-        prompt,
-        negative_prompt: negativePrompt,
-        image_b64: reference.base64,
-        strength: 0.6,
-        guidance: 6.5,
-        num_steps: 6,
-        width: 512,
-        height: 896,
-      },
-    },
-    {
-      model: MODEL_WORKERS_IMG2IMG_LEGACY,
-      input: {
-        prompt,
-        negative_prompt: negativePrompt,
-        image: Array.from(reference.bytes),
-        strength: 0.5,
-        guidance: 7,
-        num_steps: 6,
-        width: 512,
-        height: 896,
-      },
-    },
-  ];
-
-  for (const attempt of attempts) {
-    try {
-      const result = await env.AI.run(attempt.model, attempt.input);
-      const image = await extractImageFromUnknown(result);
       if (image) return { image, model: attempt.model };
       diagnostics.push(`workers-ai ${attempt.model}: no image in response`);
     } catch (error) {
-      diagnostics.push(`workers-ai ${attempt.model}: ${errorMessage(error)}`);
+      diagnostics.push(
+        `workers-ai ${attempt.model} ${attempt.label}: ${errorMessage(error)}`,
+      );
       console.warn(
-        `Workers AI ${attempt.model} image-to-image compositing failed.`,
+        `Workers AI ${attempt.model} reference editing ${attempt.label} failed.`,
         error,
       );
     }
@@ -778,6 +759,7 @@ export async function compositeProductScene(
     reference,
     prompt,
     diagnostics,
+    { styleId: options.styleId, context },
   );
   if (workersAi) {
     return {
