@@ -11,6 +11,13 @@ import {
   type ExportCreative,
 } from "@/lib/al-rahma/export";
 
+type CompositeAttempt = {
+  provider: string;
+  model: string;
+  status: string;
+  errorCode?: string;
+};
+
 type ArtDirectionMeta = {
   styleId?: string;
   styleLabelAr?: string;
@@ -20,6 +27,12 @@ type ArtDirectionMeta = {
   model?: string;
   cutoutApplied?: boolean;
   stagedProduct?: boolean;
+  aiComposite?: boolean;
+  backgroundOnly?: boolean;
+  compositeProvider?: string | null;
+  compositeModel?: string | null;
+  compositeFallbackReason?: string | null;
+  compositeAttempts?: CompositeAttempt[];
 };
 
 type CampaignCreative = ExportCreative & {
@@ -40,6 +53,14 @@ type CampaignCreative = ExportCreative & {
   art_direction_label?: string | null;
   ai_engine?: string | null;
   cutout_applied?: boolean;
+  ai_composite?: boolean;
+  contains_product?: boolean;
+  used_reference?: boolean;
+  composite_provider?: string | null;
+  composite_model?: string | null;
+  composite_fallback_reason?: string | null;
+  composite_attempts?: CompositeAttempt[];
+  composite_diagnostics?: string[];
   artDirection?: ArtDirectionMeta | null;
 };
 
@@ -250,14 +271,24 @@ function CreativeCard({
 
   const passed = creative.quality_status === "passed" || creative.success;
   const artMeta = creativeArtMeta(creative);
+  const aiComposite = Boolean(creative.ai_composite ?? artMeta?.aiComposite);
+  const compositeProvider = creative.composite_provider ?? artMeta?.compositeProvider ?? null;
+  const compositeModel = creative.composite_model ?? artMeta?.compositeModel ?? null;
+  const fallbackReason =
+    creative.composite_fallback_reason ?? artMeta?.compositeFallbackReason ?? null;
+  const attempts = creative.composite_attempts ?? artMeta?.compositeAttempts ?? [];
+  const failedAttempts = attempts.filter((a) => a.status === "failed");
+
   const styleLabel = artMeta?.styleLabelAr
     ? ART_STYLE_LABELS[artMeta.styleLabelAr] ?? artMeta.styleLabelAr
     : artMeta?.styleId
       ? ART_STYLE_LABELS[artMeta.styleId] ?? artMeta.styleId
       : null;
-  const engineLabel = artMeta?.engine
-    ? ENGINE_LABELS[artMeta.engine] ?? artMeta.engine
-    : null;
+  const engineLabel = aiComposite
+    ? `تركيب مرجعي AI — ${compositeModel || compositeProvider || "model"}`
+    : artMeta?.engine
+      ? ENGINE_LABELS[artMeta.engine] ?? artMeta.engine
+      : null;
 
   return (
     <article className="rounded-xl border border-slate-200 bg-white p-3">
@@ -272,8 +303,17 @@ function CreativeCard({
         </span>
       </div>
 
-      {(styleLabel || engineLabel) && (
+      {(styleLabel || engineLabel || aiComposite || attempts.length > 0) && (
         <div className="mb-2 flex flex-wrap gap-1.5">
+          {aiComposite ? (
+            <span className="rounded-full bg-emerald-100 px-2 py-1 text-[11px] font-bold text-emerald-900">
+              ✓ تركيب مرجعي حقيقي (AI)
+            </span>
+          ) : attempts.length > 0 ? (
+            <span className="rounded-full bg-amber-100 px-2 py-1 text-[11px] font-bold text-amber-900">
+              بديل: ملصق أصلي فوق خلفية (بدون تركيب AI)
+            </span>
+          ) : null}
           {styleLabel && (
             <span className="rounded-full bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-800">
               🎨 {styleLabel}
@@ -289,6 +329,22 @@ function CreativeCard({
               ✂️ قص خلفية
             </span>
           )}
+        </div>
+      )}
+
+      {!aiComposite && (fallbackReason || failedAttempts.length > 0) && (
+        <div className="mb-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-900">
+          <p className="font-bold">تعذر التركيب المرجعي (AI) — تم استخدام الملصق الأصلي كبديل آمن.</p>
+          {fallbackReason ? <p className="mt-1">{fallbackReason}</p> : null}
+          {failedAttempts.length > 0 ? (
+            <ul className="mt-1 list-disc space-y-0.5 pr-4">
+              {failedAttempts.slice(0, 6).map((a, i) => (
+                <li key={`${a.provider}-${a.model}-${i}`}>
+                  {a.provider} / {a.model}: {a.errorCode || "failed"}
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </div>
       )}
 

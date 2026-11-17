@@ -56,6 +56,13 @@ export type ProductCompositeProvider =
   | "workers-ai-img2img"
   | "unavailable";
 
+export interface CompositeAttempt {
+  provider: string;
+  model: string;
+  status: "success" | "failed" | "skipped";
+  errorCode?: string;
+}
+
 export interface ProductCompositeOutcome {
   image: string | null;
   provider: ProductCompositeProvider;
@@ -68,6 +75,8 @@ export interface ProductCompositeOutcome {
   fallbackReason?: string;
   /** Bounded, secret-free provider error summaries for operations/debugging. */
   diagnostics?: string[];
+  /** Explicit per-provider attempt telemetry (never silent fallbacks). */
+  attempts?: CompositeAttempt[];
 }
 
 export interface ProductCompositePromptInput {
@@ -470,14 +479,33 @@ function errorMessage(error: unknown): string {
   return raw.slice(0, 300);
 }
 
+function pushAttempt(
+  attempts: CompositeAttempt[],
+  diagnostics: string[],
+  attempt: CompositeAttempt,
+  detail?: string,
+): void {
+  attempts.push(attempt);
+  if (detail) diagnostics.push(detail);
+}
+
 async function generateWithGemini(
   env: ProductCompositeEnv,
   reference: ReferenceImage,
   prompt: string,
   diagnostics: string[],
+  attempts: CompositeAttempt[],
 ): Promise<{ image: string; model: string } | null> {
   const key = env.GEMINI_API_KEY?.trim();
-  if (!key) return null;
+  if (!key) {
+    pushAttempt(attempts, diagnostics, {
+      provider: "gemini-image-edit",
+      model: MODEL_GEMINI_PRIMARY,
+      status: "skipped",
+      errorCode: "not_configured",
+    });
+    return null;
+  }
 
   for (const model of [MODEL_GEMINI_PRIMARY, MODEL_GEMINI_FALLBACK]) {
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(
@@ -502,16 +530,40 @@ async function generateWithGemini(
       });
 
       if (!response.ok) {
-        diagnostics.push(`gemini ${model}: HTTP ${response.status}`);
+        const code = `HTTP ${response.status}`;
+        pushAttempt(attempts, diagnostics, {
+          provider: "gemini-image-edit",
+          model,
+          status: "failed",
+          errorCode: code,
+        }, `gemini ${model}: ${code}`);
         console.warn(`Gemini image edit ${model} returned HTTP ${response.status}.`);
         continue;
       }
 
       const image = extractGeminiInlineImage(await response.json());
-      if (image) return { image, model };
-      diagnostics.push(`gemini ${model}: no inline image`);
+      if (image) {
+        pushAttempt(attempts, diagnostics, {
+          provider: "gemini-image-edit",
+          model,
+          status: "success",
+        });
+        return { image, model };
+      }
+      pushAttempt(attempts, diagnostics, {
+        provider: "gemini-image-edit",
+        model,
+        status: "failed",
+        errorCode: "no_image",
+      }, `gemini ${model}: no inline image`);
     } catch (error) {
-      diagnostics.push(`gemini ${model}: ${errorMessage(error)}`);
+      const msg = errorMessage(error);
+      pushAttempt(attempts, diagnostics, {
+        provider: "gemini-image-edit",
+        model,
+        status: "failed",
+        errorCode: msg,
+      }, `gemini ${model}: ${msg}`);
       console.warn(`Gemini image edit ${model} failed.`, error);
     }
   }
@@ -559,9 +611,18 @@ async function generateWithHuggingFace(
   reference: ReferenceImage,
   prompt: string,
   diagnostics: string[],
+  attempts: CompositeAttempt[],
 ): Promise<{ image: string; model: string } | null> {
   const token = env.HF_TOKEN?.trim();
-  if (!token) return null;
+  if (!token) {
+    pushAttempt(attempts, diagnostics, {
+      provider: "huggingface-img2img",
+      model: env.HF_COMPOSITE_MODEL?.trim() || DEFAULT_HF_MODELS[0],
+      status: "skipped",
+      errorCode: "not_configured",
+    });
+    return null;
+  }
 
   const models = Array.from(
     new Set(
@@ -598,7 +659,13 @@ async function generateWithHuggingFace(
         });
 
         if (!response.ok) {
-          diagnostics.push(`huggingface ${model}: HTTP ${response.status}`);
+          const code = `HTTP ${response.status}`;
+          pushAttempt(attempts, diagnostics, {
+            provider: "huggingface-img2img",
+            model,
+            status: "failed",
+            errorCode: code,
+          }, `huggingface ${model}: ${code}`);
           console.warn(
             `Hugging Face ${model} returned HTTP ${response.status} at ${endpoint}.`,
           );
@@ -607,11 +674,29 @@ async function generateWithHuggingFace(
         }
 
         const image = await responseToImage(response);
-        if (image) return { image, model };
-        diagnostics.push(`huggingface ${model}: no image in response`);
+        if (image) {
+          pushAttempt(attempts, diagnostics, {
+            provider: "huggingface-img2img",
+            model,
+            status: "success",
+          });
+          return { image, model };
+        }
+        pushAttempt(attempts, diagnostics, {
+          provider: "huggingface-img2img",
+          model,
+          status: "failed",
+          errorCode: "no_image",
+        }, `huggingface ${model}: no image in response`);
         break;
       } catch (error) {
-        diagnostics.push(`huggingface ${model}: ${errorMessage(error)}`);
+        const msg = errorMessage(error);
+        pushAttempt(attempts, diagnostics, {
+          provider: "huggingface-img2img",
+          model,
+          status: "failed",
+          errorCode: msg,
+        }, `huggingface ${model}: ${msg}`);
         console.warn(`Hugging Face ${model} failed at ${endpoint}.`, error);
       }
     }
@@ -625,9 +710,18 @@ async function generateWithWorkersAi(
   reference: ReferenceImage,
   prompt: string,
   diagnostics: string[],
+  attempts: CompositeAttempt[],
   options: { styleId?: ArtDirectionStyleId; context?: ProductCompositeContext } = {},
 ): Promise<{ image: string; model: string } | null> {
-  if (!env.AI || typeof env.AI.run !== "function") return null;
+  if (!env.AI || typeof env.AI.run !== "function") {
+    pushAttempt(attempts, diagnostics, {
+      provider: "workers-ai-img2img",
+      model: MODEL_WORKERS_EDIT,
+      status: "skipped",
+      errorCode: "not_configured",
+    });
+    return null;
+  }
 
   // FLUX.2 [klein]: true reference-conditioned editing. The authentic packshot
   // is the binary `input_image_0` reference and the model paints a new 9:16
@@ -678,12 +772,28 @@ async function generateWithWorkersAi(
         },
       });
       const image = await extractImageFromUnknown(result);
-      if (image) return { image, model: attempt.model };
-      diagnostics.push(`workers-ai ${attempt.model}: no image in response`);
+      if (image) {
+        pushAttempt(attempts, diagnostics, {
+          provider: "workers-ai-img2img",
+          model: attempt.model,
+          status: "success",
+        });
+        return { image, model: attempt.model };
+      }
+      pushAttempt(attempts, diagnostics, {
+        provider: "workers-ai-img2img",
+        model: attempt.model,
+        status: "failed",
+        errorCode: "no_image",
+      }, `workers-ai ${attempt.model}: no image in response`);
     } catch (error) {
-      diagnostics.push(
-        `workers-ai ${attempt.model} ${attempt.label}: ${errorMessage(error)}`,
-      );
+      const msg = errorMessage(error);
+      pushAttempt(attempts, diagnostics, {
+        provider: "workers-ai-img2img",
+        model: attempt.model,
+        status: "failed",
+        errorCode: msg,
+      }, `workers-ai ${attempt.model} ${attempt.label}: ${msg}`);
       console.warn(
         `Workers AI ${attempt.model} reference editing ${attempt.label} failed.`,
         error,
@@ -718,6 +828,8 @@ export async function compositeProductScene(
       aiComposite: false,
       fallbackReason:
         "No image-to-image provider configured (GEMINI_API_KEY, HF_TOKEN or Workers AI); using the authentic packshot composite fallback.",
+      diagnostics: [],
+      attempts: [],
     };
   }
 
@@ -731,6 +843,8 @@ export async function compositeProductScene(
       aiComposite: false,
       fallbackReason:
         "Authentic reference packshot could not be read; using the authentic packshot composite fallback.",
+      diagnostics: ["reference packshot could not be loaded"],
+      attempts: [],
     };
   }
 
@@ -741,8 +855,9 @@ export async function compositeProductScene(
     height: options.height,
   });
   const diagnostics: string[] = [];
+  const attempts: CompositeAttempt[] = [];
 
-  const gemini = await generateWithGemini(env, reference, prompt, diagnostics);
+  const gemini = await generateWithGemini(env, reference, prompt, diagnostics, attempts);
   if (gemini) {
     return {
       image: gemini.image,
@@ -751,6 +866,8 @@ export async function compositeProductScene(
       usedReference: true,
       containsProduct: true,
       aiComposite: true,
+      diagnostics,
+      attempts,
     };
   }
 
@@ -759,6 +876,7 @@ export async function compositeProductScene(
     reference,
     prompt,
     diagnostics,
+    attempts,
     { styleId: options.styleId, context },
   );
   if (workersAi) {
@@ -769,6 +887,8 @@ export async function compositeProductScene(
       usedReference: true,
       containsProduct: true,
       aiComposite: true,
+      diagnostics,
+      attempts,
     };
   }
 
@@ -777,6 +897,7 @@ export async function compositeProductScene(
     reference,
     prompt,
     diagnostics,
+    attempts,
   );
   if (huggingFace) {
     return {
@@ -786,6 +907,8 @@ export async function compositeProductScene(
       usedReference: true,
       containsProduct: true,
       aiComposite: true,
+      diagnostics,
+      attempts,
     };
   }
 
@@ -798,6 +921,7 @@ export async function compositeProductScene(
     fallbackReason:
       "Configured image-to-image providers did not return an image; using the authentic packshot composite fallback.",
     diagnostics,
+    attempts,
   };
 }
 
@@ -889,6 +1013,7 @@ export const onRequestPost: PagesFunction<ProductCompositeEnv> = async ({
         usedReference: outcome.usedReference,
         fallbackReason: outcome.fallbackReason,
         diagnostics: outcome.diagnostics,
+        attempts: outcome.attempts,
       },
       502,
     );
@@ -904,5 +1029,6 @@ export const onRequestPost: PagesFunction<ProductCompositeEnv> = async ({
     usedReference: outcome.usedReference,
     containsProduct: outcome.containsProduct,
     aiComposite: outcome.aiComposite,
+    attempts: outcome.attempts,
   });
 };

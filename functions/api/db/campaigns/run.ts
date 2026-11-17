@@ -520,6 +520,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           compositeProvider: aiComposite ? compositeOutcome.provider : null,
           compositeModel: aiComposite ? (compositeOutcome.model ?? null) : null,
           backgroundProvider,
+          compositeFallbackReason: !aiComposite ? compositeOutcome.fallbackReason ?? null : null,
+          compositeAttempts: compositeOutcome.attempts ?? [],
         };
         const qualityNotes = JSON.stringify({
           score: variant.qualityReport.overallScore,
@@ -590,6 +592,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           used_reference: aiComposite && compositeOutcome.usedReference,
           composite_provider: aiComposite ? compositeOutcome.provider : null,
           composite_model: aiComposite ? (compositeOutcome.model ?? null) : null,
+          composite_fallback_reason: !aiComposite ? compositeOutcome.fallbackReason ?? null : null,
+          composite_attempts: compositeOutcome.attempts ?? [],
+          composite_diagnostics: !aiComposite ? compositeOutcome.diagnostics ?? [] : [],
           artDirection,
           qualityReport: variant.qualityReport,
         });
