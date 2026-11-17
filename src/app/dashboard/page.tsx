@@ -12,6 +12,7 @@ import { adminWriteHeaders, persistAdminKey, readAdminKey } from "@/lib/al-rahma
 import AdPreview from "@/components/al-rahma/ad-preview";
 import BulkImportModal from "@/components/al-rahma/bulk-import-modal";
 import CampaignGallery from "@/components/al-rahma/campaign-gallery";
+import ProductAssetManager from "@/components/al-rahma/product-asset-manager";
 import VerifyModal from "@/components/al-rahma/verify-modal";
 
 type Brand = {
@@ -567,6 +568,11 @@ export default function DashboardPage() {
     refresh();
   }
 
+  function handleAssetsVerified(message: string) {
+    setNotice(message);
+    refresh();
+  }
+
   const statCards = [
     { label: "إجمالي المنتجات", value: stats?.products },
     { label: "إجمالي البراندات", value: stats?.brands },
@@ -734,6 +740,11 @@ export default function DashboardPage() {
         </section>
 
         <CampaignGallery key={refreshKey} />
+
+        <ProductAssetManager
+          pendingCount={stats?.needsVerification}
+          onVerified={handleAssetsVerified}
+        />
 
         <section className="rounded-2xl border border-slate-200 bg-white p-5">
           <div className="mb-4 flex flex-wrap items-end justify-between gap-3">

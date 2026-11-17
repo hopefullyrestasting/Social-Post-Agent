@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { onRequest as adminMiddleware } from "../functions/api/_middleware";
+import { onRequestGet as getAssetCatalog } from "../functions/api/assets/catalog";
+import { onRequestPost as postAssetUpload } from "../functions/api/assets/upload";
 import { onRequestGet as getBrands } from "../functions/api/db/brands";
 import { onRequestGet as getCampaigns } from "../functions/api/db/campaigns";
 import { onRequestPost as runCampaign } from "../functions/api/db/campaigns/run";
@@ -18,8 +20,45 @@ import {
   onRequestPost as postPromos,
 } from "../functions/api/db/promos";
 import { onRequestGet as getStats } from "../functions/api/db/stats";
+import {
+  bestFilenameMatch,
+  matchProductsByFilename,
+} from "../src/lib/al-rahma/filename-matcher";
 
 type BoundValue = string | number | null;
+
+const ASSET_CATALOG = [
+  {
+    id: "product-1",
+    name_arabic: "شامبو فاتيكا بزيت الزيتون",
+    name_english: "Vatika olive shampoo",
+    category: "shampoo",
+    verification_status: "needs_verification",
+    brand_arabic: "فاتيكا",
+    brand_english: "Vatika",
+    brand_slug: "vatika",
+  },
+  {
+    id: "product-2",
+    name_arabic: "ماسك ألو إيفا بالصبار",
+    name_english: "Eva aloe mask",
+    category: "hair_mask",
+    verification_status: "needs_verification",
+    brand_arabic: "إيفا",
+    brand_english: "Eva",
+    brand_slug: "eva",
+  },
+  {
+    id: "product-3",
+    name_arabic: "عطر العنبر الملكي",
+    name_english: "Royal amber perfume",
+    category: "perfume",
+    verification_status: "verified",
+    brand_arabic: "الرحمة",
+    brand_english: "Al Rahma",
+    brand_slug: "al-rahma",
+  },
+];
 
 class MockStatement {
   values: BoundValue[] = [];
@@ -36,6 +75,26 @@ class MockStatement {
 
   async first<T>(): Promise<T | null> {
     this.database.calls.push({ sql: this.sql, values: this.values });
+
+    // asset catalog aggregate counts
+    if (this.sql.includes("SUM(CASE WHEN verification_status = 'verified'")) {
+      return {
+        total: ASSET_CATALOG.length,
+        verified: ASSET_CATALOG.filter(
+          (product) => product.verification_status === "verified",
+        ).length,
+      } as T;
+    }
+
+    // asset upload product lookup (product + brand)
+    if (
+      this.sql.includes("FROM products p") &&
+      this.sql.includes("JOIN brands b") &&
+      this.sql.includes("WHERE p.id = ?")
+    ) {
+      const product = ASSET_CATALOG.find((row) => row.id === this.values[0]);
+      return product ? ({ ...product } as unknown as T) : null;
+    }
 
     // counts
     if (this.sql.includes("COUNT(*)") && this.sql.includes("products")) {
@@ -207,6 +266,14 @@ class MockStatement {
           } as T,
         ],
       };
+    }
+    if (
+      this.sql.includes("FROM products p") &&
+      this.sql.includes("b.name_arabic AS brand_arabic") &&
+      this.sql.includes("LIMIT ?") &&
+      !this.sql.includes("OFFSET")
+    ) {
+      return { results: ASSET_CATALOG as unknown as T[] };
     }
     if (this.sql.includes("SELECT claim_type, claim_text FROM product_research_claims")) {
       return { results: [] };
@@ -603,6 +670,16 @@ async function testCampaignEndpoints() {
   );
   assert.ok(selectCall, "eligible products query must run");
   assert.ok(selectCall.sql.includes("ORDER BY RANDOM()"), "Campaign selection must use ORDER BY RANDOM()");
+  assert.ok(
+    selectCall.sql.includes("pa.is_primary = 1") &&
+      selectCall.sql.includes("pa.image_type = 'reference'") &&
+      selectCall.sql.includes("pa.verification_status = 'verified'"),
+    "Campaign selection must only use verified primary reference images (including dashboard uploads).",
+  );
+  assert.ok(
+    selectCall.sql.includes("WHERE p.verification_status = 'verified'"),
+    "Campaign selection must only use verified products.",
+  );
   assert.equal(selectCall.sql.includes("last_advertised_at IS NULL"), false, "Random selection must not prioritize last_advertised_at cooldown ordering.");
 
   // Persistence: campaign insert, 6 creative inserts, 3 last_advertised_at updates
@@ -629,6 +706,237 @@ async function testCampaignEndpoints() {
   assert.equal(emptyRes.status, 200);
   assert.equal((emptyBody.campaign as { status: string }).status, "empty");
   assert.equal((emptyBody.creatives as unknown[]).length, 0);
+}
+
+const TINY_PNG_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+function tinyPngBytes(): Uint8Array {
+  return Uint8Array.from(Buffer.from(TINY_PNG_BASE64, "base64"));
+}
+
+function uploadForm(
+  productId: string,
+  fileName: string,
+  extra: Record<string, string> = {},
+): FormData {
+  const form = new FormData();
+  form.set("productId", productId);
+  form.set(
+    "imageFile",
+    new File([tinyPngBytes()], fileName, { type: "image/png" }),
+  );
+  for (const [key, value] of Object.entries(extra)) {
+    form.set(key, value);
+  }
+  return form;
+}
+
+async function testFilenameMatching() {
+  const vatika = bestFilenameMatch("vatika-shampoo-olive.jpg", ASSET_CATALOG);
+  assert.ok(vatika, "A Latin filename with brand + product must match.");
+  assert.equal(vatika?.product.id, "product-1");
+  assert.equal(vatika?.confidence, "high");
+
+  const arabic = bestFilenameMatch("ماسك-الو-ايفا-بالصبار.jpg", ASSET_CATALOG);
+  assert.ok(arabic, "An Arabic filename must match after normalization.");
+  assert.equal(arabic?.product.id, "product-2");
+  assert.equal(arabic?.confidence, "high");
+
+  const perfume = bestFilenameMatch("الرحمة-عطر-العنبر.png", ASSET_CATALOG);
+  assert.equal(perfume?.product.id, "product-3");
+
+  const chatNoise = matchProductsByFilename(
+    "WhatsApp Image 2026-11-17 at 10.32.11.jpeg",
+    ASSET_CATALOG,
+  );
+  assert.equal(chatNoise.length, 0, "Chat noise must not produce false matches.");
+
+  const unnamed = matchProductsByFilename("IMG_1234.jpg", ASSET_CATALOG);
+  assert.equal(unnamed.length, 0, "Camera filenames must not produce false matches.");
+
+  const generic = bestFilenameMatch("شامبو.jpg", ASSET_CATALOG);
+  assert.ok(generic, "A generic product word still yields a candidate.");
+  assert.equal(
+    generic?.confidence,
+    "low",
+    "A single generic token must stay low confidence so bulk upload asks for a manual pick.",
+  );
+}
+
+async function testAssetEndpoints() {
+  // GET /api/assets/catalog
+  const catalogDb = new MockDatabase();
+  const catalogRes = await getAssetCatalog(
+    context(catalogDb, "https://example.test/api/assets/catalog"),
+  );
+  const catalogBody = await json(catalogRes);
+  assert.equal(catalogRes.status, 200);
+  assert.equal(catalogBody.success, true);
+  assert.equal((catalogBody.products as unknown[]).length, 3);
+  assert.deepEqual(catalogBody.counts, { total: 3, verified: 1, pending: 2 });
+  assert.equal(
+    catalogRes.headers.get("Cache-Control"),
+    "no-store, max-age=0, must-revalidate",
+  );
+
+  // POST /api/assets/upload — multipart, embedded fallback, no AI bound
+  const uploadDb = new MockDatabase();
+  const uploadRes = await postAssetUpload(
+    context(uploadDb, "https://example.test/api/assets/upload", {
+      method: "POST",
+      body: uploadForm("product-1", "packshot.png", { autoCutout: "false" }),
+    }),
+  );
+  const uploadBody = await json(uploadRes);
+  assert.equal(uploadRes.status, 200, JSON.stringify(uploadBody));
+  assert.equal(uploadBody.success, true);
+  assert.equal(
+    (uploadBody.product as { verification_status: string }).verification_status,
+    "verified",
+  );
+  assert.equal((uploadBody.asset as { storage: string }).storage, "embedded");
+  assert.equal((uploadBody.cutout as { applied: boolean }).applied, false);
+  assert.equal((uploadBody.claims as { inserted: number }).inserted, 0);
+
+  const uploadSql = uploadDb.calls.map((call) => call.sql);
+  assert.ok(
+    uploadSql.some((sql) =>
+      sql.includes("UPDATE product_assets SET is_primary = 0"),
+    ),
+    "The previous primary asset must be demoted, not deleted.",
+  );
+  const assetInsert = uploadDb.calls.find((call) =>
+    call.sql.includes("INSERT INTO product_assets"),
+  );
+  assert.ok(assetInsert);
+  assert.ok(
+    String(assetInsert?.values[2]).startsWith("data:image/png;base64,"),
+    "Without R2 the upload must be stored as an optimized embedded data URI.",
+  );
+  assert.equal(
+    assetInsert?.values[4],
+    null,
+    "Embedded uploads must not claim an R2 storage key.",
+  );
+  const productUpdate = uploadDb.calls.find((call) =>
+    call.sql.includes("UPDATE products"),
+  );
+  assert.ok(productUpdate?.sql.includes("verification_status = 'verified'"));
+
+  // autoCutout requested but Workers AI is not bound -> graceful fallback
+  const cutoutDb = new MockDatabase();
+  const cutoutRes = await postAssetUpload(
+    context(cutoutDb, "https://example.test/api/assets/upload", {
+      method: "POST",
+      body: uploadForm("product-2", "mask.png", { autoCutout: "true" }),
+    }),
+  );
+  const cutoutBody = await json(cutoutRes);
+  assert.equal(cutoutRes.status, 200);
+  assert.equal((cutoutBody.cutout as { requested: boolean }).requested, true);
+  assert.equal((cutoutBody.cutout as { applied: boolean }).applied, false);
+  assert.ok((cutoutBody.cutout as { note: string | null }).note);
+
+  // Claims without a verified source are rejected (no invented marketing copy)
+  const noSourceRes = await postAssetUpload(
+    context(new MockDatabase(), "https://example.test/api/assets/upload", {
+      method: "POST",
+      body: uploadForm("product-1", "pack.png", {
+        autoCutout: "false",
+        benefits: "ترطيب عميق",
+      }),
+    }),
+  );
+  assert.equal(noSourceRes.status, 400);
+
+  // A source URL alone is stored as verified provenance for the quality gate.
+  const sourceDb = new MockDatabase();
+  const sourceRes = await postAssetUpload(
+    context(sourceDb, "https://example.test/api/assets/upload", {
+      method: "POST",
+      body: uploadForm("product-2", "mask.png", {
+        autoCutout: "false",
+        sourceUrl: "https://example.test/product-page",
+      }),
+    }),
+  );
+  assert.equal(sourceRes.status, 200);
+  assert.ok(
+    sourceDb.calls.some((call) =>
+      call.sql.includes("INSERT INTO product_information_sources"),
+    ),
+  );
+  assert.equal(
+    sourceDb.calls.filter((call) =>
+      call.sql.includes("INSERT INTO product_research_claims"),
+    ).length,
+    0,
+    "A source URL must not invent benefit claims.",
+  );
+
+  // Grounded claims are stored with a verified source
+  const groundedDb = new MockDatabase();
+  const groundedRes = await postAssetUpload(
+    context(groundedDb, "https://example.test/api/assets/upload", {
+      method: "POST",
+      body: uploadForm("product-1", "pack.png", {
+        autoCutout: "false",
+        sourceUrl: "https://example.test/official",
+        benefits: "ترطيب عميق\nلمعان طبيعي",
+      }),
+    }),
+  );
+  const groundedBody = await json(groundedRes);
+  assert.equal(groundedRes.status, 200, JSON.stringify(groundedBody));
+  assert.equal((groundedBody.claims as { inserted: number }).inserted, 2);
+  assert.ok(
+    groundedDb.calls.some((call) =>
+      call.sql.includes("INSERT INTO product_information_sources"),
+    ),
+  );
+  assert.equal(
+    groundedDb.calls.filter((call) =>
+      call.sql.includes("INSERT INTO product_research_claims"),
+    ).length,
+    2,
+  );
+
+  // Unknown product -> 404 without touching assets
+  const missingDb = new MockDatabase();
+  const missingRes = await postAssetUpload(
+    context(missingDb, "https://example.test/api/assets/upload", {
+      method: "POST",
+      body: uploadForm("missing", "x.png"),
+    }),
+  );
+  assert.equal(missingRes.status, 404);
+  assert.equal(
+    missingDb.calls.filter((call) => call.sql.includes("INSERT INTO product_assets"))
+      .length,
+    0,
+  );
+
+  // Non-multipart bodies are refused
+  const jsonRes = await postAssetUpload(
+    context(new MockDatabase(), "https://example.test/api/assets/upload", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ productId: "product-1" }),
+    }),
+  );
+  assert.equal(jsonRes.status, 415);
+
+  // Missing image file -> 400
+  const emptyForm = new FormData();
+  emptyForm.set("productId", "product-1");
+  const emptyRes = await postAssetUpload(
+    context(new MockDatabase(), "https://example.test/api/assets/upload", {
+      method: "POST",
+      body: emptyForm,
+    }),
+  );
+  assert.equal(emptyRes.status, 400);
 }
 
 async function run() {
@@ -919,6 +1227,41 @@ async function run() {
   const allowed = await adminMiddleware(okKeyCtx);
   assert.equal(allowed.status, 200);
 
+  // Asset uploads are writes: protected when the key is configured…
+  const assetDenied = await adminMiddleware({
+    request: new Request("https://example.test/api/assets/upload", {
+      method: "POST",
+    }),
+    env: { DB: new MockDatabase(), ADMIN_API_KEY: "secret-key" },
+    next: async () =>
+      new Response(JSON.stringify({ success: true }), { status: 200 }),
+  } as any);
+  assert.equal(assetDenied.status, 401);
+
+  // …and tagged in preview mode so the dashboard can warn.
+  const assetPreview = await adminMiddleware({
+    request: new Request("https://example.test/api/assets/upload", {
+      method: "POST",
+    }),
+    env: { DB: new MockDatabase() },
+    next: async () =>
+      new Response(JSON.stringify({ success: true }), { status: 200 }),
+  } as any);
+  assert.equal(assetPreview.status, 200);
+  assert.equal(
+    assetPreview.headers.get("X-Auth-Mode"),
+    "unconfigured-preview",
+  );
+
+  // Asset reads stay public.
+  const assetRead = await adminMiddleware({
+    request: new Request("https://example.test/api/assets/catalog"),
+    env: { DB: new MockDatabase() },
+    next: async () =>
+      new Response(JSON.stringify({ success: true }), { status: 200 }),
+  } as any);
+  assert.equal(assetRead.headers.get("X-Auth-Mode"), null);
+
   // --- Promos ----------------------------------------------------------------
   const promosDb = new MockDatabase();
   const promosGet = await getPromos(
@@ -1046,6 +1389,10 @@ async function run() {
   // --- Campaigns -------------------------------------------------------------
   await testCampaignEndpoints();
 
+  // --- Product asset uploader -------------------------------------------------
+  await testFilenameMatching();
+  await testAssetEndpoints();
+
   // --- Lightweight client guard (server-side bg removal) --------------------
   const repoRoot = process.cwd();
   const pkgJson = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")) as {
@@ -1061,7 +1408,7 @@ async function run() {
   assert.equal(exportSource.includes("@imgly/background-removal"), false, "Client export must not import @imgly/background-removal.");
 
   console.log(
-    "D1 API tests passed: pagination, filters, validation, stats, brands, research, ingest, admin auth 401/unconfigured-preview, promos, 48h calendar, bulk ingest, campaign random selection, socialCaption, and batch run/persistence.",
+    "D1 API tests passed: pagination, filters, validation, stats, brands, research, ingest, admin auth 401/unconfigured-preview, promos, 48h calendar, bulk ingest, campaign random selection + verified primary assets, product asset upload (R2/embedded, cutout fallback, grounded claims, filename matching), socialCaption, and batch run/persistence.",
   );
 }
 

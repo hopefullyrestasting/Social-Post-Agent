@@ -9,3 +9,12 @@ binding = "AI"
 binding = "DB"
 database_name = "makhzan-al-rahma"
 database_id = "d25f54b6-61ca-4c6f-8468-7273ea971844"
+
+# Optional: permanent storage for dashboard-uploaded product packshots.
+# The uploader falls back to optimized embedded data URIs when this bucket is
+# not bound, so the feature works before R2 is provisioned. To enable:
+#   1. npx wrangler r2 bucket create al-rahma-product-assets
+#   2. uncomment the block below and redeploy.
+# [[r2_buckets]]
+# binding = "PRODUCT_ASSETS"
+# bucket_name = "al-rahma-product-assets"

@@ -161,8 +161,15 @@ function productTitle(width: number, headline: string): string {
 }
 
 function isTransparentCutout(productUrl: string): boolean {
-  // Server-side BRIA/remove-bg cutouts are always embedded as transparent PNG data URIs.
-  return productUrl.startsWith("data:image/png");
+  // Server-side BRIA/remove-bg cutouts are embedded as transparent PNG data
+  // URIs, or stored in R2 with an explicit `cutout=1` marker on the asset URL.
+  if (productUrl.startsWith("data:image/png")) return true;
+  try {
+    const url = new URL(productUrl);
+    return url.searchParams.get("cutout") === "1";
+  } catch {
+    return false;
+  }
 }
 
 function heroPackshot(
