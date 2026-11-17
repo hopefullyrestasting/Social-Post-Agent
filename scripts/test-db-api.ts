@@ -761,10 +761,11 @@ async function testCompositeCampaignWiring() {
     AI: {
       run: async (model: string, input: Record<string, unknown>) => {
         models.push(model);
-        if (model === "@cf/runwayml/stable-diffusion-v1-5-img2img") {
-          assert.ok(
-            Array.isArray(input.image),
-            "Composite img2img must receive the authentic cutout bytes.",
+        if (model === "@cf/stabilityai/stable-diffusion-xl-base-1.0") {
+          assert.equal(
+            typeof input.image_b64,
+            "string",
+            "Composite img2img must receive the authentic cutout as image_b64.",
           );
         }
         return { image: TINY_PNG_BASE64 };
@@ -823,7 +824,7 @@ async function testCompositeCampaignWiring() {
     );
   }
 
-  assert.ok(models.includes("@cf/runwayml/stable-diffusion-v1-5-img2img"));
+  assert.ok(models.includes("@cf/stabilityai/stable-diffusion-xl-base-1.0"));
 }
 
 const TINY_PNG_BASE64 =

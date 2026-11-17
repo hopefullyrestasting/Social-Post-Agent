@@ -17,7 +17,8 @@
  *   2. Hugging Face Inference API (`HF_TOKEN`, e.g. lllyasviel/ic-light,
  *      black-forest-labs/FLUX.1-dev).
  *   3. Cloudflare Workers AI zero-key fallback
- *      (`@cf/runwayml/stable-diffusion-v1-5-img2img`).
+ *      (`@cf/stabilityai/stable-diffusion-xl-base-1.0` img2img, then the
+ *      retired `@cf/runwayml/stable-diffusion-v1-5-img2img` last resort).
  *
  * When no provider is configured/unavailable the function returns
  * `provider: "unavailable"` with `image: null` so the campaign runner can fall
@@ -76,7 +77,8 @@ export interface ProductCompositePromptInput {
 
 const MODEL_GEMINI_PRIMARY = "gemini-2.5-flash-image";
 const MODEL_GEMINI_FALLBACK = "gemini-2.0-flash-exp-image-generation";
-const MODEL_WORKERS_IMG2IMG = "@cf/runwayml/stable-diffusion-v1-5-img2img";
+const MODEL_WORKERS_IMG2IMG = "@cf/stabilityai/stable-diffusion-xl-base-1.0";
+const MODEL_WORKERS_IMG2IMG_LEGACY = "@cf/runwayml/stable-diffusion-v1-5-img2img";
 const DEFAULT_HF_MODELS = [
   "lllyasviel/ic-light",
   "black-forest-labs/FLUX.1-dev",
@@ -254,7 +256,7 @@ function asDataImageUri(base64: string): string {
   return `data:${detectBase64ImageMime(clean)};base64,${clean}`;
 }
 
-function bytesFromUnknown(value: unknown): Uint8Array | null {
+async function bytesFromUnknown(value: unknown): Promise<Uint8Array | null> {
   if (!value) return null;
   if (value instanceof Uint8Array) return value;
   if (value instanceof ArrayBuffer) return new Uint8Array(value);
@@ -264,10 +266,52 @@ function bytesFromUnknown(value: unknown): Uint8Array | null {
   if (Array.isArray(value) && value.every((item) => typeof item === "number")) {
     return Uint8Array.from(value);
   }
+  if (
+    typeof (value as { arrayBuffer?: unknown }).arrayBuffer === "function"
+  ) {
+    try {
+      const buffer = await (
+        value as { arrayBuffer: () => Promise<ArrayBuffer> }
+      ).arrayBuffer();
+      if (buffer) return new Uint8Array(buffer);
+    } catch {
+      // ignore
+    }
+  }
+  if (typeof ReadableStream !== "undefined" && value instanceof ReadableStream) {
+    try {
+      const reader = value.getReader();
+      const chunks: Uint8Array[] = [];
+      let total = 0;
+      while (true) {
+        const { done, value: chunk } = await reader.read();
+        if (done) break;
+        if (!chunk) continue;
+        const bytes =
+          chunk instanceof Uint8Array
+            ? chunk
+            : new Uint8Array(chunk as ArrayBuffer);
+        chunks.push(bytes);
+        total += bytes.length;
+      }
+      const merged = new Uint8Array(total);
+      let offset = 0;
+      for (const chunk of chunks) {
+        merged.set(chunk, offset);
+        offset += chunk.length;
+      }
+      return merged;
+    } catch {
+      // ignore
+    }
+  }
   return null;
 }
 
-function extractImageFromUnknown(value: unknown, depth = 0): string | null {
+async function extractImageFromUnknown(
+  value: unknown,
+  depth = 0,
+): Promise<string | null> {
   if (value === null || value === undefined || depth > 4) return null;
   if (typeof value === "string") {
     const clean = value.trim();
@@ -279,7 +323,7 @@ function extractImageFromUnknown(value: unknown, depth = 0): string | null {
     return null;
   }
 
-  const bytes = bytesFromUnknown(value);
+  const bytes = await bytesFromUnknown(value);
   if (bytes && bytes.length > 0) {
     const base64 = base64FromBytes(bytes);
     return asDataImageUri(base64);
@@ -300,12 +344,12 @@ function extractImageFromUnknown(value: unknown, depth = 0): string | null {
       const candidate = obj[key];
       if (Array.isArray(candidate)) {
         for (const item of candidate) {
-          const image = extractImageFromUnknown(item, depth + 1);
+          const image = await extractImageFromUnknown(item, depth + 1);
           if (image) return image;
         }
         continue;
       }
-      const image = extractImageFromUnknown(candidate, depth + 1);
+      const image = await extractImageFromUnknown(candidate, depth + 1);
       if (image) return image;
     }
   }
@@ -413,7 +457,7 @@ async function responseToImage(response: Response): Promise<string | null> {
   }
 
   try {
-    return extractImageFromUnknown(await response.json());
+    return await extractImageFromUnknown(await response.json());
   } catch {
     return null;
   }
@@ -488,23 +532,52 @@ async function generateWithWorkersAi(
 ): Promise<{ image: string; model: string } | null> {
   if (!env.AI || typeof env.AI.run !== "function") return null;
 
-  try {
-    const result = await env.AI.run(MODEL_WORKERS_IMG2IMG, {
-      prompt,
-      negative_prompt:
-        "blurry label, distorted text, misspelled letters, extra bottles, duplicate product, watermark, price tag, low quality",
-      image: Array.from(reference.bytes),
-      strength: 0.38,
-      guidance: 7.5,
-      num_steps: 20,
-      width: 512,
-      height: 896,
-    });
+  const negativePrompt =
+    "blurry label, distorted text, misspelled letters, extra bottles, duplicate product, watermark, price tag, low quality, deformed packaging";
 
-    const image = extractImageFromUnknown(result);
-    if (image) return { image, model: MODEL_WORKERS_IMG2IMG };
-  } catch (error) {
-    console.warn("Workers AI image-to-image compositing failed.", error);
+  // SDXL Base 1.0 exposes a real img2img path (`image_b64` + strength), which
+  // preserves the reference layout far better than a text-only model. The
+  // retired Runway img2img endpoint is kept as a last resort.
+  const attempts: { model: string; input: Record<string, unknown> }[] = [
+    {
+      model: MODEL_WORKERS_IMG2IMG,
+      input: {
+        prompt,
+        negative_prompt: negativePrompt,
+        image_b64: reference.base64,
+        strength: 0.45,
+        guidance: 7.5,
+        num_steps: 20,
+        width: 720,
+        height: 1280,
+      },
+    },
+    {
+      model: MODEL_WORKERS_IMG2IMG_LEGACY,
+      input: {
+        prompt,
+        negative_prompt: negativePrompt,
+        image: Array.from(reference.bytes),
+        strength: 0.38,
+        guidance: 7.5,
+        num_steps: 20,
+        width: 512,
+        height: 896,
+      },
+    },
+  ];
+
+  for (const attempt of attempts) {
+    try {
+      const result = await env.AI.run(attempt.model, attempt.input);
+      const image = await extractImageFromUnknown(result);
+      if (image) return { image, model: attempt.model };
+    } catch (error) {
+      console.warn(
+        `Workers AI ${attempt.model} image-to-image compositing failed.`,
+        error,
+      );
+    }
   }
 
   return null;

@@ -483,11 +483,17 @@ async function testProductComposite() {
     { styleId: "modern-clinical-glow" },
   );
   assert.equal(workers.provider, "workers-ai-img2img");
-  assert.equal(workers.model, "@cf/runwayml/stable-diffusion-v1-5-img2img");
+  assert.equal(workers.model, "@cf/stabilityai/stable-diffusion-xl-base-1.0");
   assert.equal(workers.usedReference, true);
-  assert.equal(aiCalls[0].model, "@cf/runwayml/stable-diffusion-v1-5-img2img");
-  assert.ok(Array.isArray(aiCalls[0].input.image), "img2img must receive the cutout bytes.");
-  assert.ok((aiCalls[0].input.image as number[]).length > 10);
+  assert.equal(aiCalls[0].model, "@cf/stabilityai/stable-diffusion-xl-base-1.0");
+  assert.equal(
+    aiCalls[0].input.image_b64,
+    PNG_BASE64,
+    "img2img must receive the authentic cutout as image_b64.",
+  );
+  assert.equal(aiCalls[0].input.strength, 0.45);
+  assert.equal(aiCalls[0].input.width, 720);
+  assert.equal(aiCalls[0].input.height, 1280);
   assert.match(String(aiCalls[0].input.prompt), /Preserve the product exactly/i);
   assert.ok(String(workers.image).startsWith("data:image/png;base64,"));
 
