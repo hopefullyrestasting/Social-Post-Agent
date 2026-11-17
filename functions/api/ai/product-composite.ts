@@ -129,12 +129,22 @@ function categoryMood(context?: ProductCompositeContext): string {
     return "Sophisticated Arabian luxury fragrance campaign mood with rich amber depth.";
   }
   if (/(hair|shampoo|conditioner|oil|زيت|شعر|شامبو|بلسم|أطفال|اطفال)/.test(haystack)) {
-    return "Warm botanical haircare campaign mood with natural ingredient energy.";
+    return "Fresh clean botanical haircare campaign mood with natural ingredient energy.";
   }
   if (/(skin|cream|moistur|بشرة|كريم|مرطب|ترطيب|aloe|ألو)/.test(haystack)) {
     return "Fresh hydrated skincare campaign mood with clean spa freshness.";
   }
   return "Premium Egyptian beauty retail campaign mood.";
+}
+
+/**
+ * Atmosphere is style-locked so a bright studio never drifts into dark smoke
+ * and the noir style never loses its smoke.
+ */
+function atmosphereForStyle(styleId: ArtDirectionStyleId): string {
+  return styleId === "luxury-amber-noir"
+    ? "drifting volumetric smoke catching the amber light"
+    : "soft white studio mist and a faint haze catching the light";
 }
 
 /**
@@ -153,9 +163,10 @@ export function buildProductCompositePrompt(
   return [
     "Reference-conditioned commercial product compositing (image-to-image relighting and outpainting), not a flat sticker paste.",
     "The attached image is the ONLY authentic reference for the product packaging. Insert that exact product into the scene below.",
-    "Preserve the product exactly: the brand name, every Arabic and Latin letter of the label, the logo, the packaging colours, material, cap and proportions must stay identical to the reference. Never redraw, reletter, translate, replace, crop or invent any packaging element. Keep every printed letter razor sharp and fully legible.",
+    "Preserve the product exactly: the brand name, every Arabic and Latin letter of the label, the logo, the packaging colours, material, cap and proportions must stay identical to the reference. Copy the label typography pixel-for-pixel: never redraw, reletter, translate, replace, crop or invent any packaging element. Keep every printed letter razor sharp and fully legible.",
     `Scene: ${scene}. ${categoryMood(input.context)}`,
-    "Lighting and physics: cinematic studio lighting, soft key light, warm metallic rim light tracing the package edges, a real 3D perspective contact shadow on the surface, a glossy mirror reflection directly beneath the product, volumetric smoke or mist and botanical leaves wrapping around the base with believable depth of field.",
+    "Palette lock: the backdrop must stay bright neutral white (#FFFFFF) with only a pale silver mesh texture — absolutely no warm, beige, cream, brown, orange or grey colour cast, and no dark background. Gold appears only as a thin rim highlight on the package edges, never as a backdrop tint.",
+    `Lighting and physics: cinematic studio lighting, soft white key light, a subtle pale-gold rim light tracing the package edges, a real 3D perspective contact shadow on the surface, a glossy mirror reflection directly beneath the product, ${atmosphereForStyle(styleId)}, and botanical leaves wrapping around the base with believable depth of field.`,
     `Composition guide (${width}x${height}, vertical 9:16): place the product upright, centred and fully visible, occupying about 62% of the frame height, roughly x=20%..80% and y=18%..68%. Keep the top 18% clean for Arabic headline typography and the bottom 22% clean and uncluttered for a contact bar.`,
     "Do not add any new text or typography: no headline, no price, no discount, no watermark, no logo overlay. The only text in the image must be the authentic label already printed on the product.",
     "One single product only, no duplicates, no extra bottles or jars, no floating cut-out edges, no platform edge, photorealistic 8k commercial advertising photography.",
@@ -569,43 +580,51 @@ async function generateWithWorkersAi(
   // 1. FLUX.2 [klein]: real reference-conditioned editing. The authentic
   //    packshot is the binary `input_image_0` reference and the model paints a
   //    new 9:16 scene around the genuine package (4 fixed steps, ~9s).
-  try {
-    const extension =
-      reference.mime === "image/png"
-        ? "png"
-        : reference.mime === "image/webp"
-          ? "webp"
-          : reference.mime === "image/avif"
-            ? "avif"
-            : "jpg";
-    const form = new FormData();
-    form.append("prompt", prompt);
-    form.append(
-      "input_image_0",
-      new Blob([Uint8Array.from(reference.bytes)], { type: reference.mime }),
-      `authentic-packshot.${extension}`,
-    );
-    form.append("width", "768");
-    form.append("height", "1344");
-    form.append("guidance", "5");
-    const serialized = new Response(form);
+  //
+  //    The safety classifier occasionally flags a benign studio output; that is
+  //    nondeterministic, so a single retry is attempted before giving up.
+  const extension =
+    reference.mime === "image/png"
+      ? "png"
+      : reference.mime === "image/webp"
+        ? "webp"
+        : reference.mime === "image/avif"
+          ? "avif"
+          : "jpg";
 
-    const result = await env.AI.run(MODEL_WORKERS_EDIT, {
-      multipart: {
-        body: serialized.body,
-        contentType:
-          serialized.headers.get("content-type") ?? "multipart/form-data",
-      },
-    });
-    const image = await extractImageFromUnknown(result);
-    if (image) return { image, model: MODEL_WORKERS_EDIT };
-    diagnostics.push(`workers-ai ${MODEL_WORKERS_EDIT}: no image in response`);
-  } catch (error) {
-    diagnostics.push(`workers-ai ${MODEL_WORKERS_EDIT}: ${errorMessage(error)}`);
-    console.warn(
-      `Workers AI ${MODEL_WORKERS_EDIT} reference editing failed.`,
-      error,
-    );
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      const form = new FormData();
+      form.append("prompt", prompt);
+      form.append(
+        "input_image_0",
+        new Blob([Uint8Array.from(reference.bytes)], { type: reference.mime }),
+        `authentic-packshot.${extension}`,
+      );
+      form.append("width", "768");
+      form.append("height", "1344");
+      form.append("guidance", "5");
+      const serialized = new Response(form);
+
+      const result = await env.AI.run(MODEL_WORKERS_EDIT, {
+        multipart: {
+          body: serialized.body,
+          contentType:
+            serialized.headers.get("content-type") ?? "multipart/form-data",
+        },
+      });
+      const image = await extractImageFromUnknown(result);
+      if (image) return { image, model: MODEL_WORKERS_EDIT };
+      diagnostics.push(`workers-ai ${MODEL_WORKERS_EDIT}: no image in response`);
+    } catch (error) {
+      diagnostics.push(
+        `workers-ai ${MODEL_WORKERS_EDIT} attempt ${attempt}: ${errorMessage(error)}`,
+      );
+      console.warn(
+        `Workers AI ${MODEL_WORKERS_EDIT} reference editing attempt ${attempt} failed.`,
+        error,
+      );
+    }
   }
 
   const negativePrompt =

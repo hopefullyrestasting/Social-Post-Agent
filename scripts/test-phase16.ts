@@ -395,7 +395,11 @@ async function testProductComposite() {
   assert.match(prompt, /9:16/i);
   assert.match(prompt, /contact shadow/i);
   assert.match(prompt, /mirror reflection/i);
-  assert.match(prompt, /volumetric smoke or mist/i);
+  assert.match(prompt, /soft white studio mist/i);
+  assert.match(prompt, /Palette lock/i);
+  assert.match(prompt, /bright neutral white \(#FFFFFF\)/i);
+  assert.match(prompt, /no warm, beige, cream, brown, orange or grey colour cast/i);
+  assert.match(prompt, /Copy the label typography pixel-for-pixel/i);
   assert.match(prompt, /Do not add any new text or typography/i);
   assert.match(prompt, /no duplicates/i);
   assert.equal(
@@ -403,6 +407,11 @@ async function testProductComposite() {
     false,
     "The composite prompt includes the product (unlike background-only prompts).",
   );
+
+  // The noir direction keeps its smoke; bright directions never get dark haze.
+  const noirPrompt = buildProductCompositePrompt({ styleId: "luxury-amber-noir" });
+  assert.match(noirPrompt, /drifting volumetric smoke/i);
+  assert.equal(/soft white studio mist/i.test(noirPrompt), false);
 
   // No provider configured -> graceful fallback, no reference leaves the app.
   const offline = await compositeProductScene({}, reference, { category: "skincare" });
