@@ -616,10 +616,22 @@ async function testCampaignEndpoints() {
     art_direction_label?: string;
     ai_engine?: string;
     cutout_applied?: boolean;
+    ai_composite?: boolean;
+    contains_product?: boolean;
+    used_reference?: boolean;
+    composite_provider?: string | null;
+    svg?: string;
     artDirection?: {
       styleId?: string;
       engine?: string;
       cutoutApplied?: boolean;
+      stagedProduct?: boolean;
+      backgroundOnly?: boolean;
+      aiComposite?: boolean;
+      containsProduct?: boolean;
+      usedReference?: boolean;
+      compositeProvider?: string | null;
+      compositeModel?: string | null;
     };
   }[];
   assert.equal(creatives.length, 6);
@@ -654,6 +666,17 @@ async function testCampaignEndpoints() {
       creative.ai_engine,
       "Art direction engine must match ai_engine.",
     );
+    assert.equal(
+      creative.artDirection?.aiComposite,
+      false,
+      "Without an image-to-image provider the run must fall back to a background plate.",
+    );
+    assert.equal(creative.artDirection?.backgroundOnly, true);
+    assert.equal(creative.artDirection?.stagedProduct, false);
+    assert.equal(creative.artDirection?.usedReference, false);
+    assert.equal(creative.ai_composite, false);
+    assert.equal(creative.contains_product, false);
+    assert.equal(creative.used_reference, false);
   }
 
   assert.equal(
@@ -708,6 +731,99 @@ async function testCampaignEndpoints() {
   assert.equal(emptyRes.status, 200);
   assert.equal((emptyBody.campaign as { status: string }).status, "empty");
   assert.equal((emptyBody.creatives as unknown[]).length, 0);
+}
+
+/**
+ * Authorized reference-conditioned compositing wiring: when Workers AI returns
+ * an image-to-image composite, the campaign records it as containing the real
+ * product and the SVG overlay must not paste a second flat packshot.
+ */
+async function testCompositeCampaignWiring() {
+  const db = new CampaignDatabase();
+  db.eligibleProducts = [
+    {
+      id: "p-composite",
+      name_arabic: "شامبو موثّق للتركيب",
+      name_english: null,
+      category: "hair_care",
+      verification_status: "verified",
+      warehouse_stock_status: "in_stock",
+      last_advertised_at: null,
+      image_url: `data:image/png;base64,${TINY_PNG_BASE64}`,
+      image_source: "https://example.test/source-composite",
+      brand_arabic: "فاتيكا",
+      brand_slug: "vatika",
+    },
+  ];
+
+  const models: string[] = [];
+  const aiEnv = {
+    AI: {
+      run: async (model: string, input: Record<string, unknown>) => {
+        models.push(model);
+        if (model === "@cf/runwayml/stable-diffusion-v1-5-img2img") {
+          assert.ok(
+            Array.isArray(input.image),
+            "Composite img2img must receive the authentic cutout bytes.",
+          );
+        }
+        return { image: TINY_PNG_BASE64 };
+      },
+    },
+  };
+
+  const res = await runCampaign(
+    context(
+      db as unknown as MockDatabase,
+      "https://example.test/api/db/campaigns/run",
+      { method: "POST", body: JSON.stringify({ limit: 1 }) },
+      aiEnv,
+    ),
+  );
+  const body = await json(res);
+  assert.equal(res.status, 200, JSON.stringify(body));
+
+  const creatives = body.creatives as {
+    ai_composite?: boolean;
+    contains_product?: boolean;
+    used_reference?: boolean;
+    composite_provider?: string | null;
+    svg?: string;
+    artDirection?: {
+      aiComposite?: boolean;
+      containsProduct?: boolean;
+      usedReference?: boolean;
+      compositeProvider?: string | null;
+      backgroundOnly?: boolean;
+      stagedProduct?: boolean;
+    };
+  }[];
+  assert.equal(creatives.length, 2);
+
+  for (const creative of creatives) {
+    assert.equal(creative.ai_composite, true, "Provider image must be recorded as an AI composite.");
+    assert.equal(creative.contains_product, true);
+    assert.equal(creative.used_reference, true);
+    assert.equal(creative.composite_provider, "workers-ai-img2img");
+    assert.equal(creative.artDirection?.aiComposite, true);
+    assert.equal(creative.artDirection?.containsProduct, true);
+    assert.equal(creative.artDirection?.usedReference, true);
+    assert.equal(creative.artDirection?.compositeProvider, "workers-ai-img2img");
+    assert.equal(creative.artDirection?.backgroundOnly, false);
+    assert.equal(creative.artDirection?.stagedProduct, true);
+    assert.ok(String(creative.svg).includes('data-ai-composite="true"'));
+    assert.equal(
+      String(creative.svg).includes('id="packshot-hero"'),
+      false,
+      "A composite must not be duplicated by a flat SVG packshot.",
+    );
+    assert.ok(
+      String(creative.svg).includes("url(#metallic-gold-gradient)"),
+      "Metallic gold typography must render over the composite.",
+    );
+  }
+
+  assert.ok(models.includes("@cf/runwayml/stable-diffusion-v1-5-img2img"));
 }
 
 const TINY_PNG_BASE64 =
@@ -1811,6 +1927,7 @@ async function run() {
 
   // --- Campaigns -------------------------------------------------------------
   await testCampaignEndpoints();
+  await testCompositeCampaignWiring();
 
   // --- Product asset uploader -------------------------------------------------
   await testFilenameMatching();

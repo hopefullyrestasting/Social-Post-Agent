@@ -26,6 +26,12 @@ import {
   generateBackgroundWithNanoBananaDetailed,
   onRequestPost as postNanoBananaStage,
 } from "../functions/api/ai/nano-banana-stage";
+import {
+  buildProductCompositePrompt,
+  compositeProductScene,
+  loadReferenceImage,
+  onRequestPost as postProductComposite,
+} from "../functions/api/ai/product-composite";
 
 /**
  * Phase 16 regression tests:
@@ -83,8 +89,8 @@ function testArtDirectionStyles() {
   assert.ok(freshPrompt.includes("smooth monochrome sage-green wall"));
   assert.ok(freshPrompt.includes("fresh lush green mint and botanical leaves"));
 
-  // Hard constraint #4: an image model must never redraw packaging. Every
-  // background prompt forbids the product and never asks to preserve it.
+  // Background-only contract: these prompts forbid the product and never ask to
+  // preserve it. Reference-conditioned compositing (rule #4) is covered below.
   for (const template of [
     "simple-botanical-horizon",
     "silver-podium-botanical",
@@ -371,18 +377,158 @@ async function testBackgroundOnlyNanoBanana() {
   }
 }
 
+async function testProductComposite() {
+  const reference = `data:image/png;base64,${PNG_BASE64}`;
+
+  // Prompt contract: reference-conditioned, preserve the label, 9:16 guide with
+  // real shadows/reflections, and absolutely no new text or packaging redraw.
+  const prompt = buildProductCompositePrompt({
+    styleId: "simple-botanical-horizon",
+    context: { category: "haircare", name: "شامبو" },
+  });
+  assert.match(prompt, /image-to-image/i);
+  assert.match(prompt, /attached image is the ONLY authentic reference/i);
+  assert.match(prompt, /Preserve the product exactly/i);
+  assert.match(prompt, /every Arabic and Latin letter of the label/i);
+  assert.match(prompt, /Never redraw, reletter, translate/i);
+  assert.match(prompt, /1080x1920/i);
+  assert.match(prompt, /9:16/i);
+  assert.match(prompt, /contact shadow/i);
+  assert.match(prompt, /mirror reflection/i);
+  assert.match(prompt, /volumetric smoke or mist/i);
+  assert.match(prompt, /Do not add any new text or typography/i);
+  assert.match(prompt, /no duplicates/i);
+  assert.equal(
+    /no product|no bottle|no packaging/i.test(prompt),
+    false,
+    "The composite prompt includes the product (unlike background-only prompts).",
+  );
+
+  // No provider configured -> graceful fallback, no reference leaves the app.
+  const offline = await compositeProductScene({}, reference, { category: "skincare" });
+  assert.equal(offline.provider, "unavailable");
+  assert.equal(offline.image, null);
+  assert.equal(offline.usedReference, false);
+  assert.equal(offline.aiComposite, false);
+  assert.equal(offline.containsProduct, false);
+  assert.ok(offline.fallbackReason);
+
+  // Reference resolution: data URIs parse, private hosts are rejected.
+  const loaded = await loadReferenceImage(reference);
+  assert.ok(loaded && loaded.bytes.length > 0, "Data URI reference must decode to bytes.");
+  assert.equal(loaded?.mime, "image/png");
+  assert.equal(
+    await loadReferenceImage("http://127.0.0.1/private-packshot.png"),
+    null,
+    "Private/local reference hosts must be blocked.",
+  );
+
+  // Gemini image editing receives the authentic packshot as inline conditioning.
+  const originalFetch = globalThis.fetch;
+  let sentUrl = "";
+  let sentBody = "";
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    sentUrl = String(input);
+    sentBody = String(init?.body ?? "");
+    return new Response(
+      JSON.stringify({
+        candidates: [
+          {
+            content: {
+              parts: [{ inlineData: { mimeType: "image/png", data: "Z2VuaW1n" } }],
+            },
+          },
+        ],
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  }) as typeof fetch;
+
+  try {
+    const gemini = await compositeProductScene(
+      { GEMINI_API_KEY: "test-key" },
+      reference,
+      { category: "haircare" },
+    );
+    assert.equal(gemini.provider, "gemini-image-edit");
+    assert.equal(gemini.model, "gemini-2.5-flash-image");
+    assert.equal(gemini.usedReference, true);
+    assert.equal(gemini.aiComposite, true);
+    assert.equal(gemini.containsProduct, true);
+    assert.ok(String(gemini.image).startsWith("data:image/png;base64,"));
+    assert.match(sentUrl, /gemini-2\.5-flash-image/);
+    assert.equal(
+      sentBody.includes(PNG_BASE64),
+      true,
+      "The authentic packshot must be sent to the model as the reference.",
+    );
+    assert.match(sentBody, /Preserve the product exactly/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  // Workers AI zero-key fallback: stable-diffusion-v1-5-img2img with the cutout.
+  const aiCalls: { model: string; input: Record<string, unknown> }[] = [];
+  const workers = await compositeProductScene(
+    {
+      AI: {
+        run: async (model: string, input: Record<string, unknown>) => {
+          aiCalls.push({ model, input });
+          return { image: PNG_BASE64 };
+        },
+      },
+    },
+    reference,
+    { category: "skincare" },
+    { styleId: "modern-clinical-glow" },
+  );
+  assert.equal(workers.provider, "workers-ai-img2img");
+  assert.equal(workers.model, "@cf/runwayml/stable-diffusion-v1-5-img2img");
+  assert.equal(workers.usedReference, true);
+  assert.equal(aiCalls[0].model, "@cf/runwayml/stable-diffusion-v1-5-img2img");
+  assert.ok(Array.isArray(aiCalls[0].input.image), "img2img must receive the cutout bytes.");
+  assert.ok((aiCalls[0].input.image as number[]).length > 10);
+  assert.match(String(aiCalls[0].input.prompt), /Preserve the product exactly/i);
+  assert.ok(String(workers.image).startsWith("data:image/png;base64,"));
+
+  // HTTP endpoint validation + graceful 502 fallback.
+  const missing = await postProductComposite({
+    request: new Request("https://example.test/api/ai/product-composite", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    }),
+    env: {},
+  } as any);
+  assert.equal(missing.status, 400);
+
+  const unavailable = await postProductComposite({
+    request: new Request("https://example.test/api/ai/product-composite", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ imageUrl: reference, styleId: "simple-botanical-horizon" }),
+    }),
+    env: {},
+  } as any);
+  assert.equal(unavailable.status, 502);
+  const unavailableBody = (await unavailable.json()) as Record<string, unknown>;
+  assert.equal(unavailableBody.fallback, true);
+  assert.equal(unavailableBody.provider, "unavailable");
+}
+
 async function run() {
   testArtDirectionStyles();
   testStyleRotation();
   testMimeDetection();
   await testSceneGeneration();
   await testBackgroundOnlyNanoBanana();
+  await testProductComposite();
   testHarvestHelpers();
   await testHarvestSelection();
   testAdminProtection();
 
   console.log(
-    "Phase 16 tests passed: Simple primary art direction + five legacy styles, distinct variant styles, colour-adapted FLUX prompts, background-only Nano Banana plates (no packaging redraw), data URIs, mime detection, harvest safety filters, random selection, and admin protection.",
+    "Phase 16 tests passed: Simple primary art direction + five legacy styles, distinct variant styles, colour-adapted FLUX prompts, background-only Nano Banana plates (no packaging redraw), reference-conditioned product compositing (Gemini edit / Hugging Face / Workers AI img2img with label preservation and graceful fallback), data URIs, mime detection, harvest safety filters, random selection, and admin protection.",
   );
 }
 
