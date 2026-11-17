@@ -114,18 +114,18 @@ interface EditorialEnvironment {
 const MARINE_FRESH_ENV: EditorialEnvironment = {
   surfaceMaterial: "sunlit rough coastal sandstone rock",
   environmentalBackdrop:
-    "deep blue Mediterranean sea waves crashing with soft white sea-spray mist under a clear warm sky",
+    "deep blue Mediterranean sea waves in the distance with soft white sea spray in the air under a clear warm sky",
 };
 
 const OUD_WARM_ENV: EditorialEnvironment = {
   surfaceMaterial: "dark textured basalt stone slab",
   environmentalBackdrop:
-    "warm golden-amber sunset haze and subtle drifting incense smoke",
+    "warm golden-amber sunset haze and a subtle atmospheric glow",
 };
 
 const BOTANICAL_ENV: EditorialEnvironment = {
   surfaceMaterial:
-    "sun-dappled wet travertine stone with fresh mint/botanical leaves and morning dew droplets",
+    "sun-dappled wet travertine stone with fresh mint and botanical leaves and morning dew droplets",
   environmentalBackdrop:
     "lush sunlit botanical garden bokeh with warm natural sunbeams",
 };

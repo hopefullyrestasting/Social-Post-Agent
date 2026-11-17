@@ -419,7 +419,7 @@ async function testProductComposite() {
     context: { category: "perfume", name: "Khamriya Oud", brand: "Lattafa" },
   });
   assert.match(oud, /dark textured basalt stone slab/i);
-  assert.match(oud, /golden-amber sunset haze and subtle drifting incense smoke/i);
+  assert.match(oud, /golden-amber sunset haze and a subtle atmospheric glow/i);
 
   // No provider configured -> graceful fallback, no reference leaves the app.
   const offline = await compositeProductScene({}, reference, { category: "skincare" });
