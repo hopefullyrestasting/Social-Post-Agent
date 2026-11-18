@@ -755,7 +755,7 @@ export default function CampaignGallery() {
             disabled={running}
             className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-black text-white shadow-sm transition hover:bg-emerald-600 disabled:opacity-50"
           >
-            {running ? "جارٍ التوليد..." : "مسح المعاينات القديمة وتوليد الجديد"}
+            {running ? "جارٍ التوليد..." : "Clear preview and Generate 10 Designs today"}
           </button>
           <button
             type="button"
@@ -763,7 +763,7 @@ export default function CampaignGallery() {
             disabled={running}
             className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-emerald-500 disabled:opacity-50"
           >
-            {running ? "جارٍ التوليد..." : "توليد دفعة اليوم (5 منتجات × نسختين)"}
+            {running ? "جارٍ التوليد..." : "Generate 10 Designs today (5 Photos × 2 Variants)"}
           </button>
           <button
             type="button"

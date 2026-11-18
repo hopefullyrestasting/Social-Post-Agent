@@ -676,6 +676,17 @@ export default function DashboardPage() {
                 ? "جارٍ البحث والتوثيق..."
                 : "🔍 اكتشاف وتوثيق 5 منتجات عشوائية جديدة"}
             </button>
+            <div className="flex flex-col items-start gap-1">
+              <button
+                type="button"
+                disabled
+                title="Available Soon — قريباً"
+                className="cursor-not-allowed rounded-lg bg-slate-200 px-5 py-2 text-sm font-black text-slate-500 shadow-sm"
+              >
+                اكتشاف وتوثيق منتجات من الويب (متوقف مؤقتاً)
+              </button>
+              <span className="inline-flex rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-800">Available Soon — قريباً</span>
+            </div>
             <button
               type="button"
               onClick={() => {
