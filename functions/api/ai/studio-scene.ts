@@ -30,7 +30,8 @@ export type TemplateId = DesignerTemplate;
 export type ArtDirectionStyleId =
   | "coastal-sunlit-stone-caustics"
   | "botanical-horizon-reflection"
-  | "noir-basalt-golden-rim";
+  | "noir-basalt-golden-rim"
+  | "architectural-brand-frame";
 
 export type SceneProvider =
   | "cloudflare-ai"
@@ -61,7 +62,7 @@ export const ART_DIRECTION_STYLES: Record<ArtDirectionStyleId, ArtDirectionStyle
     template: "botanical-arch-frame",
     accent: "#D4A574",
     scenePrompt:
-      "Photorealistic 9:16 outdoor editorial luxury product backdrop, sun-drenched rough coastal sandstone/limestone ledge, crisp natural golden-hour sunlight casting realistic directional shadows, colored glass light refraction and caustic highlights dancing across the warm stone texture, deep blue Mediterranean sea and airy sky in creamy cinematic shallow depth of field bokeh (85mm f/1.8), sea spray atmosphere, warm honey and sand tones. Keep the upper 35% clean, open and softly lit for bold Arabic headline typography and the bottom 12% naturally darker/grounded for contact text. No podium, no plinth, no pedestal, no stage, no table, no shelf, no product, no bottle, no packaging, no text, no letters, no logos, no watermark.",
+      "Photorealistic 9:16 outdoor editorial luxury product backdrop, sun-drenched rough coastal sandstone/limestone ledge, crisp natural golden-hour sunlight casting realistic directional shadows, colored glass light refraction and caustic highlights dancing across the warm stone texture, deep blue Mediterranean sea and airy sky in creamy cinematic shallow depth of field bokeh (85mm f/1.8), sea spray atmosphere, warm honey and sand tones. UPPER 35%: COMPLETELY FREE OF ANY TEXT, LETTERS, NUMBERS, ARABIC WORDS, OR WATERMARKS for SVG typography overlay. BOTTOM 15%: COMPLETELY FREE OF ANY TEXT, LETTERS, NUMBERS, OR WATERMARKS. Bottom 12% darker for contact area.. Bottom 12% darker for contact area.. Keep the upper 35% clean, open and softly lit for bold Arabic headline typography and the bottom 12% naturally darker/grounded for contact text. No podium, no plinth, no pedestal, no stage, no table, no shelf, no product, no bottle, no packaging, no text, no letters, no logos, no watermark.",
   },
   "botanical-horizon-reflection": {
     id: "botanical-horizon-reflection",
@@ -70,7 +71,7 @@ export const ART_DIRECTION_STYLES: Record<ArtDirectionStyleId, ArtDirectionStyle
     template: "simple-botanical-horizon",
     accent: "#6BAA59",
     scenePrompt:
-      "Photorealistic 9:16 luxury beauty studio backdrop, color-matched monochrome sage/pastel wall meeting a glossy mirror floor that creates a clean horizon reflection, fresh mint and botanical leaves clustered low at the base around the center placement area, a few soft floating clouds in the open upper air, diffused natural daylight with gentle sunbeams and airy garden bokeh. Keep the upper 35% clean and open for bold Arabic headline typography and the bottom 12% slightly darker/grounded for contact text. No podium, no plinth, no pedestal, no stage, no table, no shelf, no product, no bottle, no packaging, no text, no letters, no logos, no watermark.",
+      "Photorealistic 9:16 luxury beauty studio backdrop, color-matched monochrome sage/pastel wall meeting a glossy mirror floor that creates a clean horizon reflection, fresh mint and botanical leaves clustered low at the base around the center placement area, a few soft floating clouds in the open upper air, diffused natural daylight with gentle sunbeams and airy garden bokeh. UPPER 35%: COMPLETELY FREE OF ANY TEXT, LETTERS, NUMBERS, ARABIC WORDS, OR WATERMARKS for SVG typography overlay. BOTTOM 15%: COMPLETELY FREE OF ANY TEXT, LETTERS, NUMBERS, OR WATERMARKS. Keep the upper 35% clean and open for bold Arabic headline typography and the bottom 12% slightly darker/grounded for contact text. No podium, no plinth, no pedestal, no stage, no table, no shelf, no product, no bottle, no packaging, no text, no letters, no logos, no watermark.",
   },
   "noir-basalt-golden-rim": {
     id: "noir-basalt-golden-rim",
@@ -79,7 +80,16 @@ export const ART_DIRECTION_STYLES: Record<ArtDirectionStyleId, ArtDirectionStyle
     template: "editorial-beauty-card",
     accent: "#D97706",
     scenePrompt:
-      "Photorealistic 9:16 moody luxury editorial backdrop, dark architectural basalt stone slab and textured charcoal wall, warm golden-amber rim light grazing the edges with elegant directional highlights, subtle atmospheric mist/glow and cinematic depth, rich noir-to-amber gradient. Keep the upper 35% clean and softly lit for bold Arabic headline typography and the bottom 12% darker for contact text. No podium, no plinth, no pedestal, no stage, no table, no shelf, no product, no bottle, no packaging, no text, no letters, no logos, no watermark.",
+      "Photorealistic 9:16 moody luxury editorial backdrop, dark architectural basalt stone slab and textured charcoal wall, warm golden-amber rim light grazing the edges with elegant directional highlights, subtle atmospheric mist/glow and cinematic depth, rich noir-to-amber gradient. UPPER 35%: COMPLETELY FREE OF ANY TEXT, LETTERS, NUMBERS, ARABIC WORDS, OR WATERMARKS for SVG typography overlay. BOTTOM 15%: COMPLETELY FREE OF ANY TEXT, LETTERS, NUMBERS, OR WATERMARKS. Keep the upper 35% clean and softly lit for bold Arabic headline typography and the bottom 12% darker for contact text. No podium, no plinth, no pedestal, no stage, no table, no shelf, no product, no bottle, no packaging, no text, no letters, no logos, no watermark.",
+  },
+  "architectural-brand-frame": {
+    id: "architectural-brand-frame",
+    labelAr: "إطار تجاري Brandenburg",
+    labelEn: "Architectural Brand Frame",
+    template: "editorial-beauty-card",
+    accent: "#D4A574",
+    scenePrompt:
+      "Photorealistic 9:16 studio backdrop with deep brand-navy/emerald background, thin golden architectural corner brackets, soft wave accents, and a dark illuminated podium pedestal. UPPER 35%: ALLOWED: centered logo and brand title only. No text, BOTTOM 15%: COMPLETELY FREE OF ANY TEXT, LETTERS, NUMBERS, OR WATERMARKS. No product or bottle should appear in the scene. No floating text, no watermarks outside the logo area. Rich warm ambient lighting with subtle industry-watermark icons in the distance.",
   },
 };
 
@@ -87,10 +97,18 @@ export const ART_DIRECTION_STYLE_IDS: ArtDirectionStyleId[] = [
   "coastal-sunlit-stone-caustics",
   "botanical-horizon-reflection",
   "noir-basalt-golden-rim",
+  "architectural-brand-frame",
 ];
 
 export const DEFAULT_ART_DIRECTION_STYLE: ArtDirectionStyleId =
   "coastal-sunlit-stone-caustics";
+
+export const ART_DIRECTION_STYLE_LABELS: Record<ArtDirectionStyleId, string> = {
+  "coastal-sunlit-stone-caustics": "Coastal Sunlit Stone & Caustics",
+  "botanical-horizon-reflection": "Botanical Horizon Reflection",
+  "noir-basalt-golden-rim": "Noir Basalt & Golden Rim-Light",
+  "architectural-brand-frame": "Architectural Brand Frame",
+};
 
 export const LEGACY_SCENE_PROMPTS: Record<TemplateId, string> = {
   "simple-botanical-horizon": ART_DIRECTION_STYLES["botanical-horizon-reflection"].scenePrompt,

@@ -690,8 +690,8 @@ async function testCampaignEndpoints() {
   );
   assert.equal(
     Object.keys((runBody.artDirectionStyles as Record<string, unknown>) ?? {}).length,
-    3,
-    "Run response must expose exactly the three rotating art directions.",
+    4,
+    "Run response must expose exactly the four rotating art directions.",
   );
 
   // Selection query must randomize eligible products every run

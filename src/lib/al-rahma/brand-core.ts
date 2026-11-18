@@ -66,6 +66,20 @@ export interface BrandContact {
   label: string;
 }
 
+/** Multi-tenant brand profile stored in D1 brand_profiles table. */
+export interface BrandProfile {
+  id: string;
+  name: string;
+  industry: string;
+  tagline: string;
+  phone: string;
+  whatsapp: string;
+  logo_url: string | null;
+  logo_tone: "light" | "dark" | "gold-emerald";
+  font_family: "Cairo" | "Tajawal" | "IBM Plex Sans Arabic";
+  product_context_notes: string;
+}
+
 /**
  * Commercial rendering rules. Kept inside the brand config so a future client
  * can swap currency, badge colors and calendar defaults without touching the

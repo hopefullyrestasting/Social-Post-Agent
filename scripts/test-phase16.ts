@@ -49,10 +49,11 @@ function testArtDirectionStyles() {
       "coastal-sunlit-stone-caustics",
       "botanical-horizon-reflection",
       "noir-basalt-golden-rim",
+      "architectural-brand-frame",
     ],
-    "Exactly the three rotating luxury art directions must be configured.",
+    "Exactly the four rotating luxury art directions must be configured.",
   );
-  assert.equal(new Set(ART_DIRECTION_STYLE_IDS).size, 3, "Style ids must be unique.");
+  assert.equal(new Set(ART_DIRECTION_STYLE_IDS).size, 4, "Style ids must be unique.");
   assert.equal(DEFAULT_ART_DIRECTION_STYLE, "coastal-sunlit-stone-caustics");
 
   for (const id of ART_DIRECTION_STYLE_IDS) {
@@ -517,7 +518,7 @@ async function run() {
   testAdminProtection();
 
   console.log(
-    "Phase 16 tests passed: 3 rotating luxury art directions (Coastal Sunlit Stone & Caustics, Botanical Horizon Reflection, Noir Basalt & Golden Rim-Light), distinct variant pairs, color-adapted prompts, deterministic inline fallbacks, background-only Nano Banana, reference-conditioned product compositing (Gemini/HF/Workers AI klein with timeout-safe retries), harvest safety, and admin protection.",
+    "Phase 16 tests passed: 4 rotating luxury art directions (Coastal Sunlit Stone & Caustics, Botanical Horizon Reflection, Noir Basalt & Golden Rim-Light), distinct variant pairs, color-adapted prompts, deterministic inline fallbacks, background-only Nano Banana, reference-conditioned product compositing (Gemini/HF/Workers AI klein with timeout-safe retries), harvest safety, and admin protection.",
   );
 }
 

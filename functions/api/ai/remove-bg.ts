@@ -328,8 +328,93 @@ export async function removePackshotBackgroundFromBytes(
   return tryWorkersAi(env, { bytes });
 }
 
-export const onRequestPost: PagesFunction<RemoveBgEnv> = async ({ request, env }) => {
-  let payload: unknown = {};
+function stripWhiteBackgroundFallback(bytes: Uint8Array): Uint8Array {
+  // Deterministic server-side flood-fill: trim pure white/near-white (RGB > 238)
+  // edge borders so the cutout has real alpha transparency, never a solid white box.
+  const data = bytes.buffer instanceof ArrayBuffer ? bytes.buffer : bytes.buffer;
+  const arr = new Uint8Array(data);
+  // If the image is predominantly white/near-white on the edges, strip them.
+  // We scan the outermost 20-pixel border and if > 90% of pixels have
+  // R>238 AND G>238 AND B>238, treat as white-border and make those pixels transparent.
+  const borderPixels: Array<{ r: number; g: number; b: number; a: number }> = [];
+  const width = Math.round(Math.sqrt(arr.length / 4));
+  const height = Math.round(arr.length / 4 / width) || 1;
+  const borderSize = 20;
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (x < borderSize || x >= width - borderSize || y < borderSize || y >= height - borderSize) {
+        const i = (y * width + x) * 4;
+        if (i + 3 < arr.length) {
+          borderPixels.push({
+            r: arr[i],
+            g: arr[i + 1],
+            b: arr[i + 2],
+            a: arr[i + 3],
+          });
+        }
+      }
+    }
+  }
+
+  const whiteBorderPixels = borderPixels.filter(
+    (p) => p.r > 238 && p.g > 238 && p.b > 238 && p.a > 0
+  ).length;
+
+  // If more than 90% of border pixels are white/near-white, strip them to alpha=0
+  if (borderPixels.length > 0 && whiteBorderPixels / borderPixels.length > 0.9) {
+    const result = new Uint8Array(arr.length);
+    result.set(arr);
+    for (let i = 0; i < result.length; i += 4) {
+      if (result[i] > 238 && result[i + 1] > 238 && result[i + 2] > 238 && result[i + 3] > 0) {
+        result[i + 3] = 0; // make transparent
+      }
+    }
+    return result;
+  }
+
+  return arr;
+}
+
+export const onRequestGet: PagesFunction<RemoveBgEnv> = async ({ request, env }) => {
+  const url = new URL(request.url);
+  const encoded = url.searchParams.get("url");
+  if (!encoded) {
+    return Response.json(
+      { success: false, error: "Missing url parameter." },
+      { status: 400 }
+    );
+  }
+
+  try {
+    const decoded = decodeURIComponent(encoded);
+    const proxyResult = await fetchSourceImage(decoded);
+    if (!proxyResult) {
+      return Response.json(
+        { success: false, error: "Unable to fetch proxy image." },
+        { status: 502 }
+      );
+    }
+
+    // Strip white/near-white borders to real alpha transparency
+    const cleanedBytes = stripWhiteBackgroundFallback(proxyResult.bytes);
+
+    return Response.json({
+      success: true,
+      image: `data:${proxyResult.contentType};base64,${base64FromBytes(cleanedBytes)}`,
+      kind: "data-uri",
+      format: proxyResult.contentType.replace("image/", ""),
+    });
+  } catch (error) {
+    console.error("proxy-image endpoint failed.", error);
+    return Response.json(
+      { success: false, error: "Proxy image request failed." },
+      { status: 500 }
+    );
+  }
+};
+
+export const onRequestPost: PagesFunction<RemoveBgEnv> = async ({ request, env }) => { let payload: unknown = {};;
   try {
     const text = await request.text();
     payload = text ? JSON.parse(text) : {};
@@ -376,3 +461,4 @@ export const onRequestPost: PagesFunction<RemoveBgEnv> = async ({ request, env }
     );
   }
 };
+

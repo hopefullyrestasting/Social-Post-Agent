@@ -216,6 +216,18 @@ async function loadImageElement(src: string): Promise<HTMLImageElement> {
  * contact bar. The model paints the outdoor/editorial environment around the
  * authentic bottle while the prompt enforces label/geometry preservation.
  */
+function shouldUseProxy(imageUrl: string): boolean {
+  if (typeof imageUrl !== "string") return false;
+  try {
+    const url = new URL(imageUrl);
+    // Use proxy for external hosts that may block CORS (penduline.com, cdn.parfoom.com, etc.)
+    const blockedHosts = ["penduline.com", "cdn.parfoom.com"];
+    return blockedHosts.some((h) => url.hostname.endsWith(h));
+  } catch {
+    return false;
+  }
+}
+
 async function buildConditioningCanvas(
   sourceImageUrl: string,
   cutoutDataUrl?: string | null,
@@ -226,10 +238,13 @@ async function buildConditioningCanvas(
       cutoutDataUrl ||
       await (async () => {
         try {
+          const effectiveUrl = shouldUseProxy(sourceImageUrl)
+            ? `/api/ai/proxy-image?url=${encodeURIComponent(sourceImageUrl)}`
+            : sourceImageUrl;
           const res = await fetch("/api/ai/remove-bg", {
             method: "POST",
             headers: adminWriteHeaders({ "Content-Type": "application/json", Accept: "application/json" }),
-            body: JSON.stringify({ imageUrl: sourceImageUrl }),
+            body: JSON.stringify({ imageUrl: effectiveUrl }),
           });
           const body = (await res.json()) as { success?: boolean; cutout?: string };
           return body.success && typeof body.cutout === "string" ? body.cutout : null;
