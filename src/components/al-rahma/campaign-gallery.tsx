@@ -100,15 +100,13 @@ type ApiResult<T> =
   | { success: false; error?: string; detail?: string; message?: string };
 
 const ART_STYLE_LABELS: Record<string, string> = {
-  "simple-botanical-horizon": "أفق نباتي بسيط",
-  "sunlit-travertine": "ترافرتين مشمس",
-  "aqua-splash-minimal": "أكوا سبلاش",
-  "luxury-amber-noir": "عنبر فاخر داكن",
-  "botanical-terracotta": "نباتي تيراكوتا",
-  "modern-clinical-glow": "توهج سريري عصري",
+  "coastal-sunlit-stone-caustics": "حجر ساحلي مشمس وانكسارات ضوئية",
+  "botanical-horizon-reflection": "أفق نباتي بانعكاس",
+  "noir-basalt-golden-rim": "بازلت داكن وإضاءة ذهبية محيطية",
 };
 
 const ENGINE_LABELS: Record<string, string> = {
+  "cloudflare-ai": "Cloudflare Workers AI",
   "workers-ai-flux": "Workers AI FLUX",
   "gemini-flash-image": "Gemini Flash Image",
   "nano-banana": "Nano Banana",
@@ -121,12 +119,10 @@ const ENGINE_LABELS: Record<string, string> = {
 };
 
 const VARIANT_LABELS: Record<string, string> = {
-  "al-rahma/simple-botanical-horizon": "تصميم 1 — أفق نباتي بسيط",
-  "al-rahma/sunlit-travertine": "تصميم بديل — ترافرتين مشمس",
-  "al-rahma/aqua-splash-minimal": "تصميم بديل — أكوا سبلاش",
-  "al-rahma/luxury-amber-noir": "تصميم بديل — عنبر فاخر داكن",
-  "al-rahma/botanical-terracotta": "تصميم بديل — نباتي تيراكوتا",
-  "al-rahma/modern-clinical-glow": "تصميم بديل — توهج سريري عصري",
+  "al-rahma/simple-botanical-horizon": "أفق نباتي بانعكاس",
+  "al-rahma/botanical-arch-frame": "حجر ساحلي مشمس وانكسارات ضوئية",
+  "al-rahma/editorial-beauty-card": "بازلت داكن وإضاءة ذهبية محيطية",
+  "al-rahma/silver-podium-botanical": "أفق نباتي بانعكاس",
   "1": "نسخة 1",
   "2": "نسخة 2",
 };
@@ -220,6 +216,18 @@ async function loadImageElement(src: string): Promise<HTMLImageElement> {
  * contact bar. The model paints the outdoor/editorial environment around the
  * authentic bottle while the prompt enforces label/geometry preservation.
  */
+function shouldUseProxy(imageUrl: string): boolean {
+  if (typeof imageUrl !== "string") return false;
+  try {
+    const url = new URL(imageUrl);
+    // Use proxy for external hosts that may block CORS (penduline.com, cdn.parfoom.com, etc.)
+    const blockedHosts = ["penduline.com", "cdn.parfoom.com"];
+    return blockedHosts.some((h) => url.hostname.endsWith(h));
+  } catch {
+    return false;
+  }
+}
+
 async function buildConditioningCanvas(
   sourceImageUrl: string,
   cutoutDataUrl?: string | null,
@@ -230,10 +238,13 @@ async function buildConditioningCanvas(
       cutoutDataUrl ||
       await (async () => {
         try {
+          const effectiveUrl = shouldUseProxy(sourceImageUrl)
+            ? `/api/ai/proxy-image?url=${encodeURIComponent(sourceImageUrl)}`
+            : sourceImageUrl;
           const res = await fetch("/api/ai/remove-bg", {
             method: "POST",
             headers: adminWriteHeaders({ "Content-Type": "application/json", Accept: "application/json" }),
-            body: JSON.stringify({ imageUrl: sourceImageUrl }),
+            body: JSON.stringify({ imageUrl: effectiveUrl }),
           });
           const body = (await res.json()) as { success?: boolean; cutout?: string };
           return body.success && typeof body.cutout === "string" ? body.cutout : null;
@@ -759,7 +770,7 @@ export default function CampaignGallery() {
             disabled={running}
             className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-black text-white shadow-sm transition hover:bg-emerald-600 disabled:opacity-50"
           >
-            {running ? "جارٍ التوليد..." : "مسح المعاينات القديمة وتوليد الجديد"}
+            {running ? "جارٍ التوليد..." : "Clear preview and Generate 10 Designs today"}
           </button>
           <button
             type="button"
@@ -767,7 +778,7 @@ export default function CampaignGallery() {
             disabled={running}
             className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-emerald-500 disabled:opacity-50"
           >
-            {running ? "جارٍ التوليد..." : "توليد دفعة اليوم (5 منتجات × نسختين)"}
+            {running ? "جارٍ التوليد..." : "Generate 10 Designs today (5 Photos × 2 Variants)"}
           </button>
           <button
             type="button"

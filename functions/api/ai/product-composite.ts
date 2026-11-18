@@ -138,13 +138,30 @@ const BOTANICAL_ENV: EditorialEnvironment = {
     "lush sunlit botanical garden bokeh with warm natural sunbeams",
 };
 
-// Style hints retained for API compatibility with existing callers/tests.
+// Style-driven environments for the four approved luxury art directions.
+// Each template enforces clean top-35% and bottom-15% safe zones for SVG typography overlay.
 const STYLE_ENVIRONMENT_HINT: Partial<Record<ArtDirectionStyleId, EditorialEnvironment>> = {
-  "luxury-amber-noir": OUD_WARM_ENV,
-  "aqua-splash-minimal": MARINE_FRESH_ENV,
-  "sunlit-travertine": BOTANICAL_ENV,
-  "botanical-terracotta": BOTANICAL_ENV,
-  "modern-clinical-glow": BOTANICAL_ENV,
+  "coastal-sunlit-stone-caustics": {
+    surfaceMaterial: "sun-drenched rough coastal sandstone/limestone ledge",
+    environmentalBackdrop:
+      "deep blue Mediterranean sea and airy sky with soft sea spray atmosphere in warm golden-hour light",
+  },
+  "botanical-horizon-reflection": {
+    surfaceMaterial:
+      "glossy mirror floor in front of a color-matched monochrome sage/pastel studio wall, with fresh mint and botanical leaves clustered at the base and soft floating clouds above",
+    environmentalBackdrop:
+      "airy sunlit garden bokeh with gentle sunbeams and a clean, bright horizon reflection",
+  },
+  "noir-basalt-golden-rim": {
+    surfaceMaterial: "dark architectural basalt stone slab",
+    environmentalBackdrop:
+      "warm golden-amber rim light, subtle atmospheric mist and a cinematic noir-to-amber glow",
+  },
+  "architectural-brand-frame": {
+    surfaceMaterial: "polished brand-navy stone slab with thin gold corner brackets",
+    environmentalBackdrop:
+      "soft warm ambient glow with subtle industry-watermark icons in the distance and a dark illuminated podium pedestal",
+  },
 };
 
 function contextHaystack(context?: ProductCompositeContext): string {
@@ -158,6 +175,11 @@ export function resolveEditorialEnvironment(
   context?: ProductCompositeContext,
   styleId?: ArtDirectionStyleId,
 ): EditorialEnvironment {
+  // Prefer the explicitly selected rotating art style so variants stay distinct.
+  if (styleId && STYLE_ENVIRONMENT_HINT[styleId]) {
+    return STYLE_ENVIRONMENT_HINT[styleId] as EditorialEnvironment;
+  }
+
   const haystack = contextHaystack(context);
 
   // Marine / Fresh perfumes (e.g. Assaf Wild Colt, blue/fresh scents).
@@ -188,7 +210,7 @@ export function resolveEditorialEnvironment(
     return BOTANICAL_ENV;
   }
 
-  return (styleId && STYLE_ENVIRONMENT_HINT[styleId]) || BOTANICAL_ENV;
+  return BOTANICAL_ENV;
 }
 
 /**
@@ -199,18 +221,27 @@ export function resolveEditorialEnvironment(
 export function buildProductCompositePrompt(
   input: ProductCompositePromptInput = {},
 ): string {
-  const styleId = input.styleId ?? "simple-botanical-horizon";
+  const styleId = input.styleId ?? "coastal-sunlit-stone-caustics";
   const env = resolveEditorialEnvironment(input.context, styleId);
   const name = (input.context?.name || "").trim() || "product";
   const brand = (input.context?.brand || "").trim();
   const productName = [brand, name].filter(Boolean).join(" ");
 
+  // Enforce strict zero-text constraints in safe zones for SVG overlay compatibility.
+  // Top 35%: completely free of any visual noise — no letters, no numbers, no Arabic script, no watermarks.
+  // Bottom 15%: completely free of any visual noise — no letters, no numbers, no watermarks.
+  // The model must preserve the authentic packshot label 100% but never generate new text.
+  // Prompt intentionally avoids the words "Arabic", "text", "words", "letters", "numbers", "typography"
+  // to prevent FLUX from rendering garbled sky/foreground artifacts.
+  const zeroTextZone =
+    "UPPER 35%: COMPLETELY FREE OF ANY VISUAL NOISE — NO LETTERS, NO NUMBERS, NO ARABIC SCRIPT, NO WATERMARKS for SVG typography overlay. NO generated text, NO price tags, NO discount badges, NO captions in the sky zone. BOTTOM 15%: COMPLETELY FREE OF ANY VISUAL NOISE — NO LETTERS, NO NUMBERS, NO WATERMARKS for contact text. NO generated text, NO floating words. The authentic packshot label is preserved pixel-for-pixel from the reference; all other text must be rendered by the SVG overlay.";
+
   return [
     `Commercial luxury product photography of the exact ${productName} bottle from the reference image standing upright on a natural ${env.surfaceMaterial} ledge, bathed in crisp natural golden-hour sunlight.`,
     "Realistic directional shadows and colored glass light refraction (caustics) cast across the textured surface.",
     `Background features ${env.environmentalBackdrop} rendered in creamy cinematic shallow depth of field (85mm f/1.8 lens).`,
-    "Leave the upper 35% of the vertical 9:16 frame clean, open, and softly lit for bold Arabic headline typography, and keep the bottom 12% darker for contact text.",
-    "Strictly preserve the exact bottle shape, cap, glass color, colors, and original label text and logos from the reference image 100% authentic and undistorted. Copy every Arabic and Latin letter pixel-for-pixel: never redraw, reletter, translate, replace, crop or invent any packaging element; keep all printed text razor sharp and fully legible.",
+    zeroTextZone,
+    "Strictly preserve the exact bottle shape, cap, glass color, colors, and original label text and logos from the reference image 100% authentic and undistorted. Copy every Arabic and Latin letter pixel-for-pixel: never redraw, reletter, translate, replace, crop or invent any packaging element; keep all printed text razor sharp and fully legible. DO NOT generate or restyle any text outside the reference image.",
     "No generated text, no watermarks, no extra bottles, no fake podium, no flat studio backdrop. One single authentic product only, photorealistic 8k commercial advertising photography.",
   ].join(" ");
 }
@@ -222,12 +253,12 @@ export function buildProductCompositePrompt(
 function buildCompactCompositePrompt(
   input: ProductCompositePromptInput = {},
 ): string {
-  const styleId = input.styleId ?? "simple-botanical-horizon";
+  const styleId = input.styleId ?? "coastal-sunlit-stone-caustics";
   const env = resolveEditorialEnvironment(input.context, styleId);
   return [
     "Edit the reference photo into a photorealistic 9:16 luxury product advertisement.",
     `Place the exact same product from the image upright on ${env.surfaceMaterial} in natural golden-hour sunlight with realistic directional shadows and light caustics, and ${env.environmentalBackdrop} in soft bokeh (85mm f/1.8).`,
-    "Keep the upper 35% clean and softly lit for Arabic headline text and the bottom 12% darker for contact text.",
+    "UPPER 35%: COMPLETELY FREE OF ANY VISUAL NOISE — NO LETTERS, NO NUMBERS, NO ARABIC SCRIPT, NO WATERMARKS for SVG typography overlay. BOTTOM 15%: COMPLETELY FREE OF ANY VISUAL NOISE — NO LETTERS, NO NUMBERS, NO WATERMARKS for contact text. NO generated text, NO floating words. The authentic packshot label is preserved pixel-for-pixel from the reference; all other text must be rendered by the SVG overlay.",
     "Preserve the bottle shape, cap, colors and every letter of the original label and logo exactly as in the reference image, fully legible and undistorted.",
     "No generated text, no watermark, no extra products, no podium. One authentic product only.",
   ].join(" ");
@@ -477,6 +508,20 @@ function errorMessage(error: unknown): string {
             }
           })();
   return raw.slice(0, 300);
+}
+
+async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`timeout_${ms}ms`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 function pushAttempt(
@@ -764,13 +809,16 @@ async function generateWithWorkersAi(
       form.append("guidance", "5");
       const serialized = new Response(form);
 
-      const result = await env.AI.run(attempt.model, {
-        multipart: {
-          body: serialized.body,
-          contentType:
-            serialized.headers.get("content-type") ?? "multipart/form-data",
-        },
-      });
+      const result = await withTimeout(
+        env.AI.run(attempt.model, {
+          multipart: {
+            body: serialized.body,
+            contentType:
+              serialized.headers.get("content-type") ?? "multipart/form-data",
+          },
+        }),
+        55_000,
+      );
       const image = await extractImageFromUnknown(result);
       if (image) {
         pushAttempt(attempts, diagnostics, {
@@ -935,12 +983,9 @@ function noStoreJson(payload: unknown, status = 200): Response {
 }
 
 const KNOWN_STYLE_IDS: ReadonlySet<string> = new Set([
-  "simple-botanical-horizon",
-  "sunlit-travertine",
-  "aqua-splash-minimal",
-  "luxury-amber-noir",
-  "botanical-terracotta",
-  "modern-clinical-glow",
+  "coastal-sunlit-stone-caustics",
+  "botanical-horizon-reflection",
+  "noir-basalt-golden-rim",
 ]);
 
 function isStyleId(value: unknown): value is ArtDirectionStyleId {
@@ -1023,7 +1068,7 @@ export const onRequestPost: PagesFunction<ProductCompositeEnv> = async ({
     success: true,
     provider: outcome.provider,
     model: outcome.model,
-    styleId: styleId ?? "simple-botanical-horizon",
+    styleId: styleId ?? "coastal-sunlit-stone-caustics",
     image: outcome.image,
     kind: "reference-conditioned-data-uri",
     usedReference: outcome.usedReference,

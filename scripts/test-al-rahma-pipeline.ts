@@ -194,17 +194,13 @@ assert.match(cairoToday(new Date("2027-03-20T12:00:00Z")), /^\d{4}-\d{2}-\d{2}$/
 
 // --- Template mapping -------------------------------------------------------
 
-assert.equal(templateForVariant(1, "seed"), "simple-botanical-horizon");
-const v2a = templateForVariant(2, "seed-a");
-const v2b = templateForVariant(2, "seed-b");
-assert.ok(
-  v2a === "botanical-arch-frame" || v2a === "editorial-beauty-card",
-  "Variant 2 must alternate between botanical-arch-frame and editorial-beauty-card.",
-);
-assert.ok(
-  v2b === "botanical-arch-frame" || v2b === "editorial-beauty-card",
-  "Variant 2 must alternate between botanical-arch-frame and editorial-beauty-card.",
-);
+const allowedTemplates = new Set(["simple-botanical-horizon", "botanical-arch-frame", "editorial-beauty-card"]);
+const v1 = templateForVariant(1, "seed");
+const v2 = templateForVariant(2, "seed");
+assert.ok(allowedTemplates.has(v1), "Variant 1 must use one of the three luxury templates.");
+assert.ok(allowedTemplates.has(v2), "Variant 2 must use one of the three luxury templates.");
+assert.notEqual(v1, v2, "Variant 1 and Variant 2 must be distinct for the same seed.");
+assert.equal(templateForVariant(1, "same-seed"), templateForVariant(1, "same-seed"), "Variant template must be deterministic.");
 assert.equal(templateForVariant(2, "same-seed"), templateForVariant(2, "same-seed"), "Variant 2 template must be deterministic.");
 
 // --- Production pipeline: two distinct variants -----------------------------
@@ -213,14 +209,13 @@ const variants = ProductionEngine.executeVariants({ product: verifiedProduct, to
 assert.equal(variants.length, 2);
 assert.deepEqual(
   variants.map((r) => r.template),
-  ["simple-botanical-horizon", templateForVariant(2, verifiedProduct.title)],
+  [templateForVariant(1, verifiedProduct.title), templateForVariant(2, verifiedProduct.title)],
 );
 assert.deepEqual(variants.map((r) => r.variantNumber), [1, 2]);
-assert.equal(variants[0].variant, "simple-botanical-horizon");
-assert.ok(
-  variants[1].template === "botanical-arch-frame" || variants[1].template === "editorial-beauty-card",
-  "Variant 2 must use alternating template.",
-);
+assert.ok(allowedTemplates.has(variants[0].template));
+assert.equal(variants[0].variant, variants[0].template);
+assert.ok(allowedTemplates.has(variants[1].template));
+assert.notEqual(variants[0].template, variants[1].template, "Variants must rotate across distinct luxury templates.");
 assert.equal(variants[0].angle, "product_information");
 assert.equal(variants[1].angle, "beauty_routine");
 assertWordRange(variants[0].copy.benefitLine, 4, 8, "Engine variant 1 benefit line");
@@ -259,8 +254,8 @@ assert.notEqual(variants[0].svgOverlay, variants[1].svgOverlay, "Variants must d
     assert.ok(result.svgOverlay.includes('filter="url(#reflection-blur)"'), "Reflection must use the blur filter.");
     assert.ok(result.svgOverlay.includes('stdDeviation="2.5"'), "Reflection blur must be 2.5px.");
     assert.ok(result.svgOverlay.includes('stop-opacity="0.34"'), "Reflection must start at 0.34 alpha.");
-    assert.ok(result.svgOverlay.includes('mix-blend-mode:multiply'), "Non-cutout packshot must use mix-blend-mode:multiply.");
-    assert.ok(result.svgOverlay.includes('data-blend="multiply"'), "Non-cutout packshot must be marked data-blend=multiply.");
+    assert.equal(result.svgOverlay.includes('mix-blend-mode:multiply'), false, "Packshot must never use destructive multiply blending.");
+    assert.ok(/data-blend="(cutout|alpha-preserve)"/.test(result.svgOverlay), "Packshot must be marked with a color-preserving blend mode.");
     assert.ok(result.svgOverlay.includes('id="metallic-floor"'), "Fallback hero must sit on a metallic floor plate.");
     assert.ok(result.svgOverlay.includes('data-metallic="true"'), "Metallic stage/contact markers must be present.");
 
@@ -290,21 +285,17 @@ assert.notEqual(variants[0].svgOverlay, variants[1].svgOverlay, "Variants must d
     assert.equal(result.svgOverlay.includes("occasion-ribbon"), false, "No greeting without an in-window occasion.");
   }
 
-assert.equal(/id="[^"]*podium[^"]*"/.test(variants[0].svgOverlay), false, "Variant 1 must have no podium markup.");
-assert.equal(variants[0].svgOverlay.includes('id="packshot-hero"'), true, "Variant 1 must include the fallback hero packshot when no AI composite is provided.");
-assert.equal(variants[0].svgOverlay.includes('data-blend="multiply"'), true, "Variant 1 non-cutout packshot must be multiply-blended.");
-assert.ok(variants[0].svgOverlay.includes('id="simple-botanical-horizon"'), "Variant 1 must use the simple-botanical-horizon fallback scene.");
-assert.ok(variants[0].svgOverlay.includes('data-horizon-y="1240"'), "Simple scene horizon must sit at y=1240.");
-assert.ok(variants[0].svgOverlay.includes('id="horizon-line"'), "Simple scene must render the glossy horizon line.");
-assert.ok(variants[0].svgOverlay.includes('id="botanical-base"'), "Simple scene must render the botanical base cluster.");
-assert.ok(
-  variants[0].svgOverlay.includes('id="cloud-left"') && variants[0].svgOverlay.includes('id="cloud-right"'),
-  "Simple scene must render both volumetric clouds.",
-);
-assert.ok(variants[0].svgOverlay.includes('data-palette="golden-sage"'), "Haircare product must resolve to the golden-sage palette.");
-assert.equal(variants[0].svgOverlay.includes('id="availability-pill"'), false, "Availability pill is not part of the master overlay.");
-assert.equal(variants[0].svgOverlay.includes('id="cta-pill"'), false, "CTA pill is not part of the master overlay.");
-assert.ok(variants[1].svgOverlay.includes('id="dual-tone-headline"'), "Variant 2 must render the dual-tone headline.");
+for (const result of variants) {
+  assert.equal(/id="[^"]*podium[^"]*"/.test(result.svgOverlay), false, "Variants must have no podium markup.");
+  assert.ok(result.svgOverlay.includes('id="packshot-hero"'), "Variants must include the fallback hero packshot when no AI composite is provided.");
+  assert.equal(result.svgOverlay.includes('mix-blend-mode:multiply'), false, "Variants must never use destructive multiply blending.");
+  assert.ok(/data-blend="(cutout|alpha-preserve)"/.test(result.svgOverlay), "Variants must use a color-preserving blend marker.");
+  assert.ok(result.svgOverlay.includes('id="dual-tone-headline"'), "Variants must render the dual-tone headline.");
+  assert.equal(result.svgOverlay.includes('id="availability-pill"'), false, "Availability pill is not part of the master overlay.");
+  assert.equal(result.svgOverlay.includes('id="cta-pill"'), false, "CTA pill is not part of the master overlay.");
+}
+assert.ok(allowedTemplates.has(variants[0].template) && allowedTemplates.has(variants[1].template));
+assert.notEqual(variants[0].template, variants[1].template, "Variants must render two distinct luxury styles.");
 
 // Transparent PNG cutout renders normally (no multiply, with soft drop shadow).
 const cutoutOverlay = OverlaySystem.generateOverlaySvg({
@@ -326,8 +317,8 @@ assert.ok(cutoutOverlay.includes('id="metallic-contact-shadow"'), "Transparent c
 assert.ok(cutoutOverlay.includes('id="packshot-reflection"'), "Cutout must also render a mirror reflection.");
 
 const single = ProductionEngine.execute({ product: verifiedProduct, today: fixedToday });
-assert.equal(single.variant, "simple-botanical-horizon");
-assert.equal(single.template, "simple-botanical-horizon");
+assert.ok(allowedTemplates.has(single.template), "Single variant must use one of the three luxury templates.");
+assert.equal(single.variant, single.template);
 assert.equal(single.variantNumber, 1);
 assert.equal(single.success, true);
 
@@ -423,7 +414,7 @@ assert.equal(externalScene.kind, "scene");
 assert.equal(externalScene.markup.includes('href="https://image.pollinations.ai/prompt/test"'), false);
 assert.equal(/id="[^"]*podium[^"]*"/.test(externalScene.markup), false, "Non-data scene URLs must fall back to podium-free editorial vectors for PNG-safe export.");
 assert.ok(
-  externalScene.markup.includes("botanical-shadows") || externalScene.markup.includes("studio-wall"),
+  externalScene.markup.includes("coastal-sky") || externalScene.markup.includes("botanical-shadows") || externalScene.markup.includes("studio-wall"),
   "Fallback scene must use podium-free editorial backdrop markup.",
 );
 
@@ -509,7 +500,8 @@ assert.ok(overlay.includes('x="190" y="380" width="700" height="860"'));
 assert.ok(overlay.includes('id="packshot-reflection"'));
 assert.ok(overlay.includes('transform="translate(0, 2480) scale(1, -1)"'));
 assert.ok(overlay.includes('mask="url(#reflection-fade)"') && overlay.includes('filter="url(#reflection-blur)"'));
-assert.ok(overlay.includes('mix-blend-mode:multiply') && overlay.includes('data-blend="multiply"'));
+assert.equal(overlay.includes('mix-blend-mode:multiply'), false, "Overlay must not use destructive multiply blending.");
+assert.ok(/data-blend="(cutout|alpha-preserve)"/.test(overlay), "Overlay packshot must be color-preserving.");
 assert.ok(overlay.includes('id="floating-emblem"'), "Floating emblem must render.");
 assert.ok(overlay.includes('id="dual-tone-headline"'));
 assert.ok(overlay.includes('id="headline-line-1"') && overlay.includes('fill="url(#headline-silver-gradient)"'));

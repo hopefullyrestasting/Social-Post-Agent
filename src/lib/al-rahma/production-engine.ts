@@ -131,7 +131,7 @@ export class ProductionEngine {
     return ProductionEngine.build(request, variantNumber, template);
   }
 
-  /** Two required creative variants per product: 1 = simple-botanical-horizon, 2 alternates. */
+  /** Two required creative variants per product, rotating across the three luxury styles. */
   public static executeVariants(
     request: ProductionVariantsRequest,
   ): ProductionResult[] {
@@ -301,3 +301,5 @@ export class ProductionEngine {
     };
   }
 }
+
+

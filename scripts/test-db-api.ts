@@ -685,8 +685,13 @@ async function testCampaignEndpoints() {
     "Campaign runs must return fresh, uncached creatives.",
   );
   assert.ok(
-    (runBody.artDirectionStyles as Record<string, unknown>)["sunlit-travertine"],
-    "Run response must include the five art directions.",
+    (runBody.artDirectionStyles as Record<string, unknown>)["coastal-sunlit-stone-caustics"],
+    "Run response must include the rotating luxury art directions.",
+  );
+  assert.equal(
+    Object.keys((runBody.artDirectionStyles as Record<string, unknown>) ?? {}).length,
+    4,
+    "Run response must expose exactly the four rotating art directions.",
   );
 
   // Selection query must randomize eligible products every run

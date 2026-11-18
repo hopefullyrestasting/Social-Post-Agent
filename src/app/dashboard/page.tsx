@@ -669,13 +669,24 @@ export default function DashboardPage() {
             <button
               type="button"
               onClick={() => void harvestRandomProducts()}
-              disabled={harvesting}
-              className="rounded-lg bg-amber-500 px-5 py-2 text-sm font-black text-slate-950 shadow-sm transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={true}
+              className="rounded-lg bg-amber-500 px-5 py-2 text-sm font-black text-slate-950 shadow-sm transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {harvesting
                 ? "جارٍ البحث والتوثيق..."
-                : "🔍 اكتشاف وتوثيق 5 منتجات عشوائية جديدة"}
+                : "🔍 اكتشاف وتوثيق 5 منتجات عشوائية جديدة — Available Soon — قريباً"}
             </button>
+            <div className="flex flex-col items-start gap-1">
+              <button
+                type="button"
+                disabled
+                title="Available Soon — قريباً"
+                className="cursor-not-allowed rounded-lg bg-slate-200 px-5 py-2 text-sm font-black text-slate-500 shadow-sm"
+              >
+                اكتشاف وتوثيق منتجات من الويب (متوقف مؤقتاً)
+              </button>
+              <span className="inline-flex rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-800">Available Soon — قريباً</span>
+            </div>
             <button
               type="button"
               onClick={() => {
@@ -738,6 +749,75 @@ export default function DashboardPage() {
               </p>
             </div>
           ))}
+        </section>
+
+        {/* Brand DNA Settings Card */}
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 mb-4">
+          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h3 className="font-extrabold">Brand DNA Settings</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                Configuración de la identidad de marca para todos los anuncios
+              </p>
+            </div>
+            <div className="flex flex-col items-start gap-1">
+              <button
+                type="button"
+                disabled
+                title="Available Soon — قريباً"
+                className="cursor-not-allowed rounded-lg bg-slate-200 px-4 py-2 text-sm font-black text-slate-500 shadow-sm"
+              >
+                Edición de perfiles de marca
+              </button>
+              <span className="inline-flex rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-800">Available Soon — قريباً</span>
+            </div>
+          </div>
+        </section>
+
+        {/* Product Thumbnails Selector Grid with Brand Filter */}
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 mb-4">
+          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h3 className="font-extrabold">Selector de Miniaturas</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                Selecciona productos para tus campañas con filtro por marca
+              </p>
+            </div>
+            <div className="flex flex-col items-start gap-1">
+              <button
+                type="button"
+                disabled
+                title="Available Soon — قريباً"
+                className="cursor-not-allowed rounded-lg bg-slate-200 px-4 py-2 text-sm font-black text-slate-500 shadow-sm"
+              >
+                Filtrar por marca
+              </button>
+              <span className="inline-flex rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-800">Available Soon — قريباً</span>
+            </div>
+          </div>
+        </section>
+
+        {/* Promo Offer Presets Dropdown */}
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 mb-4">
+          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h3 className="font-extrabold">Presets de Ofertas Promo</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                Selecciona un preset de oferta promocional predefinido
+              </p>
+            </div>
+            <div className="flex flex-col items-start gap-1">
+              <button
+                type="button"
+                disabled
+                title="Available Soon — bientôt"
+                className="cursor-not-allowed rounded-lg bg-slate-200 px-4 py-2 text-sm font-black text-slate-500 shadow-sm"
+              >
+                Seleccionar preset
+              </button>
+              <span className="inline-flex rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-800">Available Soon — bientôt</span>
+            </div>
+          </div>
         </section>
 
         <CampaignGallery key={refreshKey} />

@@ -63,6 +63,30 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     );
   }
 
+  // Ensure brand_profiles table exists (idempotent, no-op if already present)
+  try {
+    await env.DB.prepare(`
+      CREATE TABLE IF NOT EXISTS brand_profiles (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        industry TEXT,
+        tagline TEXT,
+        phone TEXT,
+        whatsapp TEXT,
+        logo_url TEXT,
+        logo_tone TEXT CHECK(logo_tone IN ('light', 'dark', 'gold-emerald')) DEFAULT 'light',
+        font_family TEXT CHECK(font_family IN ('Cairo', 'Tajawal', 'IBM Plex Sans Arabic')) DEFAULT 'Cairo',
+        product_context_notes TEXT,
+        is_active INTEGER DEFAULT 0,
+        created_at INTEGER,
+        updated_at INTEGER
+      )
+    `).run();
+  } catch (e) {
+    // Table may already exist; continue regardless
+    console.info("brand_profiles table ensured (may already exist):", e);
+  }
+
   try {
     const campaigns = await env.DB.prepare(
       `SELECT id, campaign_date, status, selected_product_ids,

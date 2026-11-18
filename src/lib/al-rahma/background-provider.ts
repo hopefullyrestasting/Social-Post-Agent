@@ -5,13 +5,11 @@ import { escapeXml } from "./svg-utils";
  *
  * Scenes are pure edge-to-edge studio stages (no text, no bottles/products, no
  * podium). The authentic packshot is composited as a full-bleed hero by the
- * overlay system, so backgrounds must be clean, bright editorial textures that
- * blend seamlessly across the full 1080x1920 canvas (including under
- * multiply-blended non-cutout packshots).
+ * overlay system, so backgrounds must blend seamlessly across the full
+ * 1080x1920 canvas while preserving authentic packaging colors at 100% vibrancy.
  *
- * Default behavior is a deterministic SVG soft-light editorial fallback.
- * When an AI scene image is provided (embedded data URI), it is used as the
- * photographic stage.
+ * Default behavior is a deterministic SVG editorial fallback. When an AI scene
+ * image is provided (embedded data URI), it is used as the photographic stage.
  */
 
 export type DesignerTemplate =
@@ -27,9 +25,9 @@ export type BackgroundProviderId =
   | "muapi";
 
 /**
- * Adaptive colour palettes for the Simple editorial theme. The studio wall and
- * glossy floor are colour-matched to the product packaging mood so the same
- * composition works for skincare, haircare and luxury fragrance.
+ * Adaptive colour palettes for the Botanical Horizon Reflection theme. The
+ * studio wall and glossy floor are colour-matched to the product packaging mood
+ * so the same composition works for skincare, haircare and luxury fragrance.
  */
 export type SimplePaletteKey =
   | "fresh-sage"
@@ -111,9 +109,9 @@ export interface SimplePaletteContext {
 }
 
 /**
- * Deterministically pick the Simple palette from product category/brand/name.
- * Perfumes and oud go dark emerald-charcoal, kids go blush-apricot, haircare
- * with argan goes warm golden sage, everything else stays fresh sage-green.
+ * Deterministically pick the Botanical Horizon palette from product
+ * category/brand/name so the monochrome wall/floor/mint cluster complements the
+ * authentic packaging.
  */
 export function resolveSimplePaletteKey(
   context?: SimplePaletteContext,
@@ -131,7 +129,7 @@ export function resolveSimplePaletteKey(
   if (/(perfume|fragrance|oud|عود|عطر|برفان|بارفان|luxury|فخم)/.test(haystack)) {
     return "luxury-emerald";
   }
-  if (/(kids|children|child|أطفال|اطفال|مينك|mink|baby|بيبى)/.test(haystack)) {
+  if (/(kids|children|child|أطفال|اطفال|مينك|mink|baby|بيبي)/.test(haystack)) {
     return "blush-apricot";
   }
   if (/(argan|أرغان|ارجان|vatika|فاتيكا|penduline|بندولين|hair|شعر|شامبو|بلسم|زيت)/.test(haystack)) {
@@ -145,7 +143,7 @@ export interface BackgroundRequest {
   height: number;
   template: DesignerTemplate;
   sceneImageUrl?: string | null;
-  /** Simple theme colour mood; defaults to fresh sage-green. */
+  /** Botanical Horizon colour mood; defaults to fresh sage-green. */
   palette?: SimplePaletteKey;
 }
 
@@ -210,7 +208,6 @@ function wallBackdrop(width: number, height: number): string {
 }
 
 function botanicalShadows(width: number): string {
-  // Soft, full-bleed botanical shadows cast on the wall — no podium, no floor.
   return `
     <g id="botanical-shadows" opacity="0.55">
       <g filter="url(#leaf-shadow-blur)" fill="#334155">
@@ -228,6 +225,81 @@ function botanicalShadows(width: number): string {
   `.trim();
 }
 
+/** Deterministic fallback: Coastal Sunlit Stone & Caustics. */
+function coastalSunlitStone(width: number, height: number): string {
+  return `
+    <defs>
+      <linearGradient id="coastal-sky" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#E8F4FF" />
+        <stop offset="35%" stop-color="#F6EFE2" />
+        <stop offset="100%" stop-color="#E7D3B5" />
+      </linearGradient>
+      <linearGradient id="coastal-stone" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#F3E3C8" />
+        <stop offset="55%" stop-color="#E2C79F" />
+        <stop offset="100%" stop-color="#C9A777" />
+      </linearGradient>
+      <radialGradient id="coastal-sun" cx="62%" cy="22%" r="55%">
+        <stop offset="0%" stop-color="#FFF7D6" stop-opacity="0.95" />
+        <stop offset="45%" stop-color="#FFDFA3" stop-opacity="0.35" />
+        <stop offset="100%" stop-color="#FFDFA3" stop-opacity="0" />
+      </radialGradient>
+      <filter id="coastal-bokeh" x="-40%" y="-40%" width="180%" height="180%">
+        <feGaussianBlur stdDeviation="22" />
+      </filter>
+      <filter id="coastal-caustic" x="-30%" y="-30%" width="160%" height="160%">
+        <feGaussianBlur stdDeviation="10" />
+      </filter>
+    </defs>
+    <rect width="${width}" height="${height}" fill="url(#coastal-sky)" />
+    <rect x="0" y="${Math.round(height * 0.55)}" width="${width}" height="${Math.round(height * 0.45)}" fill="url(#coastal-stone)" />
+    <rect width="${width}" height="${height}" fill="url(#coastal-sun)" />
+    <g id="coastal-ocean-bokeh" filter="url(#coastal-bokeh)" opacity="0.35">
+      <circle cx="180" cy="420" r="140" fill="#7DD3FC" />
+      <circle cx="920" cy="360" r="160" fill="#BAE6FD" />
+      <circle cx="540" cy="520" r="180" fill="#E0F2FE" />
+    </g>
+    <g id="coastal-caustics" filter="url(#coastal-caustic)" opacity="0.28">
+      <ellipse cx="420" cy="1320" rx="220" ry="70" fill="#FFF3C4" />
+      <ellipse cx="700" cy="1380" rx="260" ry="80" fill="#FFE8A3" />
+      <ellipse cx="560" cy="1500" rx="320" ry="90" fill="#FFF7D6" />
+    </g>
+  `.trim();
+}
+
+/** Deterministic fallback: Noir Basalt & Golden Rim-Light. */
+function noirBasaltGolden(width: number, height: number): string {
+  return `
+    <defs>
+      <linearGradient id="noir-wall" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#0B0F14" />
+        <stop offset="55%" stop-color="#111827" />
+        <stop offset="100%" stop-color="#0F172A" />
+      </linearGradient>
+      <linearGradient id="noir-slab" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#1F2937" />
+        <stop offset="100%" stop-color="#0B1220" />
+      </linearGradient>
+      <radialGradient id="noir-amber" cx="55%" cy="42%" r="60%">
+        <stop offset="0%" stop-color="#FDE68A" stop-opacity="0.22" />
+        <stop offset="35%" stop-color="#F59E0B" stop-opacity="0.16" />
+        <stop offset="100%" stop-color="#F59E0B" stop-opacity="0" />
+      </radialGradient>
+      <radialGradient id="noir-mist" cx="50%" cy="70%" r="60%">
+        <stop offset="0%" stop-color="#F8FAFC" stop-opacity="0.10" />
+        <stop offset="100%" stop-color="#F8FAFC" stop-opacity="0" />
+      </radialGradient>
+      <filter id="noir-glow" x="-40%" y="-40%" width="180%" height="180%">
+        <feGaussianBlur stdDeviation="26" />
+      </filter>
+    </defs>
+    <rect width="${width}" height="${height}" fill="url(#noir-wall)" />
+    <rect x="0" y="${Math.round(height * 0.58)}" width="${width}" height="${Math.round(height * 0.42)}" fill="url(#noir-slab)" />
+    <ellipse cx="${Math.round(width * 0.56)}" cy="${Math.round(height * 0.44)}" rx="520" ry="420" fill="url(#noir-amber)" filter="url(#noir-glow)" />
+    <rect width="${width}" height="${height}" fill="url(#noir-mist)" />
+  `.trim();
+}
+
 function silverPodiumBotanical(width: number, height: number): string {
   return `
     ${sharedDefs()}
@@ -241,45 +313,8 @@ function silverPodiumBotanical(width: number, height: number): string {
   `.trim();
 }
 
-function botanicalArchFrame(width: number, height: number): string {
-  const archW = 820;
-  const archH = 1120;
-  const archX = (width - archW) / 2;
-  const archY = 260;
-  const r = archW / 2;
-  return `
-    ${sharedDefs()}
-    ${wallBackdrop(width, height)}
-    <g id="arch-scene" opacity="0.22">
-      <path d="M ${archX} ${archY + archH} L ${archX} ${archY + r} A ${r} ${r} 0 0 1 ${archX + archW} ${archY + r} L ${archX + archW} ${archY + archH} Z" fill="#FFFFFF" fill-opacity="0.18" stroke="#FFFFFF" stroke-opacity="0.30" stroke-width="2" />
-    </g>
-    ${bokehLights([
-      [200, 300, 80, "#FFF7ED", 0.10],
-      [880, 340, 90, "#FFFFFF", 0.10],
-      [540, 900, 200, "#FFFFFF", 0.08],
-    ])}
-    ${botanicalShadows(width)}
-  `.trim();
-}
-
-function editorialBeautyCard(width: number, height: number): string {
-  return `
-    ${sharedDefs()}
-    <linearGradient id="mint-mist" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#F7FBF9" />
-      <stop offset="50%" stop-color="#F4F8F7" />
-      <stop offset="100%" stop-color="#EEF4F2" />
-    </linearGradient>
-    <rect width="${width}" height="${height}" fill="url(#mint-mist)" />
-    <rect width="${width}" height="${height}" fill="url(#studio-light-core)" />
-    ${bokehLights([
-      [180, 320, 80, "#FFFFFF", 0.12],
-      [900, 360, 90, "#ECFDF5", 0.10],
-      [540, 920, 220, "#FFFFFF", 0.08],
-    ])}
-    ${botanicalShadows(width)}
-  `.trim();
-}
+/* botanical-arch-frame maps to Coastal Sunlit Stone & Caustics */
+/* editorial-beauty-card maps to Noir Basalt & Golden Rim-Light */
 
 function simpleDefs(palette: SimplePalette): string {
   return `
@@ -324,12 +359,7 @@ function simpleDefs(palette: SimplePalette): string {
   `.trim();
 }
 
-function cumulusCloud(
-  cx: number,
-  cy: number,
-  scale: number,
-  opacity: number,
-): string {
+function cumulusCloud(cx: number, cy: number, scale: number, opacity: number): string {
   return `
     <g transform="translate(${cx} ${cy}) scale(${scale})" filter="url(#simple-cloud-blur)" fill="#FFFFFF" fill-opacity="${opacity}">
       <ellipse cx="0" cy="4" rx="118" ry="50" />
@@ -342,46 +372,31 @@ function cumulusCloud(
   `.trim();
 }
 
-function mintLeaf(
-  x: number,
-  y: number,
-  rotate: number,
-  scale: number,
-  opacity: number,
-): string {
+function mintLeaf(x: number, y: number, rotate: number, scale: number, opacity: number): string {
   return `
     <g transform="translate(${x} ${y}) rotate(${rotate}) scale(${scale})">
       <path d="M 0 0 C -34 -34, -42 -104, 0 -152 C 42 -104, 34 -34, 0 0 Z" fill="url(#simple-leaf)" fill-opacity="${opacity}" />
       <path d="M 0 -8 L 0 -138" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="2" fill="none" />
-      <path d="M 0 -42 C -16 -58, -22 -74, -24 -92 M 0 -42 C 16 -58, 22 -74, 24 -92 M 0 -82 C -12 -94, -16 -104, -18 -116 M 0 -82 C 12 -94, 16 -104, 18 -116" stroke="${paletteLeafVein()}" stroke-opacity="0.22" stroke-width="1.6" fill="none" />
+      <path d="M 0 -42 C -16 -58, -22 -74, -24 -92 M 0 -42 C 16 -58, 22 -74, 24 -92 M 0 -82 C -12 -94, -16 -104, -18 -116 M 0 -82 C 12 -94, 16 -104, 18 -116" stroke="#0B1B16" stroke-opacity="0.22" stroke-width="1.6" fill="none" />
     </g>
   `.trim();
-}
-
-/** Leaf vein accent stays neutral so it works across every palette. */
-function paletteLeafVein(): string {
-  return "#0B1B16";
 }
 
 function botanicalBase(width: number): string {
   const cx = width / 2;
   return `
     <g id="botanical-base">
-      <!-- Soft base shadow anchoring the leaf cluster on the horizon -->
       <ellipse cx="${cx}" cy="1258" rx="430" ry="54" fill="#0B1B16" fill-opacity="0.14" filter="url(#simple-leaf-blur)" />
-      <!-- Back leaves, radiating outwards from the centre base -->
       ${mintLeaf(cx - 268, 1262, -42, 1.28, 0.9)}
       ${mintLeaf(cx - 190, 1252, -58, 1.02, 0.8)}
       ${mintLeaf(cx - 372, 1268, -24, 0.92, 0.78)}
       ${mintLeaf(cx + 268, 1262, 42, 1.28, 0.9)}
       ${mintLeaf(cx + 190, 1252, 58, 1.02, 0.8)}
       ${mintLeaf(cx + 372, 1268, 24, 0.92, 0.78)}
-      <!-- Inner leaves hugging the product base -->
       ${mintLeaf(cx - 96, 1248, -14, 0.82, 0.86)}
       ${mintLeaf(cx + 96, 1248, 14, 0.82, 0.86)}
       ${mintLeaf(cx - 44, 1242, -5, 0.62, 0.9)}
       ${mintLeaf(cx + 44, 1242, 5, 0.62, 0.9)}
-      <!-- Foreground tips spilling onto the glossy floor -->
       <g opacity="0.9">
         ${mintLeaf(cx - 300, 1336, -118, 0.7, 0.7)}
         ${mintLeaf(cx + 300, 1336, 118, 0.7, 0.7)}
@@ -398,20 +413,17 @@ function simpleBotanicalHorizon(
   const palette = SIMPLE_PALETTES[paletteKey] ?? SIMPLE_PALETTES["fresh-sage"];
   const horizon = SIMPLE_HORIZON_Y;
   const floorHeight = Math.max(1, height - horizon);
+
   return `
     <g id="simple-botanical-horizon" data-theme="simple" data-palette="${palette.key}" data-horizon-y="${horizon}">
       ${simpleDefs(palette)}
-      <!-- Colour-matched monochrome studio wall -->
       <rect x="0" y="0" width="${width}" height="${horizon}" fill="url(#simple-wall)" />
       <rect x="0" y="0" width="${width}" height="${horizon}" fill="url(#simple-sky-glow)" />
-      <!-- Two soft volumetric clouds in the open upper sky -->
       <g id="cloud-left">${cumulusCloud(185, 492, 0.92, 0.9)}</g>
       <g id="cloud-right">${cumulusCloud(896, 560, 0.98, 0.86)}</g>
-      <!-- Glossy reflective floor -->
       <rect x="0" y="${horizon}" width="${width}" height="${floorHeight}" fill="url(#simple-floor)" />
       <rect x="0" y="${horizon}" width="${width}" height="${Math.round(floorHeight * 0.6)}" fill="url(#simple-floor-sheen)" />
       <ellipse cx="${width / 2}" cy="${horizon}" rx="660" ry="128" fill="url(#simple-horizon-glow)" />
-      <!-- Crisp glossy horizon line -->
       <rect id="horizon-line" x="0" y="${horizon - 1}" width="${width}" height="3" fill="#FFFFFF" fill-opacity="0.55" />
       <rect x="0" y="${horizon + 2}" width="${width}" height="10" fill="#FFFFFF" fill-opacity="0.08" />
       ${botanicalBase(width)}
@@ -429,9 +441,9 @@ export function deterministicSceneMarkup(
     case "simple-botanical-horizon":
       return simpleBotanicalHorizon(width, height, palette);
     case "botanical-arch-frame":
-      return botanicalArchFrame(width, height);
+      return coastalSunlitStone(width, height);
     case "editorial-beauty-card":
-      return editorialBeautyCard(width, height);
+      return noirBasaltGolden(width, height);
     case "silver-podium-botanical":
     default:
       return silverPodiumBotanical(width, height);
@@ -443,8 +455,6 @@ export function resolveBackground(request: BackgroundRequest): BackgroundLayer {
   const palette = request.palette ?? "fresh-sage";
   const sceneImageUrl = request.sceneImageUrl?.trim() || null;
 
-  // PNG-safe export: never emit external/relative scene URLs (e.g. /studio-scenes/*.svg).
-  // Only embedded data-image URIs are safe for standalone SVG->Canvas rasterization.
   if (sceneImageUrl && sceneImageUrl.startsWith("data:image/")) {
     const provider: BackgroundProviderId = "cloudflare-ai";
     return {
@@ -473,14 +483,21 @@ export function templateForVariant(
   variantNumber: 1 | 2,
   seed: string,
 ): DesignerTemplate {
-  // Variant 1 is always the approved Simple editorial theme (primary default);
-  // variant 2 rotates the secondary variations so pairs never look identical.
-  if (variantNumber === 1) return "simple-botanical-horizon";
+  // Rotate cleanly across the 3 luxury art styles (Coastal Sunlit Stone &
+  // Caustics, Botanical Horizon Reflection, Noir Basalt & Golden Rim-Light).
+  // Pairs are deterministic per seed and always distinct.
   let hash = 0;
   for (let i = 0; i < seed.length; i += 1) {
     hash = (hash * 31 + seed.charCodeAt(i)) | 0;
   }
-  return Math.abs(hash) % 2 === 0
-    ? "botanical-arch-frame"
-    : "editorial-beauty-card";
+  const base = Math.abs(hash);
+  const order: DesignerTemplate[] = [
+    "botanical-arch-frame", // Coastal Sunlit Stone & Caustics
+    "simple-botanical-horizon", // Botanical Horizon Reflection
+    "editorial-beauty-card", // Noir Basalt & Golden Rim-Light
+  ];
+  const first = order[base % order.length];
+  if (variantNumber === 1) return first;
+  const second = order[(base + 1) % order.length];
+  return second === first ? order[(base + 2) % order.length] : second;
 }
