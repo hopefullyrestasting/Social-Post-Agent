@@ -45,6 +45,7 @@ export interface ProductCompositeEnv {
 
 export interface ProductCompositeContext {
   brand?: string | null;
+  industry?: string | null;
   category?: string | null;
   name?: string | null;
   benefits?: string[] | null;
@@ -165,22 +166,41 @@ const STYLE_ENVIRONMENT_HINT: Partial<Record<ArtDirectionStyleId, EditorialEnvir
 };
 
 function contextHaystack(context?: ProductCompositeContext): string {
-  return [context?.brand, context?.category, context?.name, ...(context?.benefits ?? [])]
+  return [context?.brand, context?.industry, context?.category, context?.name, ...(context?.benefits ?? [])]
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
 }
 
-export function resolveEditorialEnvironment(
+export const NEUTRAL_STUDIO_ENV: EditorialEnvironment = {
+  surfaceMaterial:
+    "clean neutral light-grey studio stone surface with subtle texture",
+  environmentalBackdrop:
+    "soft neutral studio gradient backdrop with gentle diffused lighting, no industry-specific props",
+};
+
+function resolveEditorialEnvironment(
   context?: ProductCompositeContext,
   styleId?: ArtDirectionStyleId,
 ): EditorialEnvironment {
-  // Prefer the explicitly selected rotating art style so variants stay distinct.
+  const haystack = contextHaystack(context);
+
+  // Context guard: non-beauty/industrial or ambiguous/unclassified products
+  // must never be placed into beauty/cosmetics scenes.
+  const hasBeautySignal = /(perfume|fragrance|beauty|cosmetic|skincare|skin|haircare|hair|shampoo|cream|lotion|serum|mask|oud|amber|makeup|عطر|برفان|تجميل|عناية|بشرة|شعر|كريم|مرطب|عود|مكياج)/i.test(haystack);
+  const isIndustrial = /(industrial|auto|automotive|engine|mechanic|tool|electronic|hardware|machinery|ميكانيك|سيارات|الكترونيات|صناعي|معدات)/i.test(haystack);
+  const industryIsBeauty = !!context?.industry && /(perfume|fragrance|beauty|cosmetic|skincare|haircare|skin|عطر|تجميل|عناية|بشرة|شعر)/i.test(context.industry);
+  const industryNonBeauty = !!context?.industry && !industryIsBeauty;
+  const hasKnownCategory = !!context?.category && context.category.trim().length > 0;
+  const ambiguous = !hasBeautySignal && !isIndustrial && (!hasKnownCategory || !industryIsBeauty);
+  if (isIndustrial || industryNonBeauty || ambiguous) {
+    return NEUTRAL_STUDIO_ENV;
+  }
+
+  // Prefer selected rotating art style so variants stay distinct.
   if (styleId && STYLE_ENVIRONMENT_HINT[styleId]) {
     return STYLE_ENVIRONMENT_HINT[styleId] as EditorialEnvironment;
   }
-
-  const haystack = contextHaystack(context);
 
   // Marine / Fresh perfumes (e.g. Assaf Wild Colt, blue/fresh scents).
   if (
@@ -201,7 +221,7 @@ export function resolveEditorialEnvironment(
     return OUD_WARM_ENV;
   }
 
-  // Skincare / Moisturizers / Botanicals (default commercial category).
+  // Skincare / Moisturizers / Botanicals.
   if (
     /(skin|cream|moistur|lotion|serum|shampoo|conditioner|hair|mask|aloe|botanical|بشرة|كريم|مرطب|شعر|شامبو|بلسم|ماسك|عناية|صابون|غسول)/.test(
       haystack,
@@ -210,7 +230,22 @@ export function resolveEditorialEnvironment(
     return BOTANICAL_ENV;
   }
 
-  return BOTANICAL_ENV;
+  // Industrial / auto / electronics / non-beauty categories: use a neutral studio
+  // backdrop so we never place unrelated products into beauty/cosmetics scenes.
+  if (
+    /(industrial|auto|automotive|engine|mechanic|tool|electronic|hardware| machinery|ميكانيك|سيارات|الكترونيات| công nghiệp)/.test(
+      haystack,
+    ) ||
+    (context?.industry &&
+      !/(perfume|fragrance|beauty|cosmetic|skincare|haircare|fragrance|عطر|تجميل|عناية|بشرة|شعر)/i.test(
+        context.industry,
+      ))
+  ) {
+    return NEUTRAL_STUDIO_ENV;
+  }
+
+  // Default: neutral studio backdrop (no implicit beauty/cosmetics bias).
+  return NEUTRAL_STUDIO_ENV;
 }
 
 /**
@@ -234,7 +269,7 @@ export function buildProductCompositePrompt(
   // Prompt intentionally avoids the words "Arabic", "text", "words", "letters", "numbers", "typography"
   // to prevent FLUX from rendering garbled sky/foreground artifacts.
   const zeroTextZone =
-    "UPPER 35%: COMPLETELY FREE OF ANY VISUAL NOISE — NO LETTERS, NO NUMBERS, NO ARABIC SCRIPT, NO WATERMARKS for SVG typography overlay. NO generated text, NO price tags, NO discount badges, NO captions in the sky zone. BOTTOM 15%: COMPLETELY FREE OF ANY VISUAL NOISE — NO LETTERS, NO NUMBERS, NO WATERMARKS for contact text. NO generated text, NO floating words. The authentic packshot label is preserved pixel-for-pixel from the reference; all other text must be rendered by the SVG overlay.";
+    "UPPER 35%: clean, open, and softly lit, and COMPLETELY FREE OF ANY VISUAL NOISE — NO LETTERS, NO NUMBERS, NO ARABIC SCRIPT, NO WATERMARKS for SVG typography overlay. NO generated text, NO price tags, NO discount badges, NO captions in the sky zone. BOTTOM 15%: COMPLETELY FREE OF ANY VISUAL NOISE — NO LETTERS, NO NUMBERS, NO WATERMARKS for contact text, and the bottom 12% reads naturally darker for the contact lockup. NO generated text, NO floating words. The authentic packshot label is preserved pixel-for-pixel from the reference; all other text must be rendered by the SVG overlay.";
 
   return [
     `Commercial luxury product photography of the exact ${productName} bottle from the reference image standing upright on a natural ${env.surfaceMaterial} ledge, bathed in crisp natural golden-hour sunlight.`,
@@ -258,7 +293,7 @@ function buildCompactCompositePrompt(
   return [
     "Edit the reference photo into a photorealistic 9:16 luxury product advertisement.",
     `Place the exact same product from the image upright on ${env.surfaceMaterial} in natural golden-hour sunlight with realistic directional shadows and light caustics, and ${env.environmentalBackdrop} in soft bokeh (85mm f/1.8).`,
-    "UPPER 35%: COMPLETELY FREE OF ANY VISUAL NOISE — NO LETTERS, NO NUMBERS, NO ARABIC SCRIPT, NO WATERMARKS for SVG typography overlay. BOTTOM 15%: COMPLETELY FREE OF ANY VISUAL NOISE — NO LETTERS, NO NUMBERS, NO WATERMARKS for contact text. NO generated text, NO floating words. The authentic packshot label is preserved pixel-for-pixel from the reference; all other text must be rendered by the SVG overlay.",
+    "UPPER 35%: clean, open, and softly lit, and COMPLETELY FREE OF ANY VISUAL NOISE — NO LETTERS, NO NUMBERS, NO ARABIC SCRIPT, NO WATERMARKS for SVG typography overlay. BOTTOM 15%: COMPLETELY FREE OF ANY VISUAL NOISE — NO LETTERS, NO NUMBERS, NO WATERMARKS for contact text, and the bottom 12% reads naturally darker. NO generated text, NO floating words. The authentic packshot label is preserved pixel-for-pixel from the reference; all other text must be rendered by the SVG overlay.",
     "Preserve the bottle shape, cap, colors and every letter of the original label and logo exactly as in the reference image, fully legible and undistorted.",
     "No generated text, no watermark, no extra products, no podium. One authentic product only.",
   ].join(" ");

@@ -122,7 +122,10 @@ function testStyleRotation() {
     assert.equal(style, styleForSeed(seed), "Style selection must be deterministic.");
     seen.add(style);
   }
-  assert.ok(seen.size === 3, "Seeds must rotate across all three styles over a small sample.");
+  assert.ok(
+    seen.size === ART_DIRECTION_STYLE_IDS.length,
+    "Seeds must rotate across all four configured styles over a small sample.",
+  );
 
   for (const seed of ["a", "b", "c", "d", "e", "f", "g", "h", "product-123"]) {
     const [first, second] = variantStylePair(seed);
@@ -352,6 +355,26 @@ async function testProductComposite() {
     context: { category: "perfume", name: "عطر منعش", brand: "عساف" },
   });
   assert.match(coastalPrompt, /Commercial luxury product photography/i);
+  // Context guard: industrial/non-beauty products must not get beauty/cosmetics scenes.
+  const industrialPrompt = buildProductCompositePrompt({
+    context: { category: "industrial", name: "محرك سيارة", brand: "أوتو", industry: "automotive" },
+  });
+  assert.match(industrialPrompt, /neutral studio gradient backdrop/i);
+  assert.doesNotMatch(industrialPrompt, /botanical garden|spa energy|beauty retail/i);
+
+  // Context guard: unknown/ambiguous category defaults to neutral, not beauty.
+  const unknownPrompt = buildProductCompositePrompt({
+    context: { category: "misc", name: "منتج غير مصنف" },
+  });
+  assert.match(unknownPrompt, /neutral studio gradient backdrop/i);
+  // Context guard: beauty category should still be allowed to use style env.
+  const beautyPrompt = buildProductCompositePrompt({
+    styleId: "coastal-sunlit-stone-caustics",
+    context: { category: "perfume", name: "عطر", brand: "براند", industry: "beauty" },
+  });
+  assert.doesNotMatch(beautyPrompt, /neutral studio gradient backdrop/i);
+
+
   assert.match(coastalPrompt, /reference image/i);
   assert.match(coastalPrompt, /Strictly preserve the exact bottle shape/i);
   assert.match(coastalPrompt, /upper 35%.*clean, open, and softly lit/i);

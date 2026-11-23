@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { resolveTenantScope } from "../../_tenant";
 import {
   ingestSchema,
   saveResearchRecord,
@@ -62,16 +63,20 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     );
   }
 
+  const scope = await resolveTenantScope(request, env);
+  if (!scope.ok) return scope.response;
+
   const productIds = Array.from(
     new Set(records.map((record) => record.product_id)),
   );
 
   try {
     const placeholders = productIds.map(() => "?").join(",");
+    const tenantFilter = scope.tenantId ? " AND tenant_key_id = ?" : "";
     const products = await env.DB.prepare(
-      `SELECT id, category FROM products WHERE id IN (${placeholders})`,
+      `SELECT id, category FROM products WHERE id IN (${placeholders})${tenantFilter}`,
     )
-      .bind(...productIds)
+      .bind(...productIds, ...(scope.tenantId ? [scope.tenantId] : []))
       .all<ProductCategoryRow>();
 
     const found = new Map(
@@ -115,7 +120,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const now = Date.now();
     for (const record of records) {
       try {
-        const saved = await saveResearchRecord(env, record, now);
+        const saved = await saveResearchRecord(env, record, now, scope.tenantId);
         results.push(
           saved.ok
             ? {

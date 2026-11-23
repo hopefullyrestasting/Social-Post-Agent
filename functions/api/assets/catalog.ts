@@ -6,8 +6,11 @@
  * downloading every page of `/api/db/products`.
  */
 
+import { resolveTenantScope } from "../_tenant";
+
 interface Env {
   DB: D1Database;
+  REQUIRE_ACCESS_KEY?: string;
 }
 
 interface CatalogRow {
@@ -28,7 +31,10 @@ interface CountRow {
 
 const CATALOG_LIMIT = 500;
 
-export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
+export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
+  const scope = await resolveTenantScope(request, env);
+  if (!scope.ok) return scope.response;
+
   try {
     const [rows, counts] = await Promise.all([
       env.DB.prepare(
@@ -37,19 +43,20 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
                 b.name_english AS brand_english, b.slug AS brand_slug
          FROM products p
          JOIN brands b ON b.id = p.brand_id
+          ${scope.tenantId ? "WHERE p.tenant_key_id = ?" : ""}
          ORDER BY
            CASE WHEN p.verification_status = 'verified' THEN 1 ELSE 0 END,
            b.name_arabic, p.name_arabic, p.id
          LIMIT ?`,
       )
-        .bind(CATALOG_LIMIT + 1)
+        .bind(...(scope.tenantId ? [scope.tenantId, CATALOG_LIMIT + 1] : [CATALOG_LIMIT + 1]))
         .all<CatalogRow>(),
       env.DB.prepare(
         `SELECT COUNT(*) AS total,
                 SUM(CASE WHEN verification_status = 'verified' THEN 1 ELSE 0 END)
                   AS verified
-         FROM products`,
-      ).first<CountRow>(),
+         FROM products ${scope.tenantId ? "WHERE tenant_key_id = ?" : ""}`,
+      ).bind(...(scope.tenantId ? [scope.tenantId] : [])).first<CountRow>(),
     ]);
 
     const truncated = rows.results.length > CATALOG_LIMIT;

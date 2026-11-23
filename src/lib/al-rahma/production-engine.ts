@@ -4,7 +4,7 @@ import {
   PostAngle,
   ProductDetails,
 } from "./arabic-copywriter";
-import { AL_RAHMA_BRAND_CONFIG } from "./brand-core";
+import { AL_RAHMA_BRAND_CONFIG, buildBrandConfigFromTenant, type BrandConfig, type TenantBrandContext } from "./brand-core";
 import {
   BackgroundLayer,
   DesignerTemplate,
@@ -46,6 +46,8 @@ export interface ProductionRequest {
   occasion?: OccasionGreetingInput | null;
   /** Override "today" for deterministic previews and tests. */
   today?: string;
+  /** Tenant brand context for dynamic multi-tenant rendering/copy/gate. */
+  brand?: TenantBrandContext | BrandConfig | null;
 }
 
 export type ProductionVariantsRequest = Omit<ProductionRequest, "variant" | "template" | "sceneImageUrl" | "stagedImageUrl"> & {
@@ -161,14 +163,15 @@ export class ProductionEngine {
     template: DesignerTemplate,
   ): ProductionResult {
     const { product } = request;
-    const width = request.width ?? AL_RAHMA_BRAND_CONFIG.visual.format.width;
-    const height = request.height ?? AL_RAHMA_BRAND_CONFIG.visual.format.height;
+    const brand = (request.brand && "visual" in request.brand ? (request.brand as BrandConfig) : buildBrandConfigFromTenant(request.brand as TenantBrandContext | null | undefined));
+    const width = request.width ?? brand.visual.format.width;
+    const height = request.height ?? brand.visual.format.height;
     const angle = resolveAngle(variantNumber, product);
 
     const today =
       request.today && isIsoDate(request.today)
         ? request.today
-        : cairoToday(new Date(), AL_RAHMA_BRAND_CONFIG.commercial.timezone);
+        : cairoToday(new Date(), brand.commercial.timezone);
     const promotionEvaluation = evaluatePromotion(request.promotion, today);
     const activePromotion: ValidPromotion | null =
       promotionEvaluation.status === "active"
@@ -180,6 +183,7 @@ export class ProductionEngine {
       variant: variantNumber,
       ctaIndex: variantNumber - 1,
       occasionGreeting: occasion?.greeting,
+      brand,
     });
 
     const productImageUrl = product.productImageUrl?.trim() || null;
@@ -210,7 +214,8 @@ export class ProductionEngine {
       sceneImageUrl: effectiveSceneImageUrl,
       stagedImageUrl,
       stagedImageContainsProduct: request.stagedImageContainsProduct ?? Boolean(stagedImageUrl),
-      brandLogoUrl: request.brandLogoUrl ?? null,
+      brandLogoUrl: request.brandLogoUrl ?? (brand as unknown as { logoUrl?: string }).logoUrl ?? null,
+      brand,
       productImageUrl,
       headline: copy.headline,
       benefitLine: copy.benefitLine,
@@ -247,7 +252,7 @@ export class ProductionEngine {
       .map((claim) => claim.trim())
       .filter((claim) => claim.length > 0);
 
-    const styleId = `al-rahma/${template}`;
+    const styleId = `${brand.id === AL_RAHMA_BRAND_CONFIG.id ? 'al-rahma' : (brand.id || 'tenant')}/${template}`;
 
     return {
       success: qualityReport.passed && blockers.length === 0,

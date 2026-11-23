@@ -27,6 +27,7 @@ type TemplateId =
 
 export interface NanoBananaArtDirection {
   brand?: string | null;
+  industry?: string | null;
   category?: string | null;
   name?: string | null;
   benefits?: string[] | null;
@@ -42,14 +43,14 @@ const MODEL_FALLBACK = "gemini-2.0-flash-exp-image-generation";
 const BACKGROUND_ONLY_SUFFIX =
   "Pure empty background plate for a commercial beauty advertisement: no product, no bottle, no jar, no tube, no box, no sachet, no packaging, no label, no cap, no text, no letters, no logo, no watermark anywhere in the frame. No podium, no plinth, no pedestal, no stage, no platform, no table, no shelf. Keep the central area open, softly lit and uncluttered so a real product packshot can be composited on top later, with generous clean negative space at the top for Arabic editorial typography. Vertical 9:16, photorealistic 8k commercial studio photography.";
 
-type StageMood = "haircare-botanical" | "luxury-perfume" | "skincare-spa" | "default";
+type StageMood = "haircare-botanical" | "luxury-perfume" | "skincare-spa" | "default" | "neutral-industrial";
 
 function normalizeText(value: string | null | undefined): string {
   return (value ?? "").trim().toLowerCase();
 }
 
 function detectStageMood(context: NanoBananaArtDirection): StageMood {
-  const haystack = [context.brand, context.category, context.name, ...(context.benefits ?? [])]
+  const haystack = [context.brand, context.industry, context.category, context.name, ...(context.benefits ?? [])]
     .map((v) => normalizeText(v))
     .join(" ");
 
@@ -57,10 +58,13 @@ function detectStageMood(context: NanoBananaArtDirection): StageMood {
   const perfume = ["perfume", "oud", "oudh", "luxury", "fragrance", "assaf", "farida", "khamriya", "عطر", "عطور", "عود", "خمريا", "فريدة", "عساف"];
   const skincare = ["skin", "skincare", "moistur", "cream", "lotion", "serum", "aloe", "alo-eva", "eva", "بشرة", "كريم", "مرطب", "ترطيب", "ألو", "الو"];
 
+  const industrial = ["industrial","auto","automotive","engine","mechanic","tool","electronic","hardware","machinery","ميكانيك","سيارات","الكترونيات","صناعي","معدات"];
+  if (industrial.some((k) => haystack.includes(k))) return "neutral-industrial";
+  if (context.industry && !/(perfume|fragrance|beauty|cosmetic|skincare|haircare|skin|عطر|تجميل|عناية|بشرة|شعر)/i.test(context.industry)) return "neutral-industrial";
   if (haircare.some((k) => haystack.includes(k))) return "haircare-botanical";
   if (perfume.some((k) => haystack.includes(k))) return "luxury-perfume";
   if (skincare.some((k) => haystack.includes(k))) return "skincare-spa";
-  return "default";
+  return "neutral-industrial";
 }
 
 function templateDescription(template: TemplateId): string {
@@ -79,6 +83,8 @@ function templateDescription(template: TemplateId): string {
 
 function moodModifier(mood: StageMood): string {
   switch (mood) {
+    case "neutral-industrial":
+      return "Clean neutral professional studio mood, no beauty or cosmetics styling.";
     case "haircare-botanical":
       return "Warm botanical haircare mood with argan and shea leaf accents.";
     case "luxury-perfume":

@@ -14,6 +14,7 @@
  */
 
 import { parseImageDataUrl } from "./_image";
+import { resolveTenantScope } from "../_tenant";
 import {
   isHttpUrl,
   loadProduct,
@@ -33,6 +34,9 @@ export const onRequestPost: PagesFunction<CommitEnv> = async ({
   request,
   env,
 }) => {
+  const scope = await resolveTenantScope(request, env);
+  if (!scope.ok) return scope.response;
+
   const contentType = (request.headers.get("content-type") ?? "").toLowerCase();
   if (contentType.includes("multipart/form-data")) {
     return noStore(
@@ -90,7 +94,7 @@ export const onRequestPost: PagesFunction<CommitEnv> = async ({
   }
 
   try {
-    const product = await loadProduct(env, productId);
+    const product = await loadProduct(env, productId, scope.tenantId);
     if (!product) {
       return noStore({ success: false, error: "Product not found." }, 404);
     }
@@ -98,6 +102,7 @@ export const onRequestPost: PagesFunction<CommitEnv> = async ({
     const stored = await storeProductAsset(env, {
       origin: new URL(request.url).origin,
       product,
+      tenantKeyId: scope.tenantId,
       sourceBytes: image.image.bytes,
       sourceMime: image.image.mime,
       autoCutout,

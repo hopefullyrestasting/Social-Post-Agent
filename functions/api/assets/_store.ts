@@ -45,6 +45,7 @@ export interface AssetStoreEnv {
   AI?: AiBinding;
   REMOVE_BG_API_KEY?: string;
   PRODUCT_ASSETS?: AssetBucket;
+  REQUIRE_ACCESS_KEY?: string;
 }
 
 export interface StoredProduct {
@@ -116,15 +117,18 @@ function confidenceFor(claimCount: number, cutoutApplied: boolean): number {
 export async function loadProduct(
   env: AssetStoreEnv,
   productId: string,
+  tenantId: string | null = null,
 ): Promise<StoredProduct | null> {
+  const tenantClause = tenantId ? "AND p.tenant_key_id = ?" : "";
+  const binds = tenantId ? [productId, tenantId] : [productId];
   return env.DB.prepare(
     `SELECT p.id, p.name_arabic, p.verification_status,
             b.name_arabic AS brand_arabic, b.slug AS brand_slug
      FROM products p
      JOIN brands b ON b.id = p.brand_id
-     WHERE p.id = ?`,
+     WHERE p.id = ? ${tenantClause}`,
   )
-    .bind(productId)
+    .bind(...binds)
     .first<StoredProduct>();
 }
 
@@ -151,6 +155,7 @@ export interface StoreAssetInput {
   /** Request origin, used to build the public `/api/assets/file` URL. */
   origin: string;
   product: StoredProduct;
+  tenantKeyId?: string | null;
   sourceBytes: Uint8Array;
   sourceMime: string;
   autoCutout: boolean;
@@ -242,19 +247,21 @@ export async function storeProductAsset(
   const statements: D1PreparedStatement[] = [];
 
   // Never delete: demote whatever was primary before this upload.
+  const tenantKeyId = input.tenantKeyId ?? null;
+  const tenantClauseDemote = tenantKeyId ? " AND tenant_key_id = ?" : "";
   statements.push(
     env.DB.prepare(
       `UPDATE product_assets SET is_primary = 0
-       WHERE product_id = ? AND is_primary = 1 AND id != ?`,
-    ).bind(product.id, assetId),
+       WHERE product_id = ? AND is_primary = 1 AND id != ?${tenantClauseDemote}`,
+    ).bind(...[product.id, assetId, ...(tenantKeyId ? [tenantKeyId] : [])]),
   );
 
   statements.push(
     env.DB.prepare(
       `INSERT INTO product_assets
          (id, product_id, image_url, source_url, storage_key, image_type,
-          verification_status, is_primary, retrieved_at)
-       VALUES (?, ?, ?, ?, ?, 'reference', 'verified', 1, ?)`,
+          verification_status, is_primary, retrieved_at, tenant_key_id)
+       VALUES (?, ?, ?, ?, ?, 'reference', 'verified', 1, ?, ?)`,
     ).bind(
       assetId,
       product.id,
@@ -262,6 +269,7 @@ export async function storeProductAsset(
       sourceUrl || null,
       storageKey,
       now,
+      tenantKeyId,
     ),
   );
 
@@ -377,12 +385,13 @@ export async function storeProductAsset(
            confidence_score = ?,
            last_researched_at = ?,
            updated_at = ?
-       WHERE id = ?`,
+       WHERE id = ?${tenantKeyId ? " AND tenant_key_id = ?" : ""}`,
     ).bind(
       confidenceFor(claimsInserted, cutoutApplied),
       now,
       now,
       product.id,
+      ...(tenantKeyId ? [tenantKeyId] : []),
     ),
   );
 

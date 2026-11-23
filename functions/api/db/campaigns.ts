@@ -5,8 +5,11 @@
  * Read-only; no writes.
  */
 
+import { resolveTenantScope } from "../_tenant";
+
 interface Env {
   DB: D1Database;
+  REQUIRE_ACCESS_KEY?: string;
 }
 
 interface CampaignRow {
@@ -53,6 +56,9 @@ const NO_STORE_HEADERS = {
 } as const;
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
+  const scope = await resolveTenantScope(request, env);
+  if (!scope.ok) return scope.response;
+
   const url = new URL(request.url);
   const limit = clampLimit(url.searchParams.get("limit"));
 
@@ -63,40 +69,19 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     );
   }
 
-  // Ensure brand_profiles table exists (idempotent, no-op if already present)
-  try {
-    await env.DB.prepare(`
-      CREATE TABLE IF NOT EXISTS brand_profiles (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        industry TEXT,
-        tagline TEXT,
-        phone TEXT,
-        whatsapp TEXT,
-        logo_url TEXT,
-        logo_tone TEXT CHECK(logo_tone IN ('light', 'dark', 'gold-emerald')) DEFAULT 'light',
-        font_family TEXT CHECK(font_family IN ('Cairo', 'Tajawal', 'IBM Plex Sans Arabic')) DEFAULT 'Cairo',
-        product_context_notes TEXT,
-        is_active INTEGER DEFAULT 0,
-        created_at INTEGER,
-        updated_at INTEGER
-      )
-    `).run();
-  } catch (e) {
-    // Table may already exist; continue regardless
-    console.info("brand_profiles table ensured (may already exist):", e);
-  }
-
+  // `brand_profiles` is created by `migrations/0003_multi_tenant_keys_quota.sql`.
+  // Schema changes must not run from a read-only GET handler.
   try {
     const campaigns = await env.DB.prepare(
       `SELECT id, campaign_date, status, selected_product_ids,
               total_products, total_images, started_at, completed_at,
               error_summary, created_at
        FROM campaigns
+       ${scope.tenantId ? "WHERE tenant_key_id = ?" : ""}
        ORDER BY created_at DESC, id DESC
        LIMIT ?`,
     )
-      .bind(limit)
+      .bind(...(scope.tenantId ? [scope.tenantId, limit] : [limit]))
       .all<CampaignRow>();
 
     if (campaigns.results.length === 0) {
@@ -119,9 +104,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
        LEFT JOIN products p ON p.id = c.product_id
        LEFT JOIN brands b ON b.id = p.brand_id
        WHERE c.campaign_id IN (${placeholders})
-       ORDER BY c.campaign_id, c.product_id, c.variant_number`,
+       ${scope.tenantId ? "AND c.tenant_key_id = ?" : ""}
+        ORDER BY c.campaign_id, c.product_id, c.variant_number`,
     )
-      .bind(...ids)
+      .bind(...(scope.tenantId ? [...ids, scope.tenantId] : ids))
       .all<CreativeRow>();
 
     const creativesByCampaign = new Map<string, CreativeRow[]>();

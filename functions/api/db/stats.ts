@@ -1,8 +1,16 @@
+import { resolveTenantScope } from "../_tenant";
+
 interface Env {
   DB: D1Database;
+  REQUIRE_ACCESS_KEY?: string;
 }
 
-export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
+export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
+  const scope = await resolveTenantScope(request, env);
+  if (!scope.ok) return scope.response;
+
+  const tenant = scope.tenantId;
+
   try {
     const [
       products,
@@ -13,21 +21,25 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
       campaigns,
       generatedImages,
     ] = await Promise.all([
-      env.DB.prepare("SELECT COUNT(*) AS count FROM products").first<{ count: number }>(),
+      tenant
+        ? env.DB.prepare("SELECT COUNT(*) AS count FROM products WHERE tenant_key_id = ?").bind(tenant).first<{ count: number }>()
+        : env.DB.prepare("SELECT COUNT(*) AS count FROM products").first<{ count: number }>(),
       env.DB.prepare("SELECT COUNT(*) AS count FROM brands").first<{ count: number }>(),
-      env.DB.prepare(
-        "SELECT COUNT(*) AS count FROM products WHERE verification_status != 'verified'",
-      ).first<{ count: number }>(),
-      env.DB.prepare(
-        "SELECT COUNT(*) AS count FROM products WHERE verification_status = 'verified'",
-      ).first<{ count: number }>(),
-      env.DB.prepare(
-        "SELECT COUNT(*) AS count FROM product_assets WHERE image_type = 'reference' AND image_url IS NOT NULL AND TRIM(image_url) != ''",
-      ).first<{ count: number }>(),
-      env.DB.prepare("SELECT COUNT(*) AS count FROM campaigns").first<{ count: number }>(),
-      env.DB.prepare(
-        "SELECT COUNT(*) AS count FROM creatives WHERE image_url IS NOT NULL AND TRIM(image_url) != ''",
-      ).first<{ count: number }>(),
+      tenant
+        ? env.DB.prepare("SELECT COUNT(*) AS count FROM products WHERE tenant_key_id = ? AND verification_status != 'verified'").bind(tenant).first<{ count: number }>()
+        : env.DB.prepare("SELECT COUNT(*) AS count FROM products WHERE verification_status != 'verified'").first<{ count: number }>(),
+      tenant
+        ? env.DB.prepare("SELECT COUNT(*) AS count FROM products WHERE tenant_key_id = ? AND verification_status = 'verified'").bind(tenant).first<{ count: number }>()
+        : env.DB.prepare("SELECT COUNT(*) AS count FROM products WHERE verification_status = 'verified'").first<{ count: number }>(),
+      tenant
+        ? env.DB.prepare("SELECT COUNT(*) AS count FROM product_assets WHERE image_type = 'reference' AND image_url IS NOT NULL AND TRIM(image_url) != '' AND tenant_key_id = ?").bind(tenant).first<{ count: number }>()
+        : env.DB.prepare("SELECT COUNT(*) AS count FROM product_assets WHERE image_type = 'reference' AND image_url IS NOT NULL AND TRIM(image_url) != ''").first<{ count: number }>(),
+      tenant
+        ? env.DB.prepare("SELECT COUNT(*) AS count FROM campaigns WHERE tenant_key_id = ?").bind(tenant).first<{ count: number }>()
+        : env.DB.prepare("SELECT COUNT(*) AS count FROM campaigns").first<{ count: number }>(),
+      tenant
+        ? env.DB.prepare("SELECT COUNT(*) AS count FROM creatives WHERE image_url IS NOT NULL AND TRIM(image_url) != '' AND tenant_key_id = ?").bind(tenant).first<{ count: number }>()
+        : env.DB.prepare("SELECT COUNT(*) AS count FROM creatives WHERE image_url IS NOT NULL AND TRIM(image_url) != ''").first<{ count: number }>(),
     ]);
 
     return Response.json(

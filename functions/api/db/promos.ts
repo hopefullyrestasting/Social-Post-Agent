@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { resolveTenantScope } from "../_tenant";
 import { cairoToday, isIsoDate } from "../_dates";
 
 /**
@@ -13,6 +14,7 @@ import { cairoToday, isIsoDate } from "../_dates";
 
 interface Env {
   DB: D1Database;
+  REQUIRE_ACCESS_KEY?: string;
 }
 
 interface PromotionRow {
@@ -90,6 +92,9 @@ function normalize(row: PromotionRow, today: string) {
 }
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
+  const scope = await resolveTenantScope(request, env);
+  if (!scope.ok) return scope.response;
+
   const url = new URL(request.url);
   const productId = (url.searchParams.get("product_id") ?? "").trim();
 
@@ -104,6 +109,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const values: string[] = [today, today];
   const productClause = productId ? "AND pp.product_id = ?" : "";
   if (productId) values.push(productId);
+  const tenantClause = scope.tenantId ? "AND pp.tenant_key_id = ?" : "";
+  if (scope.tenantId) values.push(scope.tenantId);
 
   try {
     const rows = await env.DB.prepare(
@@ -116,6 +123,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
          AND pp.starts_at <= ?
          AND pp.ends_at >= ?
          ${productClause}
+         ${tenantClause}
        ORDER BY pp.created_at DESC, pp.id
        LIMIT 100`,
     )
@@ -137,6 +145,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+  const scope = await resolveTenantScope(request, env);
+  if (!scope.ok) return scope.response;
+
   let payload: unknown;
   try {
     payload = await request.json();
@@ -182,9 +193,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   try {
     const product = await env.DB.prepare(
-      "SELECT id, name_arabic FROM products WHERE id = ?",
+      `SELECT id, name_arabic FROM products WHERE id = ? ${
+        scope.tenantId ? "AND tenant_key_id = ?" : ""
+      }`,
     )
-      .bind(data.product_id)
+      .bind(...(scope.tenantId ? [data.product_id, scope.tenantId] : [data.product_id]))
       .first<{ id: string; name_arabic: string }>();
 
     if (!product) {
@@ -198,6 +211,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       `SELECT id FROM product_promotions
        WHERE product_id = ? AND original_price = ? AND discount_percent = ?
          AND starts_at = ? AND ends_at = ?
+         ${scope.tenantId ? "AND tenant_key_id = ?" : ""}
        ORDER BY created_at DESC
        LIMIT 1`,
     )
@@ -207,6 +221,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         data.discount_percent,
         data.starts_at,
         data.ends_at,
+        ...(scope.tenantId ? [scope.tenantId] : []),
       )
       .first<{ id: string }>();
 
@@ -214,8 +229,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const statements: D1PreparedStatement[] = [
       env.DB.prepare(
         `UPDATE product_promotions SET is_active = 0
-         WHERE product_id = ? AND is_active = 1 AND id != ?`,
-      ).bind(data.product_id, promotionId),
+         WHERE product_id = ? AND is_active = 1 AND id != ?
+           ${scope.tenantId ? "AND tenant_key_id = ?" : ""}`,
+      ).bind(
+        data.product_id,
+        promotionId,
+        ...(scope.tenantId ? [scope.tenantId] : []),
+      ),
     ];
 
     if (existing) {
@@ -224,7 +244,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           `UPDATE product_promotions
            SET original_price = ?, discount_percent = ?, promo_price = ?,
                starts_at = ?, ends_at = ?, is_active = ?
-           WHERE id = ? AND product_id = ?`,
+           WHERE id = ? AND product_id = ? ${scope.tenantId ? "AND tenant_key_id = ?" : ""}`,
         ).bind(
           data.original_price,
           data.discount_percent,
@@ -234,6 +254,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           isActive,
           promotionId,
           data.product_id,
+          ...(scope.tenantId ? [scope.tenantId] : []),
+        ...(scope.tenantId ? [scope.tenantId] : []),
         ),
       );
     } else {
@@ -241,8 +263,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         env.DB.prepare(
           `INSERT INTO product_promotions
              (id, product_id, original_price, discount_percent, promo_price,
-              starts_at, ends_at, is_active, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              starts_at, ends_at, is_active, created_at, tenant_key_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         ).bind(
           promotionId,
           data.product_id,
@@ -253,6 +275,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           data.ends_at,
           isActive,
           now,
+          scope.tenantId,
         ),
       );
     }
@@ -265,9 +288,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
               pp.starts_at, pp.ends_at, pp.is_active, pp.created_at
        FROM product_promotions pp
        JOIN products p ON p.id = pp.product_id
-       WHERE pp.id = ? AND pp.product_id = ?`,
+       WHERE pp.id = ? AND pp.product_id = ? ${scope.tenantId ? "AND pp.tenant_key_id = ?" : ""}`,
     )
-      .bind(promotionId, data.product_id)
+      .bind(promotionId, data.product_id, ...(scope.tenantId ? [scope.tenantId] : []))
       .first<PromotionRow>();
 
     return Response.json({

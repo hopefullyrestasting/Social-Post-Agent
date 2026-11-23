@@ -40,6 +40,7 @@ export type SceneProvider =
 
 export interface ArtDirectionContext {
   brand?: string | null;
+  industry?: string | null;
   category?: string | null;
   name?: string | null;
   benefits?: string[] | null;
@@ -89,7 +90,7 @@ export const ART_DIRECTION_STYLES: Record<ArtDirectionStyleId, ArtDirectionStyle
     template: "editorial-beauty-card",
     accent: "#D4A574",
     scenePrompt:
-      "Photorealistic 9:16 studio backdrop with deep brand-navy/emerald background, thin golden architectural corner brackets, soft wave accents, and a dark illuminated podium pedestal. UPPER 35%: ALLOWED: centered logo and brand title only. No text, BOTTOM 15%: COMPLETELY FREE OF ANY TEXT, LETTERS, NUMBERS, OR WATERMARKS. No product or bottle should appear in the scene. No floating text, no watermarks outside the logo area. Rich warm ambient lighting with subtle industry-watermark icons in the distance.",
+      "Photorealistic 9:16 studio backdrop with deep brand-navy/emerald background, thin golden architectural corner brackets, soft wave accents, and a dark illuminated podium pedestal. UPPER 35%: ALLOWED: centered logo and brand title only. No text, BOTTOM 15%: COMPLETELY FREE OF ANY TEXT, LETTERS, NUMBERS, OR WATERMARKS. Keep the upper 35% clean and open for the brand mark and the bottom 12% darker for contact text. No product or bottle should appear in the scene. No floating text, no watermarks outside the logo area. Rich warm ambient lighting with subtle industry-watermark icons in the distance.",
   },
 };
 
@@ -199,7 +200,7 @@ export function variantStylePair(seed: string): [ArtDirectionStyleId, ArtDirecti
 }
 
 function categoryMood(context?: ArtDirectionContext): string {
-  const haystack = [context?.brand, context?.category, context?.name, ...(context?.benefits ?? [])]
+  const haystack = [context?.brand, context?.industry, context?.category, context?.name, ...(context?.benefits ?? [])]
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
@@ -212,6 +213,12 @@ function categoryMood(context?: ArtDirectionContext): string {
   }
   if (/(skin|cream|moistur|بشرة|كريم|مرطب|ترطيب|aloe|ألو)/.test(haystack)) {
     return "The mood is fresh hydrated skincare editorial with clean spa energy.";
+  }
+  if (/(industrial|auto|automotive|engine|mechanic|tool|electronic|hardware| machinery|ميكانيك|سيارات|الكترونيات)/.test(haystack)) {
+    return "The mood is a clean neutral industrial studio editorial with no beauty or cosmetics styling.";
+  }
+  if (context?.industry && !/(perfume|fragrance|beauty|cosmetic|skincare|haircare|عطر|تجميل|عناية|بشرة|شعر)/i.test(context.industry)) {
+    return "The mood is a neutral professional studio editorial aligned with the tenant industry, with no beauty or cosmetics styling.";
   }
   return "The mood is premium Egyptian beauty retail editorial.";
 }

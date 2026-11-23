@@ -1,4 +1,4 @@
-import { AL_RAHMA_BRAND_CONFIG } from "./brand-core";
+import { AL_RAHMA_BRAND_CONFIG, buildBrandConfigFromTenant, type BrandConfig, type TenantBrandContext } from "./brand-core";
 
 /**
  * Arabic copy for the pro designer WhatsApp Status composer.
@@ -45,6 +45,8 @@ export interface CopyOptions {
   ctaIndex?: number;
   /** In-window cultural greeting prepended to the post body. */
   occasionGreeting?: string;
+  /** Tenant brand context for dynamic multi-tenant copy. */
+  brand?: TenantBrandContext | BrandConfig | null;
 }
 
 export interface GeneratedArabicCopy {
@@ -71,10 +73,10 @@ const CTA_SHORT_TEMPLATES: [string, string] = [
   "تواصل معنا الآن",
 ];
 
-function renderTemplate(template: string): string {
+function renderTemplate(template: string, brand: BrandConfig = AL_RAHMA_BRAND_CONFIG): string {
   const values: Record<string, string> = {
-    brand: AL_RAHMA_BRAND_CONFIG.brandName,
-    phone: AL_RAHMA_BRAND_CONFIG.contact.phone,
+    brand: brand.brandName,
+    phone: brand.contact.phone,
   };
 
   return template.replace(/\{\{(\w+)\}\}/g, (match, key: string) =>
@@ -185,12 +187,18 @@ export class ArabicCopywriter {
     options: CopyOptions = {},
   ): GeneratedArabicCopy {
     void angle;
+    const brandOpt = options.brand as Record<string, unknown> | BrandConfig | TenantBrandContext | null | undefined;
+    const brand = (brandOpt && "brandName" in brandOpt && "visual" in brandOpt
+      ? (brandOpt as unknown as BrandConfig)
+      : buildBrandConfigFromTenant(brandOpt as TenantBrandContext | null | undefined));
     const variant: CopyVariant = options.variant ?? 1;
     const cta = renderTemplate(
       CTA_TEMPLATES[(options.ctaIndex ?? variant - 1) % CTA_TEMPLATES.length],
+      brand
     );
     const ctaShort = renderTemplate(
       CTA_SHORT_TEMPLATES[(options.ctaIndex ?? variant - 1) % CTA_SHORT_TEMPLATES.length],
+      brand
     );
 
     const benefitLine = deriveSalesCopy(product, variant);
@@ -201,8 +209,8 @@ export class ArabicCopywriter {
     const usageFacts = clean(product.verifiedUsage).map((item) => `• ${item}`);
     const hook =
       variant === 1
-        ? `اختار المنتج المناسب ليك من ${AL_RAHMA_BRAND_CONFIG.brandName}.`
-        : `جودة مميزة وعرض أنيق من ${AL_RAHMA_BRAND_CONFIG.brandName}.`;
+        ? `اختار المنتج المناسب ليك من ${brand.brandName}.`
+        : `جودة مميزة وعرض أنيق من ${brand.brandName}.`;
     const details = [
       category ? `القسم: ${category}` : "",
       ...facts,
@@ -220,7 +228,7 @@ export class ArabicCopywriter {
       headline ? `#${headline.split(/\s+/)[0]}` : "",
     ].filter(Boolean);
     const hashtags = Array.from(
-      new Set([...specificHashtags, ...AL_RAHMA_BRAND_CONFIG.hashtags]),
+      new Set([...specificHashtags, ...(brand.hashtags || [])]),
     ).slice(0, 15);
     const fullPostText = `${headline}\n\n${body}\n\n${hashtags.join(" ")}`;
 

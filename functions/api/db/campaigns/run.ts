@@ -20,6 +20,7 @@ import {
   type ArtDirectionStyleId,
   type SceneProvider,
 } from "../../ai/studio-scene";
+import { resolveTenantScope, authenticateLockedTenant, leaseGenerationSlot, releaseGenerationSlot, recordGeneration } from "../../_tenant";
 
 /**
  * POST /api/db/campaigns/run (protected by admin middleware)
@@ -37,6 +38,7 @@ import {
 
 interface Env {
   DB: D1Database;
+  REQUIRE_ACCESS_KEY?: string;
   AI?: {
     run: (model: string, input: Record<string, unknown>) => Promise<unknown>;
   };
@@ -306,7 +308,7 @@ async function loadResearch(env: Env, productId: string) {
   };
 }
 
-async function selectEligibleProducts(env: Env, limit: number): Promise<EligibleProductRow[]> {
+async function selectEligibleProducts(env: Env, limit: number, tenantId: string | null = null): Promise<EligibleProductRow[]> {
   const eligible = await env.DB.prepare(
     `SELECT p.id, p.name_arabic, p.name_english, p.category,
             p.verification_status, p.warehouse_stock_status, p.last_advertised_at,
@@ -322,15 +324,17 @@ async function selectEligibleProducts(env: Env, limit: number): Promise<Eligible
       AND pa.image_url IS NOT NULL
       AND TRIM(pa.image_url) != ''
      WHERE p.verification_status = 'verified'
+       ${tenantId ? "AND p.tenant_key_id = ?" : ""}
+       ${tenantId ? "AND pa.tenant_key_id = ?" : ""}
      ORDER BY RANDOM()
      LIMIT ?`,
   )
-    .bind(limit)
+    .bind(...(tenantId ? [tenantId, tenantId, limit] : [limit]))
     .all<EligibleProductRow>();
   return eligible.results;
 }
 
-async function loadEligibleProductById(env: Env, productId: string): Promise<EligibleProductRow | null> {
+async function loadEligibleProductById(env: Env, productId: string, tenantId: string | null = null): Promise<EligibleProductRow | null> {
   const row = await env.DB.prepare(
     `SELECT p.id, p.name_arabic, p.name_english, p.category,
             p.verification_status, p.warehouse_stock_status, p.last_advertised_at,
@@ -346,9 +350,10 @@ async function loadEligibleProductById(env: Env, productId: string): Promise<Eli
       AND pa.image_url IS NOT NULL
       AND TRIM(pa.image_url) != ''
      WHERE p.verification_status = 'verified' AND p.id = ?
+       ${tenantId ? "AND p.tenant_key_id = ? AND pa.tenant_key_id = ?" : ""}
      LIMIT 1`,
   )
-    .bind(productId)
+    .bind(...(tenantId ? [productId, tenantId, tenantId] : [productId]))
     .first<EligibleProductRow>();
   return row ?? null;
 }
@@ -365,9 +370,11 @@ async function generateSlotCreative(
     occasion: OccasionGreetingInput | null;
     brandLogoUrl: string | null;
     conditioningImage?: string | null;
+    tenantIndustry?: string | null;
+    tenantBrand?: { brandName?: string | null; industry?: string | null; logoUrl?: string | null } | null;
   },
 ): Promise<{ creative: Record<string, unknown>; selectedId: string; stageProvider: NanoBananaStageProvider }> {
-  const { today, now, occasion, brandLogoUrl, conditioningImage } = opts;
+  const { today, now, occasion, brandLogoUrl, conditioningImage, tenantIndustry, tenantBrand } = opts;
   const seedBase = Array.from(product.id).reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
   const [style1, style2] = variantStylePair(product.id);
   const [promotion, research] = await Promise.all([
@@ -386,6 +393,7 @@ async function generateSlotCreative(
 
   const sceneContext = {
     brand: product.brand_arabic,
+    industry: tenantIndustry,
     category: product.category,
     name: product.name_arabic,
     benefits: research.verifiedBenefits,
@@ -581,15 +589,16 @@ async function ensureCampaign(
   now: number,
   totalProducts: number,
   totalImagesPlanned: number,
+  tenantId: string | null = null,
 ): Promise<void> {
   await env.DB.prepare(
     `INSERT INTO campaigns
        (id, campaign_date, status, selected_product_ids, total_products,
-        total_images, started_at, completed_at, error_summary, created_at)
-     VALUES (?, ?, 'running', '[]', ?, ?, ?, NULL, NULL, ?)
+        total_images, started_at, completed_at, error_summary, created_at, tenant_key_id)
+     VALUES (?, ?, 'running', '[]', ?, ?, ?, NULL, NULL, ?, ?)
      ON CONFLICT(id) DO NOTHING`,
   )
-    .bind(campaignId, campaignDate, totalProducts, totalImagesPlanned, now, now)
+    .bind(campaignId, campaignDate, totalProducts, totalImagesPlanned, now, now, tenantId)
     .run();
 }
 
@@ -599,6 +608,7 @@ async function appendSlotToCampaign(
   productId: string,
   creative: Record<string, unknown>,
   now: number,
+  tenantId: string | null = null,
 ): Promise<void> {
   const ins = creative._insert as {
     creativeId: string;
@@ -613,9 +623,10 @@ async function appendSlotToCampaign(
   };
 
   const existing = await env.DB.prepare(
-    "SELECT selected_product_ids, total_products, total_images FROM campaigns WHERE id = ? LIMIT 1",
+    `SELECT selected_product_ids, total_products, total_images
+     FROM campaigns WHERE id = ? ${tenantId ? "AND tenant_key_id = ?" : ""} LIMIT 1`,
   )
-    .bind(campaignId)
+    .bind(...(tenantId ? [campaignId, tenantId] : [campaignId]))
     .first<{ selected_product_ids: string | null; total_products: number | null; total_images: number | null }>();
 
   let ids: string[] = [];
@@ -633,8 +644,8 @@ async function appendSlotToCampaign(
       `INSERT INTO creatives
          (id, product_id, campaign_id, variant_number, image_url,
           storage_key, style_id, headline_arabic, copy_arabic,
-          quality_status, quality_notes, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          quality_status, quality_notes, created_at, tenant_key_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
       ins.creativeId,
       productId,
@@ -648,16 +659,25 @@ async function appendSlotToCampaign(
       ins.qualityStatus,
       ins.qualityNotes,
       ins.createdAt,
+      tenantId,
     ),
     env.DB.prepare(
       `UPDATE campaigns
        SET selected_product_ids = ?, total_products = ?, total_images = ?,
            status = 'running', completed_at = NULL
-       WHERE id = ?`,
-    ).bind(JSON.stringify(ids), totalProducts, totalImages, campaignId),
+       WHERE id = ? ${tenantId ? "AND tenant_key_id = ?" : ""}`,
+    ).bind(
+      JSON.stringify(ids),
+      totalProducts,
+      totalImages,
+      campaignId,
+      ...(tenantId ? [tenantId] : []),
+    ),
     env.DB.prepare(
-      "UPDATE products SET last_advertised_at = ?, updated_at = ? WHERE id = ?",
-    ).bind(now, now, productId),
+      `UPDATE products SET last_advertised_at = ?, updated_at = ? WHERE id = ? ${
+        tenantId ? "AND tenant_key_id = ?" : ""
+      }`,
+    ).bind(now, now, productId, ...(tenantId ? [tenantId] : [])),
   ]);
 }
 
@@ -667,10 +687,10 @@ function stripInternal(creative: Record<string, unknown>): Record<string, unknow
   return rest;
 }
 
-async function handlePlan(env: Env, limit: number): Promise<Response> {
+async function handlePlan(env: Env, limit: number, tenantId: string | null = null): Promise<Response> {
   const today = cairoToday();
   const now = Date.now();
-  const products = await selectEligibleProducts(env, limit);
+  const products = await selectEligibleProducts(env, limit, tenantId);
   const campaignId = crypto.randomUUID();
   const campaignDate = today;
 
@@ -678,8 +698,8 @@ async function handlePlan(env: Env, limit: number): Promise<Response> {
     await env.DB.prepare(
       `INSERT INTO campaigns
          (id, campaign_date, status, selected_product_ids, total_products,
-          total_images, started_at, completed_at, error_summary, created_at)
-       VALUES (?, ?, 'empty', '[]', 0, 0, ?, ?, ?, ?)`,
+          total_images, started_at, completed_at, error_summary, created_at, tenant_key_id)
+       VALUES (?, ?, 'empty', '[]', 0, 0, ?, ?, ?, ?, ?)`,
     )
       .bind(
         campaignId,
@@ -688,6 +708,7 @@ async function handlePlan(env: Env, limit: number): Promise<Response> {
         now,
         "No eligible verified products with verified primary images were found.",
         now,
+        tenantId,
       )
       .run();
 
@@ -714,7 +735,7 @@ async function handlePlan(env: Env, limit: number): Promise<Response> {
   }
 
   const totalSlots = products.length * 2;
-  await ensureCampaign(env, campaignId, campaignDate, now, products.length, totalSlots);
+  await ensureCampaign(env, campaignId, campaignDate, now, products.length, totalSlots, tenantId);
 
   const slots = products.flatMap((p, pi) =>
     ([1, 2] as VariantIndex[]).map((v) => ({
@@ -747,10 +768,10 @@ async function handlePlan(env: Env, limit: number): Promise<Response> {
   });
 }
 
-async function handleSingle(env: Env, req: Extract<RequestMode, { mode: "single" }>): Promise<Response> {
+async function handleSingle(env: Env, req: Extract<RequestMode, { mode: "single" }>, tenantId: string | null = null, tenantIndustry: string | null = null, tenantBrand: { brandName?: string | null; industry?: string | null; logoUrl?: string | null } | null = null): Promise<Response> {
   const today = cairoToday();
   const now = Date.now();
-  const product = await loadEligibleProductById(env, req.productId);
+  const product = await loadEligibleProductById(env, req.productId, tenantId);
   if (!product) {
     return noStore(
       { success: false, error: "Product not eligible (must be verified with a verified primary image)." },
@@ -760,7 +781,7 @@ async function handleSingle(env: Env, req: Extract<RequestMode, { mode: "single"
 
   const campaignId = req.campaignId || crypto.randomUUID();
   const campaignDate = today;
-  await ensureCampaign(env, campaignId, campaignDate, now, 1, 2);
+  await ensureCampaign(env, campaignId, campaignDate, now, 1, 2, tenantId);
 
   const [occasion, brandLogoUrl] = await Promise.all([
     loadActiveOccasion(env),
@@ -773,10 +794,12 @@ async function handleSingle(env: Env, req: Extract<RequestMode, { mode: "single"
     occasion,
     brandLogoUrl,
     conditioningImage: req.conditioningImage ?? null,
+    tenantIndustry,
+    tenantBrand: { brandName: null, industry: tenantIndustry, logoUrl: brandLogoUrl ?? null },
   });
   creative.campaign_id = campaignId;
 
-  await appendSlotToCampaign(env, campaignId, product.id, creative, now);
+  await appendSlotToCampaign(env, campaignId, product.id, creative, now, tenantId);
 
   return noStore({
     success: true,
@@ -788,11 +811,11 @@ async function handleSingle(env: Env, req: Extract<RequestMode, { mode: "single"
   });
 }
 
-async function handleBatch(env: Env, limit: number): Promise<Response> {
+async function handleBatch(env: Env, limit: number, tenantId: string | null = null, tenantIndustry: string | null = null, tenantBrand: { brandName?: string | null; industry?: string | null; logoUrl?: string | null } | null = null): Promise<Response> {
   const today = cairoToday();
   const now = Date.now();
 
-  const products = await selectEligibleProducts(env, limit);
+  const products = await selectEligibleProducts(env, limit, tenantId);
   const campaignId = crypto.randomUUID();
   const campaignDate = today;
 
@@ -800,8 +823,8 @@ async function handleBatch(env: Env, limit: number): Promise<Response> {
     await env.DB.prepare(
       `INSERT INTO campaigns
          (id, campaign_date, status, selected_product_ids, total_products,
-          total_images, started_at, completed_at, error_summary, created_at)
-       VALUES (?, ?, 'empty', '[]', 0, 0, ?, ?, ?, ?)`,
+          total_images, started_at, completed_at, error_summary, created_at, tenant_key_id)
+       VALUES (?, ?, 'empty', '[]', 0, 0, ?, ?, ?, ?, ?)`,
     )
       .bind(
         campaignId,
@@ -810,6 +833,7 @@ async function handleBatch(env: Env, limit: number): Promise<Response> {
         now,
         "No eligible verified products with verified primary images were found.",
         now,
+        tenantId,
       )
       .run();
 
@@ -851,6 +875,8 @@ async function handleBatch(env: Env, limit: number): Promise<Response> {
         occasion,
         brandLogoUrl,
         conditioningImage: null,
+        tenantIndustry,
+        tenantBrand,
       });
       creative.campaign_id = campaignId;
       if (stageProvider === "nano-banana") runStageProvider = "nano-banana";
@@ -907,8 +933,8 @@ async function handleBatch(env: Env, limit: number): Promise<Response> {
     env.DB.prepare(
       `INSERT INTO campaigns
          (id, campaign_date, status, selected_product_ids, total_products,
-          total_images, started_at, completed_at, error_summary, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          total_images, started_at, completed_at, error_summary, created_at, tenant_key_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
       campaignId,
       campaignDate,
@@ -922,6 +948,7 @@ async function handleBatch(env: Env, limit: number): Promise<Response> {
         ? `Only ${selectedIds.length} eligible verified product(s) were available.`
         : null,
       now,
+      tenantId,
     ),
   );
 
@@ -951,6 +978,15 @@ async function handleBatch(env: Env, limit: number): Promise<Response> {
 }
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+  const scope = await resolveTenantScope(request, env);
+  if (!scope.ok) return scope.response;
+
+  // Generation requires a completed one-time brand lock once keys are in use.
+  if (scope.tenantId) {
+    const locked = await authenticateLockedTenant(request, env);
+    if (!locked.ok) return locked.response;
+  }
+
   let payload: unknown = undefined;
   try {
     const text = await request.text();
@@ -970,15 +1006,44 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     );
   }
 
+  let leaseUntil: number | null = null;
+  if (scope.tenantId) {
+    const lease = await leaseGenerationSlot(env, scope.tenantId);
+    if (!lease.acquired) {
+      return noStore(
+        {
+          success: false,
+          code: "generation_rate_limited",
+          error: "Another generation is already running for this key. Try again shortly.",
+          retry_after_seconds: lease.retryAfterSeconds,
+        },
+        429,
+      );
+    }
+    leaseUntil = lease.leaseUntil;
+  }
+
   try {
-    if (mode.mode === "plan") return await handlePlan(env, mode.limit);
-    if (mode.mode === "single") return await handleSingle(env, mode);
-    return await handleBatch(env, mode.limit);
+    if (mode.mode === "plan") return await handlePlan(env, mode.limit, scope.tenantId);
+    if (mode.mode === "single") return await handleSingle(env, mode, scope.tenantId);
+    const response = await handleBatch(env, mode.limit, scope.tenantId);
+    if (scope.tenantId) {
+      await recordGeneration(env, scope.tenantId, {
+        action: "campaign_batch",
+        campaignId: null,
+        notes: mode.mode,
+      });
+    }
+    return response;
   } catch (error) {
     console.error("Failed to run daily campaign batch.", error);
     return Response.json(
       { success: false, error: "Unable to run the daily campaign batch." },
       { status: 500 },
     );
+  } finally {
+    if (scope.tenantId && leaseUntil) {
+      await releaseGenerationSlot(env, scope.tenantId, leaseUntil);
+    }
   }
 };

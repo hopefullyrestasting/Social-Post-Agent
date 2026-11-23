@@ -230,3 +230,49 @@ export const AL_RAHMA_BRAND_CONFIG: BrandConfig = {
     "#مستلزمات_صيدليات",
   ],
 };
+
+
+/** Minimal tenant brand context injected by multi-tenant runtime. */
+export interface TenantBrandContext {
+  brandName?: string | null;
+  industry?: string | null;
+  logoUrl?: string | null;
+  phone?: string | null;
+  whatsapp?: string | null;
+  tagline?: string | null;
+  currency?: string | null;
+  timezone?: string | null;
+  hashtags?: string[] | null;
+  palette?: Partial<BrandVisualTheme["primaryColors"]> | null;
+}
+
+/** Build a BrandConfig from locked tenant context, falling back to base config. */
+export function buildBrandConfigFromTenant(ctx?: TenantBrandContext | null): BrandConfig {
+  const base = AL_RAHMA_BRAND_CONFIG;
+  if (!ctx) return base;
+  const brandName = (ctx.brandName || "").trim() || base.brandName;
+  const phone = (ctx.phone || "").trim() || base.contact.phone;
+  const digits = phone.replace(/\D/g, "");
+  const whatsapp = (ctx.whatsapp || "").trim() || (digits ? `https://wa.me/${digits.startsWith("2") ? digits : "2" + digits}` : base.contact.whatsappUrl);
+  const tagline = (ctx.tagline || "").trim() || base.tagline;
+  const currency = (ctx.currency || "").trim() || base.commercial.currencyLabel;
+  const timezone = (ctx.timezone || "").trim() || base.commercial.timezone;
+  const hashtags = Array.isArray(ctx.hashtags) && ctx.hashtags.length ? ctx.hashtags.filter(Boolean).slice(0, 15) : base.hashtags;
+  const palette = ctx.palette ?? {};
+  return {
+    ...base,
+    brandName,
+    brandNameEnglish: brandName,
+    activity: tagline,
+    tagline,
+    taglineEnglish: tagline,
+    taglineShort: tagline,
+    contact: { ...base.contact, phone, whatsappUrl: whatsapp, label: "للتواصل :" },
+    commercial: { ...base.commercial, currencyLabel: currency, timezone },
+    hashtags,
+    visual: {
+      ...base.visual,
+      primaryColors: { ...base.visual.primaryColors, ...palette },
+    },
+  };
+}

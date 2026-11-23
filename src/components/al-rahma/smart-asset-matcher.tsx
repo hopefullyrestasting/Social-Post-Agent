@@ -271,7 +271,26 @@ async function commitAsset(
   prepared: PreparedImage,
   autoCutout: boolean,
   sourceUrl: string,
-): Promise<CommitResponse> {
+): Promise<CommitResponse & { autoCreated?: boolean; product?: { id: string; name_arabic?: string } }> {
+  if (!productId) {
+    const form = new FormData();
+    form.append("imageFile", prepared.blob, prepared.name);
+    form.append("autoCutout", autoCutout ? "true" : "false");
+    form.append("autoCreate", "true");
+    if (sourceUrl) form.append("sourceUrl", sourceUrl);
+    const response = await fetch("/api/assets/upload", {
+      method: "POST",
+      headers: adminWriteHeaders({ Accept: "application/json" }),
+      body: form,
+    });
+    let body: Record<string, unknown> = {};
+    try { body = (await response.json()) as Record<string, unknown>; } catch { body = {}; }
+    if (!response.ok || !body.success) {
+      throw new Error(String(body.error || `تعذر إنشاء المنتج واعتماد الصورة (${response.status})`));
+    }
+    return body as CommitResponse & { autoCreated?: boolean; product?: { id: string; name_arabic?: string } };
+  }
+
   const response = await fetch("/api/assets/commit-match", {
     method: "POST",
     headers: adminWriteHeaders({
@@ -490,11 +509,11 @@ export default function SmartAssetMatcher({ pendingCount, onVerified }: Props) {
 
   async function commitAll() {
     const targets = rows.filter(
-      (row) => row.prepared && row.productId && row.status === "ready",
+      (row) => row.prepared && row.status === "ready" && (row.productId !== undefined),
     );
     if (targets.length === 0) {
       setBatchMessage(
-        "لا توجد صفوف جاهزة للاعتماد. اختر منتجاً لكل صورة غير مطابقة أولاً.",
+        "لا توجد صفوف جاهزة للاعتماد. اختر منتجاً أو استخدم إنشاء منتج جديد.",
       );
       return;
     }
@@ -525,7 +544,8 @@ export default function SmartAssetMatcher({ pendingCount, onVerified }: Props) {
           trimmedSource,
         );
         saved += 1;
-        verifiedIds.push(row.productId);
+        const resolvedProductId = row.productId || body.product?.id || "";
+        if (resolvedProductId) verifiedIds.push(resolvedProductId);
         if (body.cutout?.applied) cutoutCount.applied += 1;
         else cutoutCount.skipped += 1;
 
@@ -534,13 +554,21 @@ export default function SmartAssetMatcher({ pendingCount, onVerified }: Props) {
           : body.cutout?.note
             ? ` · ${body.cutout.note}`
             : "";
-        const provenanceNote = body.provenance?.quality_gate_ready
-          ? ""
-          : " · بدون رابط مصدر قد توقف بوابة الجودة الإعلان";
+        const provenanceNote = body.autoCreated
+          ? " · تم إنشاء منتج جديد تلقائياً"
+          : body.provenance?.quality_gate_ready
+            ? ""
+            : " · بدون رابط مصدر قد توقف بوابة الجودة الإعلان";
         patchRow(row.key, {
           status: "saved",
+          productId: row.productId || body.product?.id || row.productId,
           message: `${body.message ?? "تم الاعتماد."}${cutoutNote}${provenanceNote}`,
         });
+        if (body.autoCreated && body.product?.id) {
+          const newId = body.product.id;
+          const newName = body.product.name_arabic || row.fileName;
+          setCatalog((prev) => prev.some((p) => p.id === newId) ? prev : [...prev, { id: newId, name_arabic: newName, name_english: null, category: null, verification_status: "verified", brand_arabic: "", brand_english: null, brand_slug: "" }]);
+        }
       } catch (error) {
         failed += 1;
         patchRow(row.key, {
@@ -772,14 +800,14 @@ export default function SmartAssetMatcher({ pendingCount, onVerified }: Props) {
                             row.status === "committing" ||
                             row.status === "scanning"
                           }
-                          onChange={(event) =>
-                            patchRow(row.key, {
-                              productId: event.target.value,
-                            })
-                          }
+                          onChange={(event) => {
+                            const v = event.target.value;
+                            patchRow(row.key, { productId: v === "__auto_create__" ? "" : v, message: v === "__auto_create__" ? "سيتم إنشاء منتج جديد تلقائياً عند الاعتماد." : row.message });
+                          }}
                           className="w-full min-w-[230px] rounded-lg border border-slate-300 bg-white px-2 py-1.5"
                         >
                           <option value="">— اختر المنتج يدوياً —</option>
+                          <option value="__auto_create__">+ إنشاء منتج جديد تلقائياً</option>
                           {catalog.map((product) => (
                             <option key={product.id} value={product.id}>
                               {product.brand_arabic} — {product.name_arabic}

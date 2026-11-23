@@ -18,7 +18,11 @@ interface AssetBucket {
 
 export interface AssetFileEnv {
   PRODUCT_ASSETS?: AssetBucket;
+  DB?: D1Database;
+  REQUIRE_ACCESS_KEY?: string;
 }
+
+import { resolveTenantScope } from "../_tenant";
 
 const KEY_PATTERN =
   /^products\/[A-Za-z0-9._-]+\/[A-Za-z0-9-]{8,}\.(png|jpg|jpeg|webp|avif)$/;
@@ -42,6 +46,28 @@ export const onRequestGet: PagesFunction<AssetFileEnv> = async ({
       { success: false, error: "Invalid asset key." },
       { status: 400 },
     );
+  }
+
+  if (env.DB) {
+    const scope = await resolveTenantScope(request, {
+      DB: env.DB,
+      REQUIRE_ACCESS_KEY: env.REQUIRE_ACCESS_KEY,
+    });
+    if (!scope.ok) return scope.response;
+
+    if (scope.tenantId) {
+      const row = await env.DB.prepare(
+        "SELECT id FROM product_assets WHERE storage_key = ? AND tenant_key_id = ? LIMIT 1",
+      )
+        .bind(key.split("?")[0], scope.tenantId)
+        .first<{ id: string }>();
+      if (!row) {
+        return Response.json(
+          { success: false, error: "Asset not found." },
+          { status: 404 },
+        );
+      }
+    }
   }
 
   if (!env.PRODUCT_ASSETS) {

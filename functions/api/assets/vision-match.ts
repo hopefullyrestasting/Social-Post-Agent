@@ -19,6 +19,7 @@ import {
   MAX_IMAGE_BYTES,
 } from "./_image";
 import { noStore } from "./_store";
+import { resolveTenantScope } from "../_tenant";
 import {
   predictProductFromImage,
   type VisionCatalogProduct,
@@ -27,6 +28,7 @@ import {
 
 interface VisionMatchEnv extends VisionEnv {
   DB: D1Database;
+  REQUIRE_ACCESS_KEY?: string;
 }
 
 interface ImageInput {
@@ -164,19 +166,20 @@ async function readImageInput(request: Request): Promise<ImageInputResult> {
   };
 }
 
-async function loadCatalog(env: VisionMatchEnv): Promise<VisionCatalogProduct[]> {
+async function loadCatalog(env: VisionMatchEnv, tenantId: string | null): Promise<VisionCatalogProduct[]> {
   const rows = await env.DB.prepare(
     `SELECT p.id, p.name_arabic, p.name_english, p.category,
             p.verification_status, b.name_arabic AS brand_arabic,
             b.name_english AS brand_english, b.slug AS brand_slug
      FROM products p
      JOIN brands b ON b.id = p.brand_id
+     ${tenantId ? "WHERE p.tenant_key_id = ?" : ""}
      ORDER BY
        CASE WHEN p.verification_status = 'verified' THEN 1 ELSE 0 END,
        b.name_arabic, p.name_arabic, p.id
      LIMIT ?`,
   )
-    .bind(CATALOG_LIMIT + 1)
+    .bind(...(tenantId ? [tenantId, CATALOG_LIMIT + 1] : [CATALOG_LIMIT + 1]))
     .all<VisionCatalogProduct>();
 
   return rows.results.slice(0, CATALOG_LIMIT);
@@ -192,13 +195,16 @@ export const onRequestPost: PagesFunction<VisionMatchEnv> = async ({
   request,
   env,
 }) => {
+  const scope = await resolveTenantScope(request, env);
+  if (!scope.ok) return scope.response;
+
   const input = await readImageInput(request);
   if (!input.ok) {
     return noStore({ success: false, error: input.error }, input.status);
   }
 
   try {
-    const catalog = await loadCatalog(env);
+    const catalog = await loadCatalog(env, scope.tenantId);
     if (catalog.length === 0) {
       return noStore(
         {

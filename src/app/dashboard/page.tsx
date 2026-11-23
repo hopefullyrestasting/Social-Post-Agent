@@ -2,13 +2,18 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { AL_RAHMA_BRAND_CONFIG } from "@/lib/al-rahma/brand-core";
 import {
   buildOccasionGreeting,
   type OccasionGreetingInput,
   type PromotionRecord,
 } from "@/lib/al-rahma";
 import { adminWriteHeaders, persistAdminKey, readAdminKey } from "@/lib/al-rahma/admin-key";
+import {
+  readAccessKey,
+  persistAccessKey,
+  installAccessKeyFetch,
+  accessKeyHeaders,
+} from "@/lib/al-rahma/access-key";
 import AdPreview from "@/components/al-rahma/ad-preview";
 import BulkImportModal from "@/components/al-rahma/bulk-import-modal";
 import CampaignGallery from "@/components/al-rahma/campaign-gallery";
@@ -142,7 +147,7 @@ type ApiResult<T> =
   | { success: false; error?: string; detail?: string };
 
 const PAGE_SIZE = 50;
-const BRAND = AL_RAHMA_BRAND_CONFIG;
+const BRAND = { brandName: "AI Social Ad Studio", activity: "منصة متعددة الصناعات لتوليد إعلانات السوشيال بالذكاء الاصطناعي", contact: { phone: "", whatsappUrl: "#" }, legalName: "AI Social Ad Studio" };
 
 const verificationLabels: Record<string, string> = {
   verified: "موثّق",
@@ -277,12 +282,23 @@ export default function DashboardPage() {
     useState<OccasionGreetingInput | null>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [adminKey, setAdminKey] = useState(() => readAdminKey());
+  const [accessKey, setAccessKey] = useState(() => readAccessKey());
+  const [tenantInfo, setTenantInfo] = useState<Record<string, unknown> | null>(null);
+  const [lockBrandName, setLockBrandName] = useState("");
+  const [lockIndustry, setLockIndustry] = useState("");
+  const [lockLogoUrl, setLockLogoUrl] = useState("");
+  const [lockingBrand, setLockingBrand] = useState(false);
+  const [lockMessage, setLockMessage] = useState("");
   const [notice, setNotice] = useState("");
   const [brandLogoUrl, setBrandLogoUrl] = useState<string | null>(null);
   const [logoUploading, setLogoUploading] = useState(false);
   const [logoMessage, setLogoMessage] = useState("");
   const [harvesting, setHarvesting] = useState(false);
   const [harvestMessage, setHarvestMessage] = useState("");
+
+  useEffect(() => {
+    installAccessKeyFetch();
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -324,6 +340,63 @@ export default function DashboardPage() {
       .catch(() => {});
     return () => controller.abort();
   }, [refreshKey]);
+
+  useEffect(() => {
+    const key = readAccessKey();
+    if (!key) {
+      const t = setTimeout(() => setTenantInfo(null), 0);
+      return () => clearTimeout(t);
+    }
+    let cancelled = false;
+    fetch("/api/tenant/me", { headers: accessKeyHeaders() })
+      .then((r) => r.json() as Promise<{ success?: boolean; tenant?: Record<string, unknown> }>)
+      .then((body) => {
+        if (cancelled) return;
+        setTenantInfo(body?.success ? (body.tenant ?? null) : null);
+      })
+      .catch(() => { if (!cancelled) setTenantInfo(null); });
+    return () => { cancelled = true; };
+  }, [accessKey]);
+
+  async function refreshTenantInfo() {
+    const key = readAccessKey();
+    if (!key) { setTenantInfo(null); return; }
+    try {
+      const r = await fetch("/api/tenant/me", { headers: accessKeyHeaders() });
+      const body = await r.json() as { success?: boolean; tenant?: Record<string, unknown> };
+      setTenantInfo(body?.success ? (body.tenant ?? null) : null);
+    } catch { setTenantInfo(null); }
+  }
+
+  async function submitBrandLock() {
+    setLockMessage("");
+    const brand_name = lockBrandName.trim();
+    const industry = lockIndustry.trim();
+    if (brand_name.length < 2 || industry.length < 2) {
+      setLockMessage("أدخل اسم الشركة والنشاط (حرفان على الأقل).");
+      return;
+    }
+    setLockingBrand(true);
+    try {
+      const res = await fetch("/api/tenant/lock-brand", {
+        method: "POST",
+        headers: accessKeyHeaders({ "Content-Type": "application/json", Accept: "application/json" }),
+        body: JSON.stringify({ brand_name, industry, logo_url: lockLogoUrl.trim() || null }),
+      });
+      const body = await res.json() as { success?: boolean; error?: string; code?: string };
+      if (!res.ok || !body.success) {
+        setLockMessage(body.code === "brand_locked" ? "تم قفل هوية العلامة مسبقاً ولا يمكن تغيير اسم الشركة أو النشاط." : (body.error || "تعذر حفظ هوية العلامة."));
+      } else {
+        setLockMessage("تم حفظ وقفل هوية العلامة بنجاح. لن يمكن تغيير اسم الشركة أو النشاط لاحقاً.");
+        setNotice("تم قفل هوية العلامة التجارية لهذه مساحة العمل.");
+        await refreshTenantInfo();
+      }
+    } catch (err) {
+      setLockMessage(err instanceof Error ? err.message : "تعذر حفظ هوية العلامة.");
+    } finally {
+      setLockingBrand(false);
+    }
+  }
 
   async function harvestRandomProducts() {
     setHarvesting(true);
@@ -619,6 +692,82 @@ export default function DashboardPage() {
                 ADMIN_API_KEY في Cloudflare تصبح الكتابة محمية.
               </p>
             </div>
+            <div className="w-full sm:w-96">
+              <label className="text-xs font-semibold text-slate-200">
+                استيراد منتجات (CSV / Excel)
+                <input
+                  type="file"
+                  accept=".csv,.xlsx,.xls"
+                  onChange={async (event) => {
+                    const file = event.target.files?.[0];
+                    if (!file) return;
+                    try {
+                      const { parseSpreadsheetFile } = await import("@/lib/al-rahma/spreadsheet");
+                      const rows = await parseSpreadsheetFile(file);
+                      if (rows.length === 0) { setNotice("لم يتم العثور على صفوف."); return; }
+                      const res = await fetch("/api/db/products", {
+                        method: "POST",
+                        headers: accessKeyHeaders({ "Content-Type": "application/json" }),
+                        body: JSON.stringify(rows),
+                      });
+                      const body = (await res.json()) as { success?: boolean; count?: number; error?: string };
+                      if (body && body.success) {
+                        setNotice("تم استيراد " + (body.count ?? rows.length) + " منتج.");
+                        refresh();
+                      } else {
+                        setNotice(body?.error || "فشل الاستيراد.");
+                      }
+                    } catch (err) {
+                      setNotice(err instanceof Error ? err.message : "فشل الاستيراد.");
+                    }
+                  }}
+                  className="mt-1 w-full text-xs text-slate-100"
+                />
+              </label>
+            </div>
+            <div className="w-full sm:w-96">
+               <label className="text-xs font-semibold text-slate-200">
+                 مفتاح الوصول (X-Access-Key)
+                 <input
+                   type="password"
+                   value={accessKey}
+                   onChange={(event) => {
+                     setAccessKey(event.target.value);
+                     persistAccessKey(event.target.value);
+                   }}
+                   placeholder="مفتاح الوصول السنوي"
+                   autoComplete="off"
+                   dir="ltr"
+                   className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900/70 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-400"
+                 />
+               </label>
+               {tenantInfo ? (() => {
+                 const t = tenantInfo as { brand_locked?: boolean; brand?: { brandName?: string; industry?: string }; expires_at_iso?: string | null; status?: string };
+                 const locked = Boolean(t.brand_locked && t.brand);
+                 return (
+                   <div className="mt-2 rounded-lg border border-white/15 bg-white/5 p-3 text-xs text-slate-200">
+                     <p className="font-semibold text-emerald-300">{locked ? "هوية العلامة مقفلة لهذه المساحة" : "إعداد هوية العلامة (مرة واحدة)"}</p>
+                     {locked ? (
+                       <div className="mt-1 space-y-1">
+                         <p>الشركة: <span className="font-bold">{t.brand?.brandName}</span></p>
+                         <p>النشاط: <span className="font-bold">{t.brand?.industry}</span></p>
+                         {t.expires_at_iso ? <p>انتهاء الاشتراك السنوي: <span dir="ltr">{String(t.expires_at_iso).slice(0,10)}</span></p> : null}
+                         <p className="text-slate-400">لا يمكن تغيير اسم الشركة أو النشاط بعد القفل.</p>
+                       </div>
+                     ) : (
+                       <div className="mt-2 space-y-2">
+                         <input value={lockBrandName} onChange={(e)=>setLockBrandName(e.target.value)} placeholder="اسم الشركة" className="w-full rounded-md border border-slate-600 bg-slate-900/70 px-2 py-2 text-slate-100" />
+                         <input value={lockIndustry} onChange={(e)=>setLockIndustry(e.target.value)} placeholder="النشاط / الصناعة" className="w-full rounded-md border border-slate-600 bg-slate-900/70 px-2 py-2 text-slate-100" />
+                         <input value={lockLogoUrl} onChange={(e)=>setLockLogoUrl(e.target.value)} placeholder="رابط الشعار (اختياري)" dir="ltr" className="w-full rounded-md border border-slate-600 bg-slate-900/70 px-2 py-2 text-slate-100" />
+                         <button type="button" disabled={lockingBrand} onClick={()=>void submitBrandLock()} className="rounded-md bg-emerald-500 px-3 py-2 font-bold text-white disabled:opacity-50">{lockingBrand?"جارٍ الحفظ...":"حفظ وقفل الهوية"}</button>
+                         {lockMessage ? <p className={lockMessage.includes("بنجاح")?"text-emerald-300":"text-amber-300"}>{lockMessage}</p> : null}
+                         <p className="text-slate-400">يتم القفل مرة واحدة فقط لكل مفتاح سنوي.</p>
+                       </div>
+                     )}
+                   </div>
+                 );
+               })() : accessKey.trim() ? <p className="mt-1 text-xs text-slate-400">أدخل مفتاح وصول صالح لعرض حالة الاشتراك.</p> : null}
+             </div>
             <div className="w-full sm:w-96 rounded-xl border border-white/15 bg-white/10 p-3">
               <p className="text-xs font-bold text-slate-100">رفع شعار الشركة (Logo)</p>
               <div className="mt-2 flex items-center gap-3">
@@ -645,14 +794,16 @@ export default function DashboardPage() {
               {logoMessage && <p className="mt-2 text-xs text-emerald-200">{logoMessage}</p>}
               <p className="mt-1 text-[11px] text-slate-300">PNG بحد أقصى 500KB — يُحفظ مرة واحدة ويظهر في كل إعلان.</p>
             </div>
-            <a
-              className="rounded-xl bg-emerald-500 px-4 py-3 font-bold text-white transition hover:bg-emerald-400"
-              href={BRAND.contact.whatsappUrl}
-              target="_blank"
-              rel="noreferrer"
-            >
-              واتساب {BRAND.contact.phone}
-            </a>
+            {BRAND.contact.phone ? (
+              <a
+                className="rounded-xl bg-emerald-500 px-4 py-3 font-bold text-white transition hover:bg-emerald-400"
+                href={BRAND.contact.whatsappUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                واتساب {BRAND.contact.phone}
+              </a>
+            ) : null}
           </div>
         </div>
       </header>
@@ -662,7 +813,7 @@ export default function DashboardPage() {
           <div>
             <h2 className="text-xl font-extrabold">لوحة التحكم</h2>
             <p className="text-sm text-slate-500">
-              مؤشرات المنتجات والكتالوج تُقرأ مباشرة من قاعدة D1
+              إدارة مساحة عمل علامتك التجارية وتوليد الإعلانات بالذكاء الاصطناعي
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -1368,7 +1519,7 @@ export default function DashboardPage() {
         </section>
 
         <p className="text-center text-xs text-slate-500">
-          {BRAND.legalName} · للطلب والاستفسار: {BRAND.contact.phone}
+          {BRAND.legalName} · منصة توليد إعلانات متعددة الصناعات
         </p>
       </div>
 

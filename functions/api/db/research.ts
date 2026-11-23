@@ -1,5 +1,8 @@
+import { resolveTenantScope, tenantOwnsProduct } from "../_tenant";
+
 interface Env {
   DB: D1Database;
+  REQUIRE_ACCESS_KEY?: string;
 }
 
 interface ProductIdentity {
@@ -63,6 +66,18 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       { success: false, error: "A valid product_id is required." },
       { status: 400 },
     );
+  }
+
+  const scope = await resolveTenantScope(request, env);
+  if (!scope.ok) return scope.response;
+  if (scope.tenantId) {
+    const owns = await tenantOwnsProduct(env, scope.tenantId, productId);
+    if (!owns) {
+      return Response.json(
+        { success: false, error: "Product not found." },
+        { status: 404 },
+      );
+    }
   }
 
   try {
