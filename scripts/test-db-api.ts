@@ -10,6 +10,7 @@ import { onRequestGet as getBrands } from "../functions/api/db/brands";
 import { onRequestGet as getCampaigns } from "../functions/api/db/campaigns";
 import { onRequestPost as runCampaign } from "../functions/api/db/campaigns/run";
 import { onRequestGet as getProducts } from "../functions/api/db/products";
+import { onRequestPost as postProducts } from "../functions/api/db/products";
 import { onRequestGet as getResearch } from "../functions/api/db/research";
 import { onRequestPost as postBulkIngest } from "../functions/api/db/research/bulk-ingest";
 import { onRequestPost as postResearchIngest } from "../functions/api/db/research/ingest";
@@ -1964,6 +1965,35 @@ async function run() {
     "D1 API tests passed: pagination, filters, validation, stats, brands, research, ingest, admin auth 401/unconfigured-preview, promos, 48h calendar, bulk ingest, campaign random selection + verified primary assets, product asset upload (R2/embedded, cutout fallback, grounded claims, filename matching), smart vision matching (Gemini, Workers AI, label and filename fallbacks), commit-match (verified primary image, BRIA cutout, provenance), socialCaption, and batch run/persistence.",
   );
 }
+
+
+async function testProductCreation() {
+  const db = new MockDatabase();
+  const res = await postProducts(
+    context(db, "https://example.test/api/db/products", {
+      method: "POST",
+      body: JSON.stringify([{ name_arabic: "منتج اختبار", category: "industrial", sku: "SKU-1" }]),
+    }),
+  );
+  const body = await json(res);
+  assert.equal(res.status, 200, JSON.stringify(body));
+  assert.equal(body.success, true);
+  assert.equal((body as { count?: number }).count, 1);
+  assert.ok(Array.isArray((body as { created?: unknown[] }).created));
+
+  // upsert path exercised (mock returns no existing row, so a new row is created)
+  const res2 = await postProducts(
+    context(db, "https://example.test/api/db/products", {
+      method: "POST",
+      body: JSON.stringify([{ name_arabic: "منتج اختبار", category: "industrial", sku: "SKU-1", price: 10 }]),
+    }),
+  );
+  const body2 = await json(res2);
+  assert.equal(res2.status, 200);
+  assert.equal(body2.success, true);
+}
+
+testProductCreation().catch((e) => { console.error(e); process.exitCode = 1; });
 
 run().catch((error: unknown) => {
   console.error(error);

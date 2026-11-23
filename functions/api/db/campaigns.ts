@@ -5,8 +5,11 @@
  * Read-only; no writes.
  */
 
+import { resolveTenantScope } from "../_tenant";
+
 interface Env {
   DB: D1Database;
+  REQUIRE_ACCESS_KEY?: string;
 }
 
 interface CampaignRow {
@@ -53,6 +56,9 @@ const NO_STORE_HEADERS = {
 } as const;
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
+  const scope = await resolveTenantScope(request, env);
+  if (!scope.ok) return scope.response;
+
   const url = new URL(request.url);
   const limit = clampLimit(url.searchParams.get("limit"));
 
@@ -71,10 +77,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
               total_products, total_images, started_at, completed_at,
               error_summary, created_at
        FROM campaigns
+       ${scope.tenantId ? "WHERE tenant_key_id = ?" : ""}
        ORDER BY created_at DESC, id DESC
        LIMIT ?`,
     )
-      .bind(limit)
+      .bind(...(scope.tenantId ? [scope.tenantId, limit] : [limit]))
       .all<CampaignRow>();
 
     if (campaigns.results.length === 0) {
@@ -97,9 +104,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
        LEFT JOIN products p ON p.id = c.product_id
        LEFT JOIN brands b ON b.id = p.brand_id
        WHERE c.campaign_id IN (${placeholders})
-       ORDER BY c.campaign_id, c.product_id, c.variant_number`,
+       ${scope.tenantId ? "AND c.tenant_key_id = ?" : ""}
+        ORDER BY c.campaign_id, c.product_id, c.variant_number`,
     )
-      .bind(...ids)
+      .bind(...(scope.tenantId ? [...ids, scope.tenantId] : ids))
       .all<CreativeRow>();
 
     const creativesByCampaign = new Map<string, CreativeRow[]>();

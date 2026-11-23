@@ -1,5 +1,5 @@
 ﻿import { GeneratedArabicCopy, ProductDetails } from "./arabic-copywriter";
-import { AL_RAHMA_BRAND_CONFIG } from "./brand-core";
+import { AL_RAHMA_BRAND_CONFIG, buildBrandConfigFromTenant, type BrandConfig, type TenantBrandContext } from "./brand-core";
 import { OccasionGreetingInput, PromotionEvaluation } from "./commercial";
 import { OverlayOptions } from "./overlay-system";
 
@@ -252,18 +252,19 @@ export class QualityGate {
       if (!validDimensions) errors.push("أبعاد الصورة غير مناسبة للنشر.");
     }
 
-    // 10. Brand subtitle in config (sanity/contract)
-    const subtitleOk = AL_RAHMA_BRAND_CONFIG.activity.includes("متاح توصيل");
+    // 10. Brand identity contract (dynamic tenant branding allowed)
+    const brand = ((visual as unknown as Record<string, unknown>)?.brand as Record<string, unknown> | undefined) && "brandName" in (((visual as unknown as Record<string, unknown>)?.brand as Record<string, unknown>) || {})
+      ? (((visual as unknown as Record<string, unknown>).brand) as unknown as BrandConfig)
+      : buildBrandConfigFromTenant(((visual as unknown as Record<string, unknown>)?.brand) as unknown as TenantBrandContext | null | undefined);
+    const brandOk = Boolean(brand.brandName?.trim());
     checks.push({
-      checkName: "Brand Subtitle Contract",
+      checkName: "Brand Identity Contract",
       category: "compliance",
-      passed: subtitleOk,
-      score: subtitleOk ? 100 : 0,
-      message: subtitleOk
-        ? "عنوان النشاط يتضمن (متاح توصيل)."
-        : "عنوان النشاط يجب أن يتضمن (متاح توصيل).",
+      passed: brandOk,
+      score: brandOk ? 100 : 0,
+      message: brandOk ? "هوية العلامة التجارية متوفرة." : "هوية العلامة التجارية مفقودة.",
     });
-    if (!subtitleOk) errors.push("عنوان النشاط في BrandConfig يجب أن يتضمن (متاح توصيل).");
+    if (!brandOk) errors.push("هوية العلامة التجارية مطلوبة.");
 
     const totalScore = Math.round(
       checks.reduce((acc, c) => acc + c.score, 0) / checks.length,

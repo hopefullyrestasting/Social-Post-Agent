@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { resolveTenantScope, tenantSettingKey } from "../_tenant";
 
 /**
  * GET /api/db/settings
@@ -10,6 +11,7 @@ import { z } from "zod";
 
 interface Env {
   DB: D1Database;
+  REQUIRE_ACCESS_KEY?: string;
 }
 
 const MAX_LOGO_LENGTH = 500 * 1024; // ~500KB for data URI/string
@@ -32,21 +34,36 @@ function isAllowedLogoValue(value: string): boolean {
   return false;
 }
 
-export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
+export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
+  const scope = await resolveTenantScope(request, env);
+  if (!scope.ok) return scope.response;
+
   try {
+    const keys = scope.tenantId
+      ? [tenantSettingKey(scope.tenantId, "brand_logo_url"), "brand_logo_url", "brand_logo_data_uri"]
+      : ["brand_logo_url", "brand_logo_data_uri"];
+    const placeholders = keys.map(() => "?").join(",");
     const rows = await env.DB.prepare(
-      "SELECT key, value, updated_at FROM business_settings WHERE key IN (?, ?)",
+      `SELECT key, value, updated_at FROM business_settings WHERE key IN (${placeholders})`,
     )
-      .bind("brand_logo_url", "brand_logo_data_uri")
+      .bind(...keys)
       .all<{ key: string; value: string | null; updated_at: number | null }>();
 
+    const tenantNamespaced = scope.tenantId
+      ? tenantSettingKey(scope.tenantId, "brand_logo_url")
+      : null;
     const settings: Record<string, string | null> = {
       brand_logo_url: null,
     };
     for (const row of rows.results) {
-      if (row.key === "brand_logo_url") settings.brand_logo_url = row.value;
-      // legacy/alternate key support
-      if (row.key === "brand_logo_data_uri" && !settings.brand_logo_url) {
+      if (tenantNamespaced && row.key === tenantNamespaced) {
+        settings.brand_logo_url = row.value;
+      } else if (row.key === "brand_logo_url" && !settings.brand_logo_url) {
+        settings.brand_logo_url = row.value;
+      } else if (
+        row.key === "brand_logo_data_uri" &&
+        !settings.brand_logo_url
+      ) {
         settings.brand_logo_url = row.value;
       }
     }
@@ -62,6 +79,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+  const scope = await resolveTenantScope(request, env);
+  if (!scope.ok) return scope.response;
+
   let payload: unknown;
   try {
     const text = await request.text();
@@ -101,13 +121,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     );
   }
 
+  const settingKey = scope.tenantId
+    ? tenantSettingKey(scope.tenantId, "brand_logo_url")
+    : "brand_logo_url";
+
   try {
     await env.DB.prepare(
-      `INSERT INTO business_settings (key, value, updated_at)
-       VALUES (?, ?, ?)
-       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      `INSERT INTO business_settings (key, value, updated_at, tenant_key_id)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, tenant_key_id = excluded.tenant_key_id`,
     )
-      .bind("brand_logo_url", value || null, Date.now())
+      .bind(settingKey, value || null, Date.now(), scope.tenantId)
       .run();
 
     return Response.json({

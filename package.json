@@ -10,13 +10,14 @@
     "start": "next start",
     "lint": "eslint src functions",
     "typecheck": "tsc --noEmit",
-    "test": "tsx scripts/test-al-rahma-pipeline.ts && tsx scripts/test-db-api.ts && tsx scripts/test-phase16.ts"
+    "test": "tsx scripts/test-al-rahma-pipeline.ts && tsx scripts/test-db-api.ts && tsx scripts/test-phase16.ts && tsx scripts/test-multi-tenant-phase4.ts"
   },
   "dependencies": {
     "jszip": "^3.10.2",
     "next": "16.4.6",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "xlsx": "^0.18.5",
     "zod": "^4.6.6"
   },
   "devDependencies": {

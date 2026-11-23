@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { resolveTenantScope } from "../../_tenant";
 
 /**
  * POST /api/db/research/ingest
@@ -19,6 +20,7 @@ import { z } from "zod";
 
 export interface Env {
   DB: D1Database;
+  REQUIRE_ACCESS_KEY?: string;
 }
 
 export interface IngestProductRow {
@@ -122,11 +124,14 @@ export async function saveResearchRecord(
   env: Env,
   data: IngestPayload,
   now: number = Date.now(),
+  tenantId: string | null = null,
 ): Promise<SaveResearchResult> {
   const product = await env.DB.prepare(
-    "SELECT id, name_arabic FROM products WHERE id = ?",
+    `SELECT id, name_arabic FROM products WHERE id = ? ${
+      tenantId ? "AND tenant_key_id = ?" : ""
+    }`,
   )
-    .bind(data.product_id)
+    .bind(...(tenantId ? [data.product_id, tenantId] : [data.product_id]))
     .first<IngestProductRow>();
 
   if (!product) {
@@ -368,7 +373,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   try {
-    const saved = await saveResearchRecord(env, parsed.data);
+    const scope = await resolveTenantScope(request, env);
+    if (!scope.ok) return scope.response;
+
+    const saved = await saveResearchRecord(env, parsed.data, Date.now(), scope.tenantId);
     if (!saved.ok) {
       return Response.json(
         { success: false, error: "Product not found." },

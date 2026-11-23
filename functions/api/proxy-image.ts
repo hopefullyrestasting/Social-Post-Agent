@@ -72,7 +72,23 @@ function normalizeImageContentType(value: string | null): string | null {
   return ALLOWED_IMAGE_TYPES.has(mime) ? mime : null;
 }
 
-export const onRequestGet: PagesFunction = async ({ request }) => {
+interface ProxyEnv {
+  DB?: D1Database;
+  REQUIRE_ACCESS_KEY?: string;
+}
+
+export const onRequestGet: PagesFunction<ProxyEnv> = async ({ request, env }) => {
+  // Tenant gate: once keys are provisioned, only authenticated tenants may
+  // use the proxy. Legacy mode stays open.
+  if (env?.DB) {
+    const { resolveTenantScope } = await import("./_tenant");
+    const scope = await resolveTenantScope(request, {
+      DB: env.DB,
+      REQUIRE_ACCESS_KEY: env.REQUIRE_ACCESS_KEY,
+    });
+    if (!scope.ok) return scope.response;
+  }
+
   const url = new URL(request.url);
   const targetParam = url.searchParams.get("url");
 

@@ -40,6 +40,7 @@ export type SceneProvider =
 
 export interface ArtDirectionContext {
   brand?: string | null;
+  industry?: string | null;
   category?: string | null;
   name?: string | null;
   benefits?: string[] | null;
@@ -199,7 +200,7 @@ export function variantStylePair(seed: string): [ArtDirectionStyleId, ArtDirecti
 }
 
 function categoryMood(context?: ArtDirectionContext): string {
-  const haystack = [context?.brand, context?.category, context?.name, ...(context?.benefits ?? [])]
+  const haystack = [context?.brand, context?.industry, context?.category, context?.name, ...(context?.benefits ?? [])]
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
@@ -212,6 +213,12 @@ function categoryMood(context?: ArtDirectionContext): string {
   }
   if (/(skin|cream|moistur|بشرة|كريم|مرطب|ترطيب|aloe|ألو)/.test(haystack)) {
     return "The mood is fresh hydrated skincare editorial with clean spa energy.";
+  }
+  if (/(industrial|auto|automotive|engine|mechanic|tool|electronic|hardware| machinery|ميكانيك|سيارات|الكترونيات)/.test(haystack)) {
+    return "The mood is a clean neutral industrial studio editorial with no beauty or cosmetics styling.";
+  }
+  if (context?.industry && !/(perfume|fragrance|beauty|cosmetic|skincare|haircare|عطر|تجميل|عناية|بشرة|شعر)/i.test(context.industry)) {
+    return "The mood is a neutral professional studio editorial aligned with the tenant industry, with no beauty or cosmetics styling.";
   }
   return "The mood is premium Egyptian beauty retail editorial.";
 }
