@@ -122,7 +122,10 @@ function testStyleRotation() {
     assert.equal(style, styleForSeed(seed), "Style selection must be deterministic.");
     seen.add(style);
   }
-  assert.ok(seen.size === 3, "Seeds must rotate across all three styles over a small sample.");
+  assert.ok(
+    seen.size === ART_DIRECTION_STYLE_IDS.length,
+    "Seeds must rotate across all four configured styles over a small sample.",
+  );
 
   for (const seed of ["a", "b", "c", "d", "e", "f", "g", "h", "product-123"]) {
     const [first, second] = variantStylePair(seed);

@@ -89,7 +89,7 @@ export const ART_DIRECTION_STYLES: Record<ArtDirectionStyleId, ArtDirectionStyle
     template: "editorial-beauty-card",
     accent: "#D4A574",
     scenePrompt:
-      "Photorealistic 9:16 studio backdrop with deep brand-navy/emerald background, thin golden architectural corner brackets, soft wave accents, and a dark illuminated podium pedestal. UPPER 35%: ALLOWED: centered logo and brand title only. No text, BOTTOM 15%: COMPLETELY FREE OF ANY TEXT, LETTERS, NUMBERS, OR WATERMARKS. No product or bottle should appear in the scene. No floating text, no watermarks outside the logo area. Rich warm ambient lighting with subtle industry-watermark icons in the distance.",
+      "Photorealistic 9:16 studio backdrop with deep brand-navy/emerald background, thin golden architectural corner brackets, soft wave accents, and a dark illuminated podium pedestal. UPPER 35%: ALLOWED: centered logo and brand title only. No text, BOTTOM 15%: COMPLETELY FREE OF ANY TEXT, LETTERS, NUMBERS, OR WATERMARKS. Keep the upper 35% clean and open for the brand mark and the bottom 12% darker for contact text. No product or bottle should appear in the scene. No floating text, no watermarks outside the logo area. Rich warm ambient lighting with subtle industry-watermark icons in the distance.",
   },
 };
 

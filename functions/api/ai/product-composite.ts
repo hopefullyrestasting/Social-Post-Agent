@@ -234,7 +234,7 @@ export function buildProductCompositePrompt(
   // Prompt intentionally avoids the words "Arabic", "text", "words", "letters", "numbers", "typography"
   // to prevent FLUX from rendering garbled sky/foreground artifacts.
   const zeroTextZone =
-    "UPPER 35%: COMPLETELY FREE OF ANY VISUAL NOISE — NO LETTERS, NO NUMBERS, NO ARABIC SCRIPT, NO WATERMARKS for SVG typography overlay. NO generated text, NO price tags, NO discount badges, NO captions in the sky zone. BOTTOM 15%: COMPLETELY FREE OF ANY VISUAL NOISE — NO LETTERS, NO NUMBERS, NO WATERMARKS for contact text. NO generated text, NO floating words. The authentic packshot label is preserved pixel-for-pixel from the reference; all other text must be rendered by the SVG overlay.";
+    "UPPER 35%: clean, open, and softly lit, and COMPLETELY FREE OF ANY VISUAL NOISE — NO LETTERS, NO NUMBERS, NO ARABIC SCRIPT, NO WATERMARKS for SVG typography overlay. NO generated text, NO price tags, NO discount badges, NO captions in the sky zone. BOTTOM 15%: COMPLETELY FREE OF ANY VISUAL NOISE — NO LETTERS, NO NUMBERS, NO WATERMARKS for contact text, and the bottom 12% reads naturally darker for the contact lockup. NO generated text, NO floating words. The authentic packshot label is preserved pixel-for-pixel from the reference; all other text must be rendered by the SVG overlay.";
 
   return [
     `Commercial luxury product photography of the exact ${productName} bottle from the reference image standing upright on a natural ${env.surfaceMaterial} ledge, bathed in crisp natural golden-hour sunlight.`,
@@ -258,7 +258,7 @@ function buildCompactCompositePrompt(
   return [
     "Edit the reference photo into a photorealistic 9:16 luxury product advertisement.",
     `Place the exact same product from the image upright on ${env.surfaceMaterial} in natural golden-hour sunlight with realistic directional shadows and light caustics, and ${env.environmentalBackdrop} in soft bokeh (85mm f/1.8).`,
-    "UPPER 35%: COMPLETELY FREE OF ANY VISUAL NOISE — NO LETTERS, NO NUMBERS, NO ARABIC SCRIPT, NO WATERMARKS for SVG typography overlay. BOTTOM 15%: COMPLETELY FREE OF ANY VISUAL NOISE — NO LETTERS, NO NUMBERS, NO WATERMARKS for contact text. NO generated text, NO floating words. The authentic packshot label is preserved pixel-for-pixel from the reference; all other text must be rendered by the SVG overlay.",
+    "UPPER 35%: clean, open, and softly lit, and COMPLETELY FREE OF ANY VISUAL NOISE — NO LETTERS, NO NUMBERS, NO ARABIC SCRIPT, NO WATERMARKS for SVG typography overlay. BOTTOM 15%: COMPLETELY FREE OF ANY VISUAL NOISE — NO LETTERS, NO NUMBERS, NO WATERMARKS for contact text, and the bottom 12% reads naturally darker. NO generated text, NO floating words. The authentic packshot label is preserved pixel-for-pixel from the reference; all other text must be rendered by the SVG overlay.",
     "Preserve the bottle shape, cap, colors and every letter of the original label and logo exactly as in the reference image, fully legible and undistorted.",
     "No generated text, no watermark, no extra products, no podium. One authentic product only.",
   ].join(" ");
