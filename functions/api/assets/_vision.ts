@@ -1,3 +1,4 @@
+import { parseProductVisualBrief, visualBriefPrompt, type ProductVisualCommercialBrief } from "../../../src/lib/al-rahma/product-visual-brief";
 /**
  * Vision AI helpers for the Smart Asset Matcher.
  *
@@ -567,4 +568,22 @@ export async function predictProductFromImage(
     workersAiBound,
     note: "",
   };
+}
+
+
+/** Converts a provider JSON reply into a guarded commercial brief for scene and copy stages. */
+export function buildProductVisualBrief(
+  response: unknown,
+  language: ProductVisualCommercialBrief["language"],
+  fallback: Pick<ProductVisualCommercialBrief, "identity" | "category" | "industry">,
+): ProductVisualCommercialBrief {
+  return parseProductVisualBrief(response, language, fallback);
+}
+
+/** Shared prompt fragment for deep product understanding; it explicitly prohibits invented commercial claims. */
+export function productVisualBriefInstructions(
+  language: ProductVisualCommercialBrief["language"],
+  industry: string,
+): string {
+  return visualBriefPrompt(language, industry);
 }
