@@ -1,5 +1,11 @@
-import { resolveTenantScope } from "../_tenant";
+import { productOfferSettingKey, resolveTenantScope } from "../_tenant";
 import { z } from "zod";
+import {
+  isSafeOfferText,
+  isSafeSalesLine,
+  sanitizeOfferText,
+  sanitizeSalesLine,
+} from "../../../src/lib/al-rahma/studio-fields";
 
 interface Env {
   DB: D1Database;
@@ -17,6 +23,9 @@ interface ProductRow {
   description: string | null;
   sku: string | null;
   price: number | null;
+  last_advertised_at: number | null;
+  sales_line: string | null;
+  offer_text: string | null;
   egypt_market_status: string | null;
   warehouse_stock_status: string | null;
   verification_status: string;
@@ -45,6 +54,34 @@ function parseInteger(
     return null;
   }
   return parsed;
+}
+
+/** Adds offer metadata from existing business_settings; never selects 0006 columns. */
+async function loadOfferTexts(
+  env: Env,
+  rows: ProductRow[],
+  tenantId: string | null,
+): Promise<ProductRow[]> {
+  if (rows.length === 0) return rows;
+  const keys = rows.map((row) => productOfferSettingKey(tenantId, row.id));
+  const placeholders = keys.map(() => "?").join(",");
+  try {
+    const settings = await env.DB.prepare(
+      `SELECT key, value FROM business_settings WHERE key IN (${placeholders})`,
+    )
+      .bind(...keys)
+      .all<{ key: string; value: string | null }>();
+    const byKey = new Map(settings.results.map((row) => [row.key, row.value]));
+    return rows.map((row) => {
+      const raw = byKey.get(productOfferSettingKey(tenantId, row.id));
+      return {
+        ...row,
+        offer_text: isSafeOfferText(raw) ? sanitizeOfferText(raw) : null,
+      };
+    });
+  } catch {
+    return rows.map((row) => ({ ...row, offer_text: null }));
+  }
 }
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -112,8 +149,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         .first<{ count: number }>(),
       env.DB.prepare(`
         SELECT p.id, p.name_arabic, p.name_english, p.category, p.subcategory,
-               p.packaging_size, p.variant, p.description, p.sku, p.price,
-               p.egypt_market_status,
+               p.packaging_size, p.variant, p.description AS sales_line, p.sku,
+               p.price, p.last_advertised_at, p.egypt_market_status,
                p.warehouse_stock_status, p.verification_status, p.confidence_score,
                b.name_arabic AS brand_arabic, b.name_english AS brand_english,
                b.slug AS brand_slug,
@@ -158,10 +195,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         .all<CategoryRow>(),
     ]);
 
+    const enrichedProducts = await loadOfferTexts(
+      env,
+      products.results,
+      scope.tenantId,
+    );
+
     return Response.json(
       {
         success: true,
-        products: products.results,
+        products: enrichedProducts,
         categories: categories.results.map((row) => row.category),
         total: count?.count ?? 0,
         limit,
@@ -191,7 +234,9 @@ const productSchema = z
     brand_slug: z.string().trim().max(100).optional(),
     description: z.string().trim().max(2000).optional(),
     sku: z.string().trim().max(100).optional(),
-    price: z.number().finite().nonnegative().optional(),
+    price: z.number().finite().nonnegative().nullable().optional(),
+    sales_line: z.string().trim().max(120).optional(),
+    offer_text: z.string().trim().max(100).optional(),
   })
   .strict();
 
@@ -264,6 +309,21 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   const rows = Array.isArray(parsed.data) ? parsed.data : [parsed.data];
+  for (const row of rows) {
+    if (row.sales_line?.trim() && !isSafeSalesLine(row.sales_line)) {
+      return Response.json(
+        { success: false, error: "sales_line must be a short, claim-free phrase." },
+        { status: 400 },
+      );
+    }
+    if (row.offer_text?.trim() && !isSafeOfferText(row.offer_text)) {
+      return Response.json(
+        { success: false, error: "offer_text contains unsupported claims or urgency." },
+        { status: 400 },
+      );
+    }
+  }
+
   const tenantId = scope.tenantId;
   const brandId = await ensureTenantBrand(env, tenantId, scope.tenant);
 
@@ -271,6 +331,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const now = Date.now();
   const statements: D1PreparedStatement[] = [];
   for (const row of rows) {
+    const descriptionValue =
+      row.sales_line !== undefined
+        ? sanitizeSalesLine(row.sales_line) || null
+        : row.description ?? null;
     let resolvedBrandId = brandId;
     if (row.brand_id) {
       const b = await env.DB.prepare(
@@ -323,7 +387,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           row.subcategory ?? null,
           row.packaging_size ?? null,
           row.variant ?? null,
-          row.description ?? null,
+          descriptionValue,
           row.sku ?? null,
           row.price ?? null,
           now,
@@ -349,7 +413,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           row.subcategory ?? null,
           row.packaging_size ?? null,
           row.variant ?? null,
-          row.description ?? null,
+          descriptionValue,
           row.sku ?? null,
           row.price ?? null,
           now,
@@ -360,6 +424,26 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       created.push({ id, name_arabic: row.name_arabic, upserted: false });
     }
   }
+
+  rows.forEach((row, index) => {
+    if (row.offer_text === undefined) return;
+    const productId = created[index]?.id;
+    if (!productId) return;
+    statements.push(
+      env.DB.prepare(
+        `INSERT INTO business_settings (key, value, updated_at, tenant_key_id)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value,
+                                        updated_at = excluded.updated_at,
+                                        tenant_key_id = excluded.tenant_key_id`,
+      ).bind(
+        productOfferSettingKey(tenantId, productId),
+        sanitizeOfferText(row.offer_text) || null,
+        now,
+        tenantId,
+      ),
+    );
+  });
 
   try {
     await env.DB.batch(statements);
@@ -375,4 +459,159 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     { success: true, created, count: created.length },
     { headers: { "Cache-Control": "no-store, max-age=0, must-revalidate" } },
   );
+};
+
+const patchSchema = z
+  .object({
+    name_arabic: z.string().trim().min(1).max(200).optional(),
+    price: z.number().finite().nonnegative().nullable().optional(),
+    offer_text: z.string().trim().max(100).optional(),
+    sales_line: z.string().trim().max(120).optional(),
+  })
+  .strict();
+
+/** PATCH /api/db/products?id=... — Basic Studio inline field edits. */
+export const onRequestPatch: PagesFunction<Env> = async ({ request, env }) => {
+  const scope = await resolveTenantScope(request, env);
+  if (!scope.ok) return scope.response;
+
+  const url = new URL(request.url);
+  const id = (url.searchParams.get("id") ?? "").trim().slice(0, 100);
+  if (!id) {
+    return Response.json(
+      { success: false, error: "A product id is required." },
+      { status: 400 },
+    );
+  }
+
+  let payload: unknown;
+  try {
+    payload = await request.json();
+  } catch {
+    return Response.json(
+      { success: false, error: "Request body must be valid JSON." },
+      { status: 400 },
+    );
+  }
+
+  const parsed = patchSchema.safeParse(payload);
+  if (!parsed.success) {
+    return Response.json(
+      { success: false, error: "Invalid product patch payload." },
+      { status: 400 },
+    );
+  }
+  const patch = parsed.data;
+  if (Object.keys(patch).length === 0) {
+    return Response.json(
+      { success: false, error: "No supported fields were provided." },
+      { status: 400 },
+    );
+  }
+  if (patch.sales_line?.trim() && !isSafeSalesLine(patch.sales_line)) {
+    return Response.json(
+      { success: false, error: "sales_line must be a short, claim-free phrase." },
+      { status: 400 },
+    );
+  }
+  if (patch.offer_text?.trim() && !isSafeOfferText(patch.offer_text)) {
+    return Response.json(
+      { success: false, error: "offer_text contains unsupported claims or urgency." },
+      { status: 400 },
+    );
+  }
+
+  const tenantId = scope.tenantId;
+  try {
+    const existing = await env.DB.prepare(
+      `SELECT id, name_arabic, price, description AS sales_line
+       FROM products WHERE id = ? ${tenantId ? "AND tenant_key_id = ?" : ""} LIMIT 1`,
+    )
+      .bind(...(tenantId ? [id, tenantId] : [id]))
+      .first<{ id: string; name_arabic: string; price: number | null; sales_line: string | null }>();
+    if (!existing) {
+      return Response.json(
+        { success: false, error: "Product not found." },
+        { status: 404 },
+      );
+    }
+
+    const now = Date.now();
+    const statements: D1PreparedStatement[] = [];
+    const sets: string[] = [];
+    const values: (string | number | null)[] = [];
+
+    if (patch.name_arabic !== undefined) {
+      sets.push("name_arabic = ?");
+      values.push(patch.name_arabic);
+    }
+    if (patch.price !== undefined) {
+      sets.push("price = ?");
+      values.push(patch.price);
+    }
+    if (patch.sales_line !== undefined) {
+      sets.push("description = ?");
+      values.push(sanitizeSalesLine(patch.sales_line) || null);
+    }
+    if (sets.length > 0) {
+      sets.push("updated_at = ?");
+      values.push(now, id, ...(tenantId ? [tenantId] : []));
+      statements.push(
+        env.DB.prepare(
+          `UPDATE products SET ${sets.join(", ")} WHERE id = ? ${
+            tenantId ? "AND tenant_key_id = ?" : ""
+          }`,
+        ).bind(...values),
+      );
+    }
+
+    const settingKey = productOfferSettingKey(tenantId, id);
+    let nextOfferText: string | null = null;
+    if (patch.offer_text !== undefined) {
+      nextOfferText = sanitizeOfferText(patch.offer_text) || null;
+      statements.push(
+        env.DB.prepare(
+          `INSERT INTO business_settings (key, value, updated_at, tenant_key_id)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(key) DO UPDATE SET value = excluded.value,
+                                          updated_at = excluded.updated_at,
+                                          tenant_key_id = excluded.tenant_key_id`,
+        ).bind(settingKey, nextOfferText, now, tenantId),
+      );
+    } else {
+      const setting = await env.DB.prepare(
+        "SELECT value FROM business_settings WHERE key = ? LIMIT 1",
+      )
+        .bind(settingKey)
+        .first<{ value: string | null }>();
+      nextOfferText = setting && isSafeOfferText(setting.value)
+        ? sanitizeOfferText(setting.value)
+        : null;
+    }
+
+    await env.DB.batch(statements);
+
+    return Response.json(
+      {
+        success: true,
+        product: {
+          id,
+          name_arabic: patch.name_arabic ?? existing.name_arabic,
+          price: patch.price !== undefined ? patch.price : existing.price,
+          sales_line:
+            patch.sales_line !== undefined
+              ? sanitizeSalesLine(patch.sales_line) || null
+              : existing.sales_line,
+          offer_text: nextOfferText,
+        },
+      },
+      { headers: { "Cache-Control": "no-store, max-age=0, must-revalidate" } },
+    );
+  } catch (error) {
+    console.error("Failed to patch product.", error);
+    return Response.json(
+      { success: false, error: "Unable to update the product." },
+      { status: 500 },
+    );
+  }
 };

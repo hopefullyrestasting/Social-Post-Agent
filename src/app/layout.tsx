@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
+import { IDESIGN_STUDIO_CONFIG } from "@/lib/al-rahma/brand-core";
 import "./globals.css";
+
 export const metadata: Metadata = {
-  title: "AI Social Ad Studio",
-  description: "Multi-industry AI studio for creating social ad creatives, managing product catalogs, and generating brand-locked campaigns.",
+  title: `${IDESIGN_STUDIO_CONFIG.name} — ${IDESIGN_STUDIO_CONFIG.productName}`,
+  description: `Basic Ad Studio by ${IDESIGN_STUDIO_CONFIG.name}: upload product photos, review details, and generate two ready-to-share designs per product without repeats.`,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -16,7 +18,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           rel="stylesheet"
         />
       </head>
-      <body className="min-h-screen bg-slate-50 text-slate-900 antialiased selection:bg-emerald-100 selection:text-emerald-900">
+      <body className="min-h-screen bg-white text-slate-900 antialiased selection:bg-blue-100 selection:text-[#1D4ED8]">
         {children}
       </body>
     </html>

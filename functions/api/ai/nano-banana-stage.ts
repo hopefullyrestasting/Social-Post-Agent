@@ -13,6 +13,12 @@
  * (`packshot-hero`).
  */
 
+import {
+  buildDesignPromptBlock,
+  type CreativeSlot,
+  type TextDirection,
+} from "../../../src/lib/al-rahma/design-library";
+
 export interface NanoBananaEnv {
   GEMINI_API_KEY?: string;
 }
@@ -104,8 +110,23 @@ function moodModifier(mood: StageMood): string {
 export function buildBackgroundPrompt(
   context: NanoBananaArtDirection = {},
   template: TemplateId = "simple-botanical-horizon",
+  slot?: CreativeSlot,
+  textDirection: TextDirection = "rtl",
 ): string {
-  return [templateDescription(template), moodModifier(detectStageMood(context)), BACKGROUND_ONLY_SUFFIX]
+  const designBlock = buildDesignPromptBlock({
+    slot,
+    textDirection,
+    backgroundOnly: true,
+    compact: true,
+    context: {
+      brand: context.brand ?? null,
+      industry: context.industry ?? null,
+      category: context.category ?? null,
+      name: context.name ?? null,
+      benefits: context.benefits ?? null,
+    },
+  });
+  return [templateDescription(template), moodModifier(detectStageMood(context)), BACKGROUND_ONLY_SUFFIX, designBlock]
     .filter(Boolean)
     .join(" ");
 }
@@ -202,13 +223,14 @@ export async function generateBackgroundWithNanoBananaDetailed(
   env: NanoBananaEnv,
   template: TemplateId,
   context: NanoBananaArtDirection = {},
+  options: { slot?: CreativeSlot; textDirection?: TextDirection } = {},
 ): Promise<{ image: string | null; provider: NanoBananaStageProvider; model?: string }> {
   const key = env.GEMINI_API_KEY?.trim();
   if (!key) {
     return { image: null, provider: "studio-fallback" };
   }
 
-  const prompt = buildBackgroundPrompt(context, template);
+  const prompt = buildBackgroundPrompt(context, template, options.slot, options.textDirection ?? "rtl");
 
   try {
     const image = await callGeminiImageModel(key, MODEL_PRIMARY, prompt);
@@ -238,8 +260,9 @@ export async function generateBackgroundWithNanoBanana(
   env: NanoBananaEnv,
   template: TemplateId,
   context: NanoBananaArtDirection = {},
+  options: { slot?: CreativeSlot; textDirection?: TextDirection } = {},
 ): Promise<string | null> {
-  const result = await generateBackgroundWithNanoBananaDetailed(env, template, context);
+  const result = await generateBackgroundWithNanoBananaDetailed(env, template, context, options);
   return result.image;
 }
 
@@ -270,14 +293,20 @@ export const onRequestPost: PagesFunction<NanoBananaEnv> = async ({ request, env
   const template = (typeof body.template === "string" ? body.template : "simple-botanical-horizon") as TemplateId;
   const context: NanoBananaArtDirection = {
     brand: typeof body.brand === "string" ? body.brand : null,
+    industry: typeof body.industry === "string" ? body.industry : null,
     category: typeof body.category === "string" ? body.category : null,
     name: typeof body.name === "string" ? body.name : null,
     benefits: Array.isArray(body.benefits)
       ? body.benefits.filter((item): item is string => typeof item === "string")
       : null,
   };
+  const slot: CreativeSlot | undefined = body.slot === 1 || body.slot === 2 ? body.slot : undefined;
+  const textDirection: TextDirection = body.textDirection === "ltr" ? "ltr" : "rtl";
 
-  const staged = await generateBackgroundWithNanoBananaDetailed(env, template, context);
+  const staged = await generateBackgroundWithNanoBananaDetailed(env, template, context, {
+    slot,
+    textDirection,
+  });
   if (!staged.image) {
     return Response.json(
       {
@@ -296,6 +325,7 @@ export const onRequestPost: PagesFunction<NanoBananaEnv> = async ({ request, env
     model: staged.model ?? MODEL_PRIMARY,
     stageProvider: staged.provider,
     template,
+    designSlot: slot ?? null,
     image: staged.image,
     kind: "background-only-data-uri",
     containsProduct: false,

@@ -1,4 +1,6 @@
 import { AL_RAHMA_BRAND_CONFIG, buildBrandConfigFromTenant, type BrandConfig, type TenantBrandContext } from "./brand-core";
+import { creativeSlotRecipe, type CreativeSlot } from "./design-library";
+import { isSafeSalesLine, sanitizeSalesLine } from "./studio-fields";
 
 /**
  * Arabic copy for the pro designer WhatsApp Status composer.
@@ -37,6 +39,12 @@ export interface ProductDetails {
   /** Authentic packshot URL. Required by the composer. */
   productImageUrl?: string | null;
   warehouseStockStatus?: WarehouseStockStatus;
+  /** Optional operator-owned, claim-free sales phrase. */
+  salesLine?: string | null;
+  /** Optional explicit price. Rendered as controlled visual metadata only. */
+  price?: number | null;
+  /** Optional operator-owned offer metadata. Never injected into copy. */
+  offerText?: string | null;
 }
 
 export interface CopyOptions {
@@ -47,6 +55,8 @@ export interface CopyOptions {
   occasionGreeting?: string;
   /** Tenant brand context for dynamic multi-tenant copy. */
   brand?: TenantBrandContext | BrandConfig | null;
+  /** Design-library creative slot; selects the complementary claim-free hook. */
+  designSlot?: CreativeSlot;
 }
 
 export interface GeneratedArabicCopy {
@@ -105,7 +115,7 @@ function clampWords(text: string, min: number, max: number): string {
   if (words.length >= min) return words.join(" ");
 
   // Pad deterministically with generic commercial words when too short.
-  const fillers = ["من", "مخزن", "الرحمة", "بجودة", "مميزة", "لك", "الآن", "متاح"];
+  const fillers = ["من", "مخزن", "منتج", "بجودة", "مميزة", "لك", "الآن", "متاح"];
   const result = [...words];
   for (const filler of fillers) {
     if (result.length >= min) break;
@@ -135,10 +145,14 @@ function deriveSalesCopy(
     .split(/\s+/)
     .slice(0, 2)
     .join(" ");
+  const salesLine = isSafeSalesLine(product.salesLine)
+    ? sanitizeSalesLine(product.salesLine)
+    : "";
 
   const candidates = [
     benefits[0] ?? "",
     benefits[1] ?? benefits[0] ?? "",
+    salesLine,
     `جودة ${category} مميزة`,
     `${name} ${category}`.trim(),
     `عناية مميزة من ${AL_RAHMA_BRAND_CONFIG.brandName}`,
@@ -151,6 +165,9 @@ function deriveSalesCopy(
 }
 
 function buildHeadline(product: ProductDetails): string {
+  if (isSafeSalesLine(product.salesLine)) {
+    return sanitizeSalesLine(product.salesLine);
+  }
   const raw = (product.badgeText || product.title || "").trim();
   const words = raw.split(/\s+/).filter(Boolean);
   if (words.length >= 2) return raw;
@@ -207,10 +224,11 @@ export class ArabicCopywriter {
     const greeting = (options.occasionGreeting ?? "").trim();
     const facts = clean(product.features).map((feature) => `• ${feature}`);
     const usageFacts = clean(product.verifiedUsage).map((item) => `• ${item}`);
-    const hook =
-      variant === 1
-        ? `اختار المنتج المناسب ليك من ${brand.brandName}.`
-        : `جودة مميزة وعرض أنيق من ${brand.brandName}.`;
+    const designSlot: CreativeSlot = options.designSlot ?? (variant === 2 ? 2 : 1);
+    const hook = renderTemplate(
+      creativeSlotRecipe(designSlot).copyHookTemplate,
+      brand,
+    );
     const details = [
       category ? `القسم: ${category}` : "",
       ...facts,

@@ -448,6 +448,15 @@ export function tenantSettingKey(tenantId: string, key: string): string {
 }
 
 /** Splits a tenant-namespaced settings key back into `[tenantId, key]`. */
+/** Tenant-scoped business_settings key for one product's optional offer text. */
+export function productOfferSettingKey(
+  tenantId: string | null,
+  productId: string,
+): string {
+  const key = `offer_text:${productId}`;
+  return tenantId ? tenantSettingKey(tenantId, key) : key;
+}
+
 export function parseTenantSettingKey(
   value: string,
 ): { tenantId: string; key: string } | null {

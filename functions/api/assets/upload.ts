@@ -27,6 +27,11 @@ import {
   type AssetStoreEnv,
 } from "./_store";
 import { predictProductFromImage } from "./_vision";
+import {
+  buildStudioSalesLine,
+  isSafeSalesLine,
+  sanitizeSalesLine,
+} from "../../../src/lib/al-rahma/studio-fields";
 
 export type UploadEnv = AssetStoreEnv;
 
@@ -89,6 +94,15 @@ export const onRequestPost: PagesFunction<UploadEnv> = async ({
     return noStore({ success: false, error: "Invalid productId." }, 400);
   }
 
+  const salesLineInput = textField(form, "salesLine").slice(0, 120);
+  if (salesLineInput && !isSafeSalesLine(salesLineInput)) {
+    return noStore(
+      { success: false, error: "salesLine must be a short, claim-free phrase." },
+      400,
+    );
+  }
+  const salesLine = sanitizeSalesLine(salesLineInput);
+
   const imageFile = fileFromForm(form);
   if (!imageFile) {
     return noStore({ success: false, error: "Missing imageFile." }, 400);
@@ -147,6 +161,7 @@ export const onRequestPost: PagesFunction<UploadEnv> = async ({
     const sourceBytes = new Uint8Array(await imageFile.arrayBuffer());
     let product = productId ? await loadProduct(env, productId, scope.tenantId) : null;
     let autoCreated = false;
+    let resolvedSalesLine = salesLine;
     if (!product) {
       if (!autoCreate) {
         return noStore({ success: false, error: "Product not found." }, 404);
@@ -159,12 +174,29 @@ export const onRequestPost: PagesFunction<UploadEnv> = async ({
         fileName: imageFile.name,
         bytes: sourceBytes,
         mime,
+        salesLine,
       });
       product = await loadProduct(env, created.productId, scope.tenantId);
       autoCreated = true;
+      resolvedSalesLine = created.salesLine;
       if (!product) {
         return noStore({ success: false, error: "Failed to create product." }, 500);
       }
+    } else if (salesLine) {
+      // Operator-supplied phrase for an existing product: store it in the
+      // existing `description` column. Never inject unverified claims here.
+      await env.DB.prepare(
+        `UPDATE products SET description = ?, updated_at = ? WHERE id = ? ${
+          scope.tenantId ? "AND tenant_key_id = ?" : ""
+        }`,
+      )
+        .bind(
+          salesLine,
+          Date.now(),
+          product.id,
+          ...(scope.tenantId ? [scope.tenantId] : []),
+        )
+        .run();
     }
 
     const stored = await storeProductAsset(env, {
@@ -189,6 +221,7 @@ export const onRequestPost: PagesFunction<UploadEnv> = async ({
     return noStore({
       success: true,
       autoCreated,
+      salesLine: resolvedSalesLine || null,
       product: {
         id: product.id,
         name_arabic: product.name_arabic,
@@ -239,31 +272,68 @@ type AutoCreateInput = {
   fileName: string;
   bytes: Uint8Array;
   mime: string;
+  salesLine: string;
 };
 
-async function autoCreateProductFromImage(env: AssetStoreEnv, input: AutoCreateInput): Promise<{ productId: string }> {
+async function autoCreateProductFromImage(
+  env: AssetStoreEnv,
+  input: AutoCreateInput,
+): Promise<{ productId: string; salesLine: string }> {
   const now = Date.now();
-  let bin = ""; for (let i=0;i<input.bytes.length;i++) bin += String.fromCharCode(input.bytes[i]!); const base64 = btoa(bin); void base64;
-  const dataUrl = `data:${input.mime};base64,${base64}`;
+  let bin = "";
+  for (let i = 0; i < input.bytes.length; i++) bin += String.fromCharCode(input.bytes[i]!);
+  const base64 = btoa(bin);
   let detectedLabel = "";
   let detectedType = "";
   try {
-    const vision = await predictProductFromImage(env, { bytes: input.bytes, mime: input.mime, base64 }, input.fileName, []);
+    const vision = await predictProductFromImage(
+      env,
+      { bytes: input.bytes, mime: input.mime, base64 },
+      input.fileName,
+      [],
+    );
     detectedLabel = vision.match?.detectedLabel?.trim() || "";
     detectedType = vision.match?.detectedType?.trim() || "";
-  } catch { /* best-effort inference */ }
+  } catch {
+    /* best-effort inference */
+  }
 
-  const fileStem = input.fileName.replace(/.[^.]+$/, "").replace(/[_-]+/g, " ").replace(/s+/g, " ").trim();
+  const fileStem = input.fileName
+    .replace(/\.[^.]+$/, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   const inferredName = (detectedLabel || fileStem || "منتج جديد").slice(0, 160);
   const inferredCategory = (detectedType || input.tenantIndustry || "عام").slice(0, 80);
+  const salesLine =
+    input.salesLine ||
+    buildStudioSalesLine({
+      detectedLabel,
+      detectedType,
+      tenantIndustry: input.tenantIndustry,
+      fileName: input.fileName,
+    });
 
   const brand = await ensureTenantBrand(env, input.tenantId, input.tenantBrandName);
   const id = crypto.randomUUID();
   await env.DB.prepare(
-    `INSERT INTO products (id, brand_id, name_arabic, category, verification_status, confidence_score, created_at, updated_at, tenant_key_id)
-     VALUES (?, ?, ?, ?, 'needs_verification', 0, ?, ?, ?)`
-  ).bind(id, brand.id, inferredName, inferredCategory, now, now, input.tenantId).run();
-  return { productId: id };
+    `INSERT INTO products
+       (id, brand_id, name_arabic, category, description,
+        verification_status, confidence_score, created_at, updated_at, tenant_key_id)
+     VALUES (?, ?, ?, ?, ?, 'needs_verification', 0, ?, ?, ?)`,
+  )
+    .bind(
+      id,
+      brand.id,
+      inferredName,
+      inferredCategory,
+      salesLine || null,
+      now,
+      now,
+      input.tenantId,
+    )
+    .run();
+  return { productId: id, salesLine };
 }
 
 async function ensureTenantBrand(env: AssetStoreEnv, tenantId: string | null, brandName: string | null): Promise<{ id: string }> {

@@ -3,10 +3,13 @@ import { cairoToday, daysBetween, nextOccurrenceInWindow } from "../../_dates";
 import {
   ProductionEngine,
   buildOccasionGreeting,
+  isSafeOfferText,
+  sanitizeOfferText,
   type OccasionGreetingInput,
   type ProductDetails,
   type PromotionRecord,
 } from "../../../../src/lib/al-rahma";
+import { creativeSlotRecipe } from "../../../../src/lib/al-rahma/design-library";
 import { removePackshotBackgroundServer } from "../../ai/remove-bg";
 import { compositeProductScene } from "../../ai/product-composite";
 import {
@@ -20,12 +23,22 @@ import {
   type ArtDirectionStyleId,
   type SceneProvider,
 } from "../../ai/studio-scene";
-import { resolveTenantScope, authenticateLockedTenant, leaseGenerationSlot, releaseGenerationSlot, recordGeneration } from "../../_tenant";
+import {
+  resolveTenantScope,
+  authenticateLockedTenant,
+  leaseGenerationSlot,
+  releaseGenerationSlot,
+  recordGeneration,
+  productOfferSettingKey,
+} from "../../_tenant";
 
 /**
  * POST /api/db/campaigns/run (protected by admin middleware)
  *
  * Modes:
+ * - Basic: { mode: "basic", count?: 1..100, productIds?: string[] } ->
+ *   generates exactly 2 creatives per selected product from the sequential,
+ *   not-yet-advertised queue.
  * - Batch (legacy): { limit?: 1..5 } -> generates full campaign in one call.
  * - Plan: { planOnly: true, limit?: 1..5 } -> selects eligible products/slots,
  *   creates a campaign in "planned" state, returns the execution plan.
@@ -56,6 +69,8 @@ interface EligibleProductRow {
   verification_status: string;
   warehouse_stock_status: string | null;
   last_advertised_at: number | null;
+  description: string | null;
+  price: number | null;
   image_url: string;
   image_source: string | null;
   brand_arabic: string;
@@ -99,6 +114,18 @@ interface CalendarRow {
   days_until: number | null;
 }
 
+const basicSchema = z
+  .object({
+    mode: z.literal("basic"),
+    count: z.number().int().min(1).max(100).optional(),
+    productIds: z
+      .array(z.string().trim().min(1).max(100))
+      .min(1)
+      .max(100)
+      .optional(),
+  })
+  .strict();
+
 const batchSchema = z
   .object({ limit: z.number().int().min(1).max(5).optional() })
   .strict();
@@ -120,11 +147,21 @@ const singleSchema = z
   .strict();
 
 type RequestMode =
+  | { mode: "basic"; count: number; productIds?: string[] }
   | { mode: "batch"; limit: number }
   | { mode: "plan"; limit: number }
   | { mode: "single"; campaignId?: string; productId: string; variantIndex: 1 | 2; conditioningImage?: string };
 
 function parseRequest(payload: unknown): RequestMode | null {
+  const basic = basicSchema.safeParse(payload);
+  if (basic.success) {
+    return {
+      mode: "basic",
+      count: basic.data.count ?? 5,
+      productIds: basic.data.productIds,
+    };
+  }
+
   const plan = planSchema.safeParse(payload);
   if (plan.success) return { mode: "plan", limit: plan.data.limit ?? 5 };
 
@@ -142,7 +179,13 @@ function parseRequest(payload: unknown): RequestMode | null {
   // Batch: accepts undefined/{} or {limit}
   if (payload === undefined || payload === null || (typeof payload === "object" && !Array.isArray(payload))) {
     const obj = (payload ?? {}) as Record<string, unknown>;
-    if ("planOnly" in obj || "productId" in obj || "variantIndex" in obj || "campaignId" in obj) {
+    if (
+      "mode" in obj ||
+      "planOnly" in obj ||
+      "productId" in obj ||
+      "variantIndex" in obj ||
+      "campaignId" in obj
+    ) {
       return null;
     }
     const batch = batchSchema.safeParse(obj);
@@ -308,25 +351,40 @@ async function loadResearch(env: Env, productId: string) {
   };
 }
 
-async function selectEligibleProducts(env: Env, limit: number, tenantId: string | null = null): Promise<EligibleProductRow[]> {
-  const eligible = await env.DB.prepare(
-    `SELECT p.id, p.name_arabic, p.name_english, p.category,
-            p.verification_status, p.warehouse_stock_status, p.last_advertised_at,
-            pa.image_url, pa.source_url AS image_source,
-            b.name_arabic AS brand_arabic, b.slug AS brand_slug
-     FROM products p
-     JOIN brands b ON b.id = p.brand_id
+const ELIGIBLE_PRODUCT_COLUMNS = `p.id, p.name_arabic, p.name_english, p.category,
+       p.verification_status, p.warehouse_stock_status, p.last_advertised_at,
+       p.description, p.price, pa.image_url, pa.source_url AS image_source,
+       b.name_arabic AS brand_arabic, b.slug AS brand_slug`;
+
+const VERIFIED_ASSET_JOIN = `JOIN brands b ON b.id = p.brand_id
      JOIN product_assets pa
        ON pa.product_id = p.id
       AND pa.image_type = 'reference'
       AND pa.is_primary = 1
       AND pa.verification_status = 'verified'
       AND pa.image_url IS NOT NULL
-      AND TRIM(pa.image_url) != ''
+      AND TRIM(pa.image_url) != ''`;
+
+/**
+ * Sequential, non-repeating queue. `last_advertised_at` is the persisted D1
+ * marker; no new table or migration is required. Explicit selections are
+ * handled separately because operators may target a specific product.
+ */
+async function selectEligibleProducts(
+  env: Env,
+  limit: number,
+  tenantId: string | null = null,
+  onlyUnadvertised = true,
+): Promise<EligibleProductRow[]> {
+  const eligible = await env.DB.prepare(
+    `SELECT ${ELIGIBLE_PRODUCT_COLUMNS}
+     FROM products p
+     ${VERIFIED_ASSET_JOIN}
      WHERE p.verification_status = 'verified'
+       ${onlyUnadvertised ? "AND p.last_advertised_at IS NULL" : ""}
        ${tenantId ? "AND p.tenant_key_id = ?" : ""}
        ${tenantId ? "AND pa.tenant_key_id = ?" : ""}
-     ORDER BY RANDOM()
+     ORDER BY p.created_at ASC, p.id ASC
      LIMIT ?`,
   )
     .bind(...(tenantId ? [tenantId, tenantId, limit] : [limit]))
@@ -336,19 +394,9 @@ async function selectEligibleProducts(env: Env, limit: number, tenantId: string 
 
 async function loadEligibleProductById(env: Env, productId: string, tenantId: string | null = null): Promise<EligibleProductRow | null> {
   const row = await env.DB.prepare(
-    `SELECT p.id, p.name_arabic, p.name_english, p.category,
-            p.verification_status, p.warehouse_stock_status, p.last_advertised_at,
-            pa.image_url, pa.source_url AS image_source,
-            b.name_arabic AS brand_arabic, b.slug AS brand_slug
+    `SELECT ${ELIGIBLE_PRODUCT_COLUMNS}
      FROM products p
-     JOIN brands b ON b.id = p.brand_id
-     JOIN product_assets pa
-       ON pa.product_id = p.id
-      AND pa.image_type = 'reference'
-      AND pa.is_primary = 1
-      AND pa.verification_status = 'verified'
-      AND pa.image_url IS NOT NULL
-      AND TRIM(pa.image_url) != ''
+     ${VERIFIED_ASSET_JOIN}
      WHERE p.verification_status = 'verified' AND p.id = ?
        ${tenantId ? "AND p.tenant_key_id = ? AND pa.tenant_key_id = ?" : ""}
      LIMIT 1`,
@@ -356,6 +404,67 @@ async function loadEligibleProductById(env: Env, productId: string, tenantId: st
     .bind(...(tenantId ? [productId, tenantId, tenantId] : [productId]))
     .first<EligibleProductRow>();
   return row ?? null;
+}
+
+interface ExplicitSelectionResult {
+  products: EligibleProductRow[];
+  alreadyGenerated: string[];
+  missing: string[];
+}
+
+/** Loads an explicit operator selection, refusing any already-generated id. */
+async function loadExplicitProducts(
+  env: Env,
+  productIds: string[],
+  tenantId: string | null,
+): Promise<ExplicitSelectionResult> {
+  if (productIds.length === 0) {
+    return { products: [], alreadyGenerated: [], missing: [] };
+  }
+  const placeholders = productIds.map(() => "?").join(",");
+  const rows = await env.DB.prepare(
+    `SELECT ${ELIGIBLE_PRODUCT_COLUMNS}
+     FROM products p
+     ${VERIFIED_ASSET_JOIN}
+     WHERE p.id IN (${placeholders})
+       ${tenantId ? "AND p.tenant_key_id = ? AND pa.tenant_key_id = ?" : ""}`,
+  )
+    .bind(...productIds, ...(tenantId ? [tenantId, tenantId] : []))
+    .all<EligibleProductRow>();
+
+  const present = new Map(rows.results.map((row) => [row.id, row]));
+  const alreadyGenerated = productIds.filter(
+    (id) => present.get(id)?.last_advertised_at != null,
+  );
+  const missing = productIds.filter((id) => !present.has(id));
+  const products = productIds.flatMap((id) => {
+    const row = present.get(id);
+    return row && row.last_advertised_at == null ? [row] : [];
+  });
+  return { products, alreadyGenerated, missing };
+}
+
+/** Reads optional offer text from existing business_settings (no new columns). */
+async function loadOfferTexts(
+  env: Env,
+  productIds: string[],
+  tenantId: string | null,
+): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  if (productIds.length === 0) return result;
+  const keys = productIds.map((id) => productOfferSettingKey(tenantId, id));
+  const placeholders = keys.map(() => "?").join(",");
+  const rows = await env.DB.prepare(
+    `SELECT key, value FROM business_settings WHERE key IN (${placeholders})`,
+  )
+    .bind(...keys)
+    .all<{ key: string; value: string | null }>();
+  const byKey = new Map(rows.results.map((row) => [row.key, row.value]));
+  for (const id of productIds) {
+    const value = byKey.get(productOfferSettingKey(tenantId, id));
+    if (isSafeOfferText(value)) result.set(id, sanitizeOfferText(value));
+  }
+  return result;
 }
 
 type VariantIndex = 1 | 2;
@@ -372,9 +481,23 @@ async function generateSlotCreative(
     conditioningImage?: string | null;
     tenantIndustry?: string | null;
     tenantBrand?: { brandName?: string | null; industry?: string | null; logoUrl?: string | null } | null;
+    salesLine?: string | null;
+    price?: number | null;
+    offerText?: string | null;
   },
 ): Promise<{ creative: Record<string, unknown>; selectedId: string; stageProvider: NanoBananaStageProvider }> {
-  const { today, now, occasion, brandLogoUrl, conditioningImage, tenantIndustry, tenantBrand } = opts;
+  const {
+    today,
+    now,
+    occasion,
+    brandLogoUrl,
+    conditioningImage,
+    tenantIndustry,
+    tenantBrand,
+    salesLine,
+    price,
+    offerText,
+  } = opts;
   const seedBase = Array.from(product.id).reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
   const [style1, style2] = variantStylePair(product.id);
   const [promotion, research] = await Promise.all([
@@ -401,13 +524,19 @@ async function generateSlotCreative(
 
   const styles: [ArtDirectionStyleId, ArtDirectionStyleId] = [style1, style2];
   const targetStyle = styles[variantIndex - 1];
+  const designSlot: 1 | 2 = variantIndex;
+  const designRecipe = creativeSlotRecipe(designSlot);
 
   // Conditioning image (client-built 768x1344 canvas with BRIA cutout placed
   // at hero position) is the preferred reference for img2img so the model paints
   // the environment around the real bottle; fall back to the authentic photo.
   const compositeReference = conditioningImage?.trim() || product.image_url;
 
-  const composite = await compositeProductScene(env, compositeReference, sceneContext, { styleId: targetStyle });
+  const composite = await compositeProductScene(env, compositeReference, sceneContext, {
+    styleId: targetStyle,
+    slot: designSlot,
+    textDirection: "rtl",
+  });
 
   let stageProvider: NanoBananaStageProvider = "studio-fallback";
   let stageModel: string | undefined;
@@ -417,6 +546,8 @@ async function generateSlotCreative(
   if (!composite.image) {
     scene = await generateArtDirectedScene(env, targetStyle, sceneContext, {
       seed: seedBase + (variantIndex - 1),
+      slot: designSlot,
+      textDirection: "rtl",
     });
     if (!scene?.image && env.GEMINI_API_KEY?.trim()) {
       try {
@@ -424,6 +555,7 @@ async function generateSlotCreative(
           env,
           ART_DIRECTION_STYLES[targetStyle].template,
           sceneContext,
+          { slot: designSlot, textDirection: "rtl" },
         );
         backgroundImage = staged.image;
         stageProvider = staged.provider;
@@ -446,6 +578,9 @@ async function generateSlotCreative(
       | "in_stock"
       | "out_of_stock"
       | "unknown",
+    salesLine: salesLine ?? product.description ?? null,
+    price: price ?? product.price ?? null,
+    offerText: offerText ?? null,
   };
 
   const sceneImageUrls: { 1?: string | null; 2?: string | null } = {};
@@ -489,6 +624,9 @@ async function generateSlotCreative(
 
   const artDirection = {
     styleId: targetStyle,
+    designSlot,
+    designRecipeId: designRecipe.id,
+    designRecipeLabelAr: designRecipe.labelAr,
     styleLabelAr: styleMeta.labelAr,
     styleLabelEn: styleMeta.labelEn,
     accent: styleMeta.accent,
@@ -544,6 +682,9 @@ async function generateSlotCreative(
     sceneProvider: scene?.provider ?? "deterministic-studio",
     sceneModel: scene?.model,
     art_direction_style: targetStyle,
+    design_slot: designSlot,
+    design_recipe_id: designRecipe.id,
+    design_recipe_label_ar: designRecipe.labelAr,
     art_direction_label: styleMeta.labelAr,
     art_direction_label_en: styleMeta.labelEn,
     ai_engine: aiEngine,
@@ -811,13 +952,27 @@ async function handleSingle(env: Env, req: Extract<RequestMode, { mode: "single"
   });
 }
 
-async function handleBatch(env: Env, limit: number, tenantId: string | null = null, tenantIndustry: string | null = null, tenantBrand: { brandName?: string | null; industry?: string | null; logoUrl?: string | null } | null = null): Promise<Response> {
+interface GenerationContext {
+  tenantId: string | null;
+  tenantIndustry?: string | null;
+  tenantBrand?: { brandName?: string | null; industry?: string | null; logoUrl?: string | null } | null;
+}
+
+/** Generates exactly two creatives per selected product and persists the queue. */
+async function runGenerationBatch(
+  env: Env,
+  params: GenerationContext & {
+    mode: "basic" | "batch";
+    products: EligibleProductRow[];
+    requested: number;
+  },
+): Promise<Response> {
+  const { mode, products, requested, tenantId, tenantIndustry, tenantBrand } = params;
   const today = cairoToday();
   const now = Date.now();
-
-  const products = await selectEligibleProducts(env, limit, tenantId);
   const campaignId = crypto.randomUUID();
   const campaignDate = today;
+  const selectedIds = products.map((product) => product.id);
 
   if (products.length === 0) {
     await env.DB.prepare(
@@ -839,15 +994,19 @@ async function handleBatch(env: Env, limit: number, tenantId: string | null = nu
 
     return noStore({
       success: true,
+      mode,
       campaign: {
         id: campaignId,
         campaign_date: campaignDate,
         status: "empty",
         total_products: 0,
         total_images: 0,
+        selected_product_ids: [],
       },
+      selected_product_ids: [],
+      image_url: null,
       message:
-        "لا توجد منتجات موثّقة مع صورة مرجعية أساسية حالياً. تم حفظ حملة فارغة للتتبع. استخدم زر الاكتشاف والتوثيق أولاً.",
+        "لا توجد منتجات متبقية للتوليد. ارفع صور منتجات جديدة أو راجع التوثيق.",
       stageProvider: "studio-fallback",
       stageProvidersByProduct: {},
       artDirectionStyles: ART_DIRECTION_STYLES,
@@ -855,19 +1014,18 @@ async function handleBatch(env: Env, limit: number, tenantId: string | null = nu
     });
   }
 
-  const [occasion, brandLogoUrl] = await Promise.all([
+  const [occasion, brandLogoUrl, offerTexts] = await Promise.all([
     loadActiveOccasion(env),
     loadBrandLogoUrl(env),
+    loadOfferTexts(env, selectedIds, tenantId),
   ]);
 
   const statements: D1PreparedStatement[] = [];
   const creativesOut: Record<string, unknown>[] = [];
-  const selectedIds: string[] = [];
   let runStageProvider: NanoBananaStageProvider = "studio-fallback";
   const stageProvidersByProduct: Record<string, NanoBananaStageProvider> = {};
 
   for (const product of products) {
-    selectedIds.push(product.id);
     for (const variantIndex of [1, 2] as VariantIndex[]) {
       const { creative, stageProvider } = await generateSlotCreative(env, product, variantIndex, {
         today,
@@ -877,6 +1035,9 @@ async function handleBatch(env: Env, limit: number, tenantId: string | null = nu
         conditioningImage: null,
         tenantIndustry,
         tenantBrand,
+        salesLine: product.description,
+        price: product.price,
+        offerText: offerTexts.get(product.id) ?? null,
       });
       creative.campaign_id = campaignId;
       if (stageProvider === "nano-banana") runStageProvider = "nano-banana";
@@ -899,8 +1060,8 @@ async function handleBatch(env: Env, limit: number, tenantId: string | null = nu
           `INSERT INTO creatives
              (id, product_id, campaign_id, variant_number, image_url,
               storage_key, style_id, headline_arabic, copy_arabic,
-              quality_status, quality_notes, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              quality_status, quality_notes, created_at, tenant_key_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         ).bind(
           ins.creativeId,
           product.id,
@@ -914,6 +1075,7 @@ async function handleBatch(env: Env, limit: number, tenantId: string | null = nu
           ins.qualityStatus,
           ins.qualityNotes,
           ins.createdAt,
+          tenantId,
         ),
       );
 
@@ -922,8 +1084,10 @@ async function handleBatch(env: Env, limit: number, tenantId: string | null = nu
 
     statements.push(
       env.DB.prepare(
-        "UPDATE products SET last_advertised_at = ?, updated_at = ? WHERE id = ?",
-      ).bind(now, now, product.id),
+        `UPDATE products SET last_advertised_at = ?, updated_at = ? WHERE id = ? ${
+          tenantId ? "AND tenant_key_id = ?" : ""
+        }`,
+      ).bind(now, now, product.id, ...(tenantId ? [tenantId] : [])),
     );
   }
 
@@ -944,7 +1108,7 @@ async function handleBatch(env: Env, limit: number, tenantId: string | null = nu
       creativesOut.length,
       now,
       now,
-      selectedIds.length < limit
+      selectedIds.length < requested
         ? `Only ${selectedIds.length} eligible verified product(s) were available.`
         : null,
       now,
@@ -956,6 +1120,7 @@ async function handleBatch(env: Env, limit: number, tenantId: string | null = nu
 
   return noStore({
     success: true,
+    mode,
     campaign: {
       id: campaignId,
       campaign_date: campaignDate,
@@ -964,17 +1129,62 @@ async function handleBatch(env: Env, limit: number, tenantId: string | null = nu
       total_images: creativesOut.length,
       selected_product_ids: selectedIds,
     },
-    requested: limit,
-    message:
-      selectedIds.length < limit
-        ? `تم توليد ${creativesOut.length} إعلاناً لـ ${selectedIds.length} منتج موثّق (أقل من 5 منتجات متاحة حالياً — استخدم زر الاكتشاف لزيادة التنوع).`
-        : `تم توليد ${creativesOut.length} إعلاناً لـ ${selectedIds.length} منتجات موثّقة بأنماط إخراج فنية متنوعة.`,
+    selected_product_ids: selectedIds,
+    image_url: typeof creativesOut[0]?.image_url === "string" ? creativesOut[0].image_url : null,
+    requested,
+    message: `تم توليد ${creativesOut.length} تصميمًا لـ ${selectedIds.length} منتج (تصميمان لكل منتج، بلا تكرار).`,
     occasion,
     stageProvider: runStageProvider,
     stageProvidersByProduct,
     artDirectionStyles: ART_DIRECTION_STYLES,
     creatives: creativesOut,
   });
+}
+
+async function handleBatch(env: Env, limit: number, ctx: GenerationContext): Promise<Response> {
+  const products = await selectEligibleProducts(env, limit, ctx.tenantId);
+  return runGenerationBatch(env, { ...ctx, mode: "batch", products, requested: limit });
+}
+
+async function handleBasic(
+  env: Env,
+  req: Extract<RequestMode, { mode: "basic" }>,
+  ctx: GenerationContext,
+): Promise<Response> {
+  if (req.productIds?.length) {
+    const selection = await loadExplicitProducts(env, req.productIds, ctx.tenantId);
+    if (selection.alreadyGenerated.length > 0) {
+      return noStore(
+        {
+          success: false,
+          code: "already_generated",
+          error: "Selected products have already been generated.",
+          productIds: selection.alreadyGenerated,
+        },
+        409,
+      );
+    }
+    if (selection.missing.length > 0) {
+      return noStore(
+        {
+          success: false,
+          code: "products_not_eligible",
+          error: "Selected products are missing or not eligible for generation.",
+          productIds: selection.missing,
+        },
+        404,
+      );
+    }
+    return runGenerationBatch(env, {
+      ...ctx,
+      mode: "basic",
+      products: selection.products,
+      requested: selection.products.length,
+    });
+  }
+
+  const products = await selectEligibleProducts(env, req.count, ctx.tenantId);
+  return runGenerationBatch(env, { ...ctx, mode: "basic", products, requested: req.count });
 }
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -1023,13 +1233,30 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     leaseUntil = lease.leaseUntil;
   }
 
+  const ctx: GenerationContext = {
+    tenantId: scope.tenantId,
+    tenantIndustry: scope.tenant?.brand?.industry ?? null,
+    tenantBrand: scope.tenant?.brand
+      ? {
+          brandName: scope.tenant.brand.brandName,
+          industry: scope.tenant.brand.industry,
+          logoUrl: scope.tenant.brand.logoUrl,
+        }
+      : null,
+  };
+
   try {
     if (mode.mode === "plan") return await handlePlan(env, mode.limit, scope.tenantId);
-    if (mode.mode === "single") return await handleSingle(env, mode, scope.tenantId);
-    const response = await handleBatch(env, mode.limit, scope.tenantId);
+    if (mode.mode === "single") {
+      return await handleSingle(env, mode, ctx.tenantId, ctx.tenantIndustry, ctx.tenantBrand);
+    }
+    const response =
+      mode.mode === "basic"
+        ? await handleBasic(env, mode, ctx)
+        : await handleBatch(env, mode.limit, ctx);
     if (scope.tenantId) {
       await recordGeneration(env, scope.tenantId, {
-        action: "campaign_batch",
+        action: mode.mode === "basic" ? "basic_studio" : "campaign_batch",
         campaignId: null,
         notes: mode.mode,
       });

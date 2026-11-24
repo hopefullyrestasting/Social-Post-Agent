@@ -1,15 +1,134 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import IDMark from "@/components/idesign/id-mark";
+import LanguageSwitcher from "@/components/idesign/language-switcher";
+import { IDESIGN_STUDIO_CONFIG } from "@/lib/al-rahma/brand-core";
+import {
+  languageDirection,
+  translate,
+  type LanguageCode,
+  type TranslationKey,
+} from "@/lib/al-rahma/i18n";
 
 export default function Home() {
+  const [language, setLanguage] = useState<LanguageCode>("ar");
+  const direction = languageDirection(language);
+  const text = (key: TranslationKey) => translate(language, key);
+
+  useEffect(() => {
+    document.documentElement.lang = language;
+    document.documentElement.dir = direction;
+  }, [language, direction]);
+
   return (
-    <main dir="rtl" className="flex min-h-screen items-center justify-center bg-[#071d3b] px-5 text-white">
-      <section className="w-full max-w-2xl rounded-3xl border border-white/15 bg-white/5 p-8 text-center shadow-2xl sm:p-12">
-        <p className="text-sm font-semibold text-cyan-200">AI Social Ad Studio</p>
-        <h1 className="mt-4 text-4xl font-black">استوديو إعلانات اجتماعية متعدد الصناعات</h1>
-        <p className="mt-4 text-lg leading-8 text-slate-200">أنشئ إعلانات منتجات بهوية علامتك التجارية، مع عزل كامل للبيانات لكل مفتاح تفعيل سنوي.</p>
-        <Link href="/dashboard" className="mt-8 inline-flex rounded-xl bg-emerald-500 px-7 py-3 font-extrabold text-white transition hover:bg-emerald-400">فتح لوحة التحكم</Link>
-        <p className="mt-6 text-sm text-slate-300">أدخل مفتاح التفعيل داخل لوحة التحكم لبدء مساحة العمل الخاصة بعلامتك.</p>
-      </section>
+    <main
+      dir={direction}
+      className="min-h-screen bg-white text-slate-900"
+    >
+      <header className="border-b border-blue-100 bg-white">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-5 py-4">
+          <div className="flex items-center gap-3">
+            <IDMark />
+            <span className="leading-tight">
+              <span className="block text-lg font-black text-[#1D4ED8]">
+                {IDESIGN_STUDIO_CONFIG.name} · {text("introBadge")}
+              </span>
+              <span className="block text-xs font-semibold text-slate-500" dir="ltr">
+                {IDESIGN_STUDIO_CONFIG.productName}
+              </span>
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <LanguageSwitcher
+              language={language}
+              onChange={setLanguage}
+              label={text("language")}
+              dir={direction}
+            />
+            <Link
+              href="/dashboard"
+              className="rounded-lg border border-blue-200 px-3 py-2 text-sm font-bold text-[#1D4ED8] transition hover:bg-blue-50"
+            >
+              {text("openStudio")}
+            </Link>
+          </div>
+        </div>
+      </header>
+
+      <div className="mx-auto max-w-6xl px-5 py-14 sm:py-20">
+        <section className="grid items-center gap-10 lg:grid-cols-[1.15fr_0.85fr]">
+          <div>
+            <p className="text-sm font-extrabold tracking-wide text-[#2563EB]">
+              {IDESIGN_STUDIO_CONFIG.name} · {IDESIGN_STUDIO_CONFIG.productName}
+            </p>
+            <h1 className="mt-4 text-4xl font-black leading-tight text-slate-900 sm:text-5xl">
+              {text("heroTitle")}
+            </h1>
+            <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-600">
+              {text("heroSubtitle")}
+            </p>
+            <div className="mt-8 flex flex-wrap items-center gap-3">
+              <Link
+                href="/dashboard"
+                className="rounded-xl bg-[#1D4ED8] px-7 py-3 font-extrabold text-white shadow-sm transition hover:bg-[#1E40AF]"
+              >
+                {text("openStudio")}
+              </Link>
+              <p className="text-sm text-slate-500">{text("introCtaNote")}</p>
+            </div>
+          </div>
+
+          <aside className="rounded-3xl border border-blue-100 bg-gradient-to-br from-white to-blue-50 p-7 shadow-sm">
+            <div className="flex items-center gap-3">
+              <IDMark size={40} />
+              <p className="font-black text-[#1D4ED8]">{text("contact")}</p>
+            </div>
+            <div className="mt-6 space-y-3 text-sm font-semibold" dir="ltr">
+              <a
+                href={IDESIGN_STUDIO_CONFIG.websiteUrl}
+                className="block text-blue-700 underline"
+              >
+                {IDESIGN_STUDIO_CONFIG.websiteLabel}
+              </a>
+              <a
+                href={IDESIGN_STUDIO_CONFIG.emailUrl}
+                className="block text-blue-700 underline"
+              >
+                {IDESIGN_STUDIO_CONFIG.email}
+              </a>
+              <a
+                href={IDESIGN_STUDIO_CONFIG.whatsappUrl}
+                className="block text-blue-700 underline"
+              >
+                {IDESIGN_STUDIO_CONFIG.phoneLabel}
+              </a>
+            </div>
+            <p className="mt-6 rounded-xl bg-white p-4 text-xs leading-6 text-slate-500">
+              {text("downloadHint")}
+            </p>
+          </aside>
+        </section>
+      </div>
+
+      <footer className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 border-t border-blue-100 px-5 py-6 text-xs text-slate-500">
+        <p className="flex items-center gap-2">
+          <IDMark small />
+          {IDESIGN_STUDIO_CONFIG.productName} · {IDESIGN_STUDIO_CONFIG.tagline}
+        </p>
+        <p className="flex flex-wrap gap-3" dir="ltr">
+          <a href={IDESIGN_STUDIO_CONFIG.websiteUrl} className="text-blue-700 underline">
+            {IDESIGN_STUDIO_CONFIG.websiteLabel}
+          </a>
+          <a href={IDESIGN_STUDIO_CONFIG.emailUrl} className="text-blue-700 underline">
+            {IDESIGN_STUDIO_CONFIG.email}
+          </a>
+          <a href={IDESIGN_STUDIO_CONFIG.whatsappUrl} className="text-blue-700 underline">
+            {IDESIGN_STUDIO_CONFIG.phoneLabel}
+          </a>
+        </p>
+      </footer>
     </main>
   );
 }

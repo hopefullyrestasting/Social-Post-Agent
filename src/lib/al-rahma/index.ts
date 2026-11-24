@@ -6,4 +6,6 @@ export * from "./background-provider";
 export * from "./overlay-system";
 export * from "./quality-gate";
 export * from "./production-engine";
+export * from "./i18n";
+export * from "./studio-fields";
 export * from "./svg-utils";
