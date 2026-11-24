@@ -9,6 +9,10 @@ import {
   type CreativeSlot,
   type TextDirection,
 } from "../../../src/lib/al-rahma/design-library";
+import {
+  optionalProductVisualBrief,
+  type ProductVisualCommercialBrief,
+} from "../../../src/lib/al-rahma/product-visual-brief";
 
 /**
  * POST/GET /api/ai/studio-scene
@@ -49,6 +53,7 @@ export interface ArtDirectionContext {
   category?: string | null;
   name?: string | null;
   benefits?: string[] | null;
+  visualBrief?: ProductVisualCommercialBrief | null;
 }
 
 export interface ArtDirectionStyle {
@@ -260,6 +265,7 @@ export function buildScenePrompt(
       category: context?.category ?? null,
       name: context?.name ?? null,
       benefits: context?.benefits ?? null,
+      visualBrief: context?.visualBrief ?? null,
     },
   });
   return `${prompt} ${categoryMood(context)} ${designBlock}`;
@@ -488,11 +494,20 @@ function parseSceneRequest(body: Record<string, unknown>): {
   const slot = body.slot === 1 || body.slot === 2 ? body.slot : undefined;
   const textDirection: TextDirection = body.textDirection === "ltr" ? "ltr" : "rtl";
   const rawContext = (body.context && typeof body.context === "object" ? body.context : {}) as Record<string, unknown>;
+  const name = typeof rawContext.name === "string" ? rawContext.name : null;
+  const category = typeof rawContext.category === "string" ? rawContext.category : null;
+  const industry = typeof rawContext.industry === "string" ? rawContext.industry : null;
   const context: ArtDirectionContext = {
     brand: typeof rawContext.brand === "string" ? rawContext.brand : null,
-    category: typeof rawContext.category === "string" ? rawContext.category : null,
-    name: typeof rawContext.name === "string" ? rawContext.name : null,
+    industry,
+    category,
+    name,
     benefits: Array.isArray(rawContext.benefits) ? rawContext.benefits.filter((item): item is string => typeof item === "string") : null,
+    visualBrief: optionalProductVisualBrief(
+      rawContext.visualBrief,
+      "ar",
+      { identity: name ?? "product", category: category ?? "general", industry: industry ?? "general" },
+    ),
   };
   return { styleId, template, promptOverride, seed, context, slot, textDirection };
 }

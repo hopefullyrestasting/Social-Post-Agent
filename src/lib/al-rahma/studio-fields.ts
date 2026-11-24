@@ -88,6 +88,25 @@ export function sanitizeSalesLine(value: string | null | undefined): string {
 }
 
 /**
+ * Operator input wins; a vision-derived brief may only contribute a short,
+ * claim-free sales line after passing the same guard. Unsafe analysis is
+ * dropped instead of being rewritten into a claim.
+ */
+export function resolveSalesLine(input: {
+  salesLine?: string | null;
+  visualBrief?: { shortSalesLine?: string | null } | null;
+}): string {
+  const explicit = isSafeSalesLine(input.salesLine)
+    ? sanitizeSalesLine(input.salesLine)
+    : "";
+  if (explicit) return explicit;
+  const fromBrief = isSafeSalesLine(input.visualBrief?.shortSalesLine)
+    ? sanitizeSalesLine(input.visualBrief?.shortSalesLine)
+    : "";
+  return fromBrief;
+}
+
+/**
  * Deterministic sales line derived only from observed labels/category/files.
  * It describes the product category, never an unverified benefit.
  */

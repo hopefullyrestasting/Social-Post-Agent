@@ -10,8 +10,12 @@
  * - the authentic product is the hero and is never redrawn;
  * - text zones stay calm and legible;
  * - price/offer are operator-owned and absent unless explicitly supplied;
- * - lighting and context respect the product/industry and text direction.
+ * - lighting and context respect the product/industry and text direction;
+ * - guarded visual-brief analysis may refine staging, never invent copy.
  */
+
+import { createAdZones } from "./layout-geometry";
+import type { ProductVisualCommercialBrief } from "./product-visual-brief";
 
 export const DESIGN_RULE_IDS = [
   "product-hero-dominance",
@@ -175,6 +179,8 @@ export interface DesignContext {
   category?: string | null;
   name?: string | null;
   benefits?: readonly string[] | null;
+  /** Guarded deep visual brief from the vision stage; never trusted for claims. */
+  visualBrief?: ProductVisualCommercialBrief | null;
 }
 
 export interface DesignPromptOptions {
@@ -185,15 +191,20 @@ export interface DesignPromptOptions {
   backgroundOnly?: boolean;
   /** Shorter form for safety retries where prompt length matters. */
   compact?: boolean;
+  /** Explicit brief override for callers that do not carry a full context. */
+  visualBrief?: ProductVisualCommercialBrief | null;
 }
 
 /** Context tone guard shared by scene, composite and background prompt builders. */
 export function contextMoodDirective(context: DesignContext = {}): string {
+  const brief = context.visualBrief ?? null;
+  const industry = context.industry || brief?.industry || null;
   const haystack = [
     context.brand,
-    context.industry,
-    context.category,
-    context.name,
+    industry,
+    context.category || brief?.category,
+    context.name || brief?.identity,
+    brief?.lightingMood,
     ...(context.benefits ?? []),
   ]
     .filter(Boolean)
@@ -204,11 +215,11 @@ export function contextMoodDirective(context: DesignContext = {}): string {
     /(industrial|auto|automotive|engine|mechanic|tool|electronic|hardware|machinery|ميكانيك|سيارات|الكترونيات|صناعي|معدات)/.test(
       haystack,
     );
-  const beautyIndustry = Boolean(context.industry) &&
+  const beautyIndustry = Boolean(industry) &&
     /(perfume|fragrance|beauty|cosmetic|skincare|haircare|skin|عطر|تجميل|عناية|بشرة|شعر)/i.test(
-      context.industry ?? "",
+      industry ?? "",
     );
-  if (industrial || (context.industry && !beautyIndustry)) {
+  if (industrial || (industry && !beautyIndustry)) {
     return "Neutral professional studio context: no beauty, cosmetic or spa styling.";
   }
   if (/(oud|oriental|amber|smoke|incense|perfume|fragrance|عطر|عود|برفان)/.test(haystack)) {
@@ -218,6 +229,41 @@ export function contextMoodDirective(context: DesignContext = {}): string {
     return "Fresh botanical care context with soft natural daylight.";
   }
   return "Premium editorial retail context with restrained, product-first styling.";
+}
+
+const DEFAULT_BRIEF_PALETTE = ["#FFFFFF", "#1D4ED8", "#2563EB"];
+
+/**
+ * Adds observed product staging signals only. Identity/category/industry are
+ * already covered by the context mood directive; commercial claims are never
+ * forwarded to an image model.
+ */
+export function visualBriefDirective(
+  brief: ProductVisualCommercialBrief | null | undefined,
+): string {
+  if (!brief) return "";
+  const tones = (brief.dominantTones ?? []).filter(Boolean).slice(0, 4);
+  const palette = (brief.palette ?? []).filter(
+    (color) =>
+      !DEFAULT_BRIEF_PALETTE.some(
+        (fallback) => fallback.toLowerCase() === color.toLowerCase(),
+      ),
+  ).slice(0, 4);
+  const finish = brief.surfaceFinish && brief.surfaceFinish !== "mixed"
+    ? brief.surfaceFinish
+    : "";
+  const lighting = brief.lightingMood && brief.lightingMood !== "cool-studio"
+    ? brief.lightingMood
+    : "";
+  if (!tones.length && !palette.length && !finish && !lighting) return "";
+
+  const details = [
+    tones.length ? `dominant tones ${tones.join(", ")}` : "",
+    finish ? `surface finish ${finish}` : "",
+    palette.length ? `harmonious palette ${palette.join(", ")}` : "",
+    lighting ? `lighting mood ${lighting}` : "",
+  ].filter(Boolean);
+  return `PRODUCT VISUAL BRIEF: observed product staging only — ${details.join("; ")}. Use it to guide light and surface, never to generate text, prices, claims or a redrawn package.`;
 }
 
 /**
@@ -241,11 +287,14 @@ export function buildDesignPromptBlock(options: DesignPromptOptions = {}): strin
       ]
     : rules;
   const context = options.compact ? "" : contextMoodDirective(options.context);
+  const brief = options.visualBrief ?? options.context?.visualBrief ?? null;
+  const visualBrief = visualBriefDirective(brief);
 
   return [
     "DESIGN SYSTEM (binding rules):",
     ...ruleSet,
     context,
+    visualBrief,
     direction,
     slotDirective,
   ]
@@ -312,6 +361,12 @@ export const DESIGN_LAYOUT = {
   /** Bottom contact vignette begins here on the 1080x1920 canvas. */
   contactBarY: 1770,
 } as const;
+
+/** Keeps the commercial badge inside the collision-free lower geometry zone. */
+export function commercialBadgeYForSize(width: number, height: number): number {
+  const zones = createAdZones(width, height, { price: true, offer: true });
+  return zones.priceZone?.y ?? DESIGN_LAYOUT.commercialBadgeY;
+}
 
 export interface CommercialBadgeAnchors {
   priceX: number;

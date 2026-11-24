@@ -6,9 +6,8 @@
 -- are nullable so existing rows stay untouched and absent values render as
 -- absent in creatives (never as invented prices or offers).
 --
--- NOTE: this migration is intentionally NOT applied to the remote database by
--- this feature branch. Apply locally with:
---   npx wrangler d1 migrations apply makhzan-al-rahma --local
+-- Apply once to the remote database with:
+--   npx wrangler d1 migrations apply makhzan-al-rahma --remote
 
 ALTER TABLE products ADD COLUMN offer_text TEXT;
 ALTER TABLE products ADD COLUMN sales_line TEXT;

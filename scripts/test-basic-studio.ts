@@ -28,6 +28,7 @@ import {
   headlinePlanForSlot,
 } from "../src/lib/al-rahma/design-library";
 import { OverlaySystem } from "../src/lib/al-rahma/overlay-system";
+import { parseProductVisualBrief } from "../src/lib/al-rahma/product-visual-brief";
 import { ProductionEngine } from "../src/lib/al-rahma/production-engine";
 import { LANGUAGES, I18N, languageDirection, translate } from "../src/lib/al-rahma/i18n";
 import {
@@ -404,6 +405,36 @@ function testDesignLibraryContract() {
     assert.ok(variant.svgOverlay.includes("operator-offer-badge"));
   }
 
+  const briefFallback = { identity: product.title, category: product.category, industry: "beauty" };
+  const safeBrief = parseProductVisualBrief(
+    { shortSalesLine: "جودة عناية موثوقة لك" },
+    "ar",
+    briefFallback,
+  );
+  const briefVariants = ProductionEngine.executeVariants({
+    product: { ...product, salesLine: null, visualBrief: safeBrief },
+    today: "2026-11-24",
+  });
+  assert.equal(
+    briefVariants[0].metadata.salesLine,
+    "جودة عناية موثوقة لك",
+    "a guarded vision brief may supply a claim-free sales line",
+  );
+  const unsafeBrief = parseProductVisualBrief(
+    { shortSalesLine: "علاج مضمون من أول استخدام" },
+    "ar",
+    briefFallback,
+  );
+  const unsafeVariants = ProductionEngine.executeVariants({
+    product: { ...product, salesLine: null, visualBrief: unsafeBrief },
+    today: "2026-11-24",
+  });
+  assert.equal(
+    unsafeVariants[0].metadata.salesLine,
+    null,
+    "unsafe vision copy must never reach the creative",
+  );
+
   const ltrOverlay = OverlaySystem.generateOverlaySvg({
     headline: product.title,
     designSlot: 2,
@@ -590,7 +621,7 @@ async function run() {
   await testConditionalMetadata();
   await testBrandingAndLanguageContract();
   console.log(
-    "Basic Studio tests passed: sequential non-repeating batches with reload persistence, 2 distinct design slots per product, custom count/selection, already-generated 409, design-library hierarchy/prompt rules, conditional price/offer metadata with intact quality gate, RTL/LTR alignment, centralised iDesign branding/links, and six-language switcher contract.",
+    "Basic Studio tests passed: sequential non-repeating batches with reload persistence, 2 distinct design slots per product, custom count/selection, already-generated 409, design-library hierarchy/prompt rules, guarded vision-brief copy fallback, conditional price/offer metadata with intact quality gate, RTL/LTR alignment, centralised iDesign branding/links, and six-language switcher contract.",
   );
 }
 

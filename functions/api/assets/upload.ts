@@ -30,6 +30,7 @@ import { predictProductFromImage } from "./_vision";
 import {
   buildStudioSalesLine,
   isSafeSalesLine,
+  resolveSalesLine,
   sanitizeSalesLine,
 } from "../../../src/lib/al-rahma/studio-fields";
 
@@ -285,6 +286,7 @@ async function autoCreateProductFromImage(
   const base64 = btoa(bin);
   let detectedLabel = "";
   let detectedType = "";
+  let visualBrief: Awaited<ReturnType<typeof predictProductFromImage>>["visualBrief"] = null;
   try {
     const vision = await predictProductFromImage(
       env,
@@ -294,6 +296,7 @@ async function autoCreateProductFromImage(
     );
     detectedLabel = vision.match?.detectedLabel?.trim() || "";
     detectedType = vision.match?.detectedType?.trim() || "";
+    visualBrief = vision.visualBrief;
   } catch {
     /* best-effort inference */
   }
@@ -306,7 +309,8 @@ async function autoCreateProductFromImage(
   const inferredName = (detectedLabel || fileStem || "منتج جديد").slice(0, 160);
   const inferredCategory = (detectedType || input.tenantIndustry || "عام").slice(0, 80);
   const salesLine =
-    input.salesLine ||
+    (isSafeSalesLine(input.salesLine) ? sanitizeSalesLine(input.salesLine) : "") ||
+    resolveSalesLine({ visualBrief }) ||
     buildStudioSalesLine({
       detectedLabel,
       detectedType,

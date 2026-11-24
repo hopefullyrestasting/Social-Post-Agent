@@ -32,6 +32,7 @@ import {
   loadReferenceImage,
   onRequestPost as postProductComposite,
 } from "../functions/api/ai/product-composite";
+import { parseProductVisualBrief } from "../src/lib/al-rahma/product-visual-brief";
 
 /**
  * Regression tests for the three rotating luxury art directions, scene/composite
@@ -108,6 +109,26 @@ function testArtDirectionStyles() {
   assert.match(slot1Scene, /Stage-first framing/i);
   assert.doesNotMatch(slot1Scene, /Keep the authentic product as the unmistakable hero/);
   assert.match(buildScenePrompt("coastal-sunlit-stone-caustics", {}, 1, "ltr"), /left-to-right/);
+
+  const visualBrief = parseProductVisualBrief(
+    {
+      dominantTones: ["champagne", "amber"],
+      palette: ["#B45309", "#FDE68A"],
+      surfaceFinish: "glass",
+      lightingMood: "warm",
+      shortSalesLine: "عطر مميز لك",
+    },
+    "ar",
+    { identity: "عطر", category: "perfume", industry: "fragrance" },
+  );
+  const briefScene = buildScenePrompt(
+    "coastal-sunlit-stone-caustics",
+    { category: "perfume", visualBrief },
+    1,
+  );
+  assert.match(briefScene, /PRODUCT VISUAL BRIEF/);
+  assert.match(briefScene, /dominant tones champagne, amber/);
+  assert.doesNotMatch(briefScene, /عطر مميز لك/, "brief copy must not enter image prompts");
 
   // Background-only contract: prompts forbid the product and never ask to preserve it.
   for (const template of [
@@ -578,7 +599,7 @@ async function run() {
   testAdminProtection();
 
   console.log(
-    "Phase 16 tests passed: 4 rotating luxury art directions (Coastal Sunlit Stone & Caustics, Botanical Horizon Reflection, Noir Basalt & Golden Rim-Light), distinct variant pairs, design-library slot directives, color-adapted prompts with anti-clutter/no-garbled-text guards, deterministic inline fallbacks, background-only Nano Banana, reference-conditioned product compositing (Gemini/HF/Workers AI klein with timeout-safe retries), harvest safety, and admin protection.",
+    "Phase 16 tests passed: 4 rotating luxury art directions (Coastal Sunlit Stone & Caustics, Botanical Horizon Reflection, Noir Basalt & Golden Rim-Light), distinct variant pairs, design-library slot directives, guarded visual-brief staging, color-adapted prompts with anti-clutter/no-garbled-text guards, deterministic inline fallbacks, background-only Nano Banana, reference-conditioned product compositing (Gemini/HF/Workers AI klein with timeout-safe retries), harvest safety, and admin protection.",
   );
 }
 

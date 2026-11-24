@@ -10,6 +10,7 @@ import {
   type PromotionRecord,
 } from "../../../../src/lib/al-rahma";
 import { creativeSlotRecipe } from "../../../../src/lib/al-rahma/design-library";
+import { parseProductVisualBrief } from "../../../../src/lib/al-rahma/product-visual-brief";
 import { removePackshotBackgroundServer } from "../../ai/remove-bg";
 import { compositeProductScene } from "../../ai/product-composite";
 import {
@@ -514,12 +515,30 @@ async function generateSlotCreative(
   const cutoutApplied = Boolean(cutoutImage);
   const productImageUrl = cutoutImage ?? product.image_url;
 
+  // The brief is reconstructed from existing product metadata; vision-derived
+  // fields are added by the upload stage when available. Claims stay guarded.
+  const visualBrief = parseProductVisualBrief(
+    {
+      identity: product.name_arabic,
+      category: product.category ?? "general",
+      industry: tenantIndustry ?? "general",
+      shortSalesLine: salesLine ?? product.description ?? "",
+    },
+    "ar",
+    {
+      identity: product.name_arabic,
+      category: product.category ?? "general",
+      industry: tenantIndustry ?? "general",
+    },
+  );
+
   const sceneContext = {
     brand: product.brand_arabic,
     industry: tenantIndustry,
     category: product.category,
     name: product.name_arabic,
     benefits: research.verifiedBenefits,
+    visualBrief,
   };
 
   const styles: [ArtDirectionStyleId, ArtDirectionStyleId] = [style1, style2];
@@ -579,6 +598,7 @@ async function generateSlotCreative(
       | "out_of_stock"
       | "unknown",
     salesLine: salesLine ?? product.description ?? null,
+    visualBrief,
     price: price ?? product.price ?? null,
     offerText: offerText ?? null,
   };

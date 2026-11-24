@@ -35,6 +35,10 @@ import {
   type CreativeSlot,
   type TextDirection,
 } from "../../../src/lib/al-rahma/design-library";
+import {
+  optionalProductVisualBrief,
+  type ProductVisualCommercialBrief,
+} from "../../../src/lib/al-rahma/product-visual-brief";
 
 interface AiBinding {
   run: (model: string, input: Record<string, unknown>) => Promise<unknown>;
@@ -54,6 +58,7 @@ export interface ProductCompositeContext {
   category?: string | null;
   name?: string | null;
   benefits?: string[] | null;
+  visualBrief?: ProductVisualCommercialBrief | null;
 }
 
 export type ProductCompositeProvider =
@@ -1103,16 +1108,24 @@ export const onRequestPost: PagesFunction<ProductCompositeEnv> = async ({
   const rawContext = (body.context && typeof body.context === "object"
     ? body.context
     : {}) as Record<string, unknown>;
+  const name = typeof rawContext.name === "string" ? rawContext.name : null;
+  const category = typeof rawContext.category === "string" ? rawContext.category : null;
+  const industry = typeof rawContext.industry === "string" ? rawContext.industry : null;
   const context: ProductCompositeContext = {
     brand: typeof rawContext.brand === "string" ? rawContext.brand : null,
-    industry: typeof rawContext.industry === "string" ? rawContext.industry : null,
-    category: typeof rawContext.category === "string" ? rawContext.category : null,
-    name: typeof rawContext.name === "string" ? rawContext.name : null,
+    industry,
+    category,
+    name,
     benefits: Array.isArray(rawContext.benefits)
       ? rawContext.benefits.filter(
           (item): item is string => typeof item === "string",
         )
       : null,
+    visualBrief: optionalProductVisualBrief(
+      rawContext.visualBrief,
+      "ar",
+      { identity: name ?? "product", category: category ?? "general", industry: industry ?? "general" },
+    ),
   };
 
   const styleId = isStyleId(body.styleId) ? body.styleId : undefined;

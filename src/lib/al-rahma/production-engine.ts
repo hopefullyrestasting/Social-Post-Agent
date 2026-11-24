@@ -26,7 +26,7 @@ import {
   type CreativeSlot,
   type TextDirection,
 } from "./design-library";
-import { formatPriceText, isSafeOfferText, sanitizeOfferText } from "./studio-fields";
+import { formatPriceText, isSafeOfferText, resolveSalesLine, sanitizeOfferText } from "./studio-fields";
 import { OverlayOptions, OverlaySystem } from "./overlay-system";
 import { QualityGate, QualityGateReport } from "./quality-gate";
 
@@ -211,7 +211,7 @@ export class ProductionEngine {
         : "";
     const explicitOffer = request.offerText ?? product.offerText ?? null;
     const offerText = isSafeOfferText(explicitOffer) ? sanitizeOfferText(explicitOffer) : "";
-    const salesLine = (product.salesLine ?? "").trim() || null;
+    const salesLine = resolveSalesLine(product) || null;
 
     const copy = ArabicCopywriter.generatePost(product, angle, {
       variant: variantNumber,

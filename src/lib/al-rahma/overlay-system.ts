@@ -1,3 +1,4 @@
+import { assertZonesDoNotOverlap, createAdZones, fitText } from "./layout-geometry";
 ﻿import { AL_RAHMA_BRAND_CONFIG, buildBrandConfigFromTenant, type BrandConfig, type TenantBrandContext } from "./brand-core";
 import {
   BackgroundLayer,
@@ -8,6 +9,7 @@ import {
 import { OccasionGreetingInput, ValidPromotion } from "./commercial";
 import {
   commercialBadgeAnchors,
+  commercialBadgeYForSize,
   DESIGN_LAYOUT,
   type CreativeSlot,
   type TextDirection,
@@ -231,6 +233,7 @@ function wrapHeadline(text: string, maxChars: number, maxLines: number): string[
 
 function dualToneHeadline(
   width: number,
+  height: number,
   headline: string | undefined,
   benefitLine: string | undefined,
   lines: HeadlineLines | undefined,
@@ -243,8 +246,19 @@ function dualToneHeadline(
   const line3 = (lines?.line3 ?? "").trim();
   if (!line1 && !line2 && !line3) return "";
 
-  const x = width / 2;
-  let y = DESIGN_LAYOUT.headlineTopY;
+  // Geometry guard: place the headline inside the reserved upper zone and keep
+  // a deterministic fit measurement for QA. The master 76/78/42px type scale
+  // stays fixed so the signed-off art direction does not drift between batches.
+  const headlineZone = createAdZones(width, height).headlineZone;
+  const fitted = fitText(
+    [line1, line2, line3].filter(Boolean).join(" "),
+    headlineZone,
+    direction,
+    76,
+    36,
+  );
+  const x = headlineZone.x + headlineZone.width / 2;
+  let y = headlineZone.y + 76;
   const parts: string[] = [];
   const dir = `direction="${direction}" unicode-bidi="plaintext"`;
 
@@ -270,7 +284,7 @@ function dualToneHeadline(
   }
 
   return `
-    <g id="dual-tone-headline" data-layout="upper-center" data-design-slot="${designSlot}">
+    <g id="dual-tone-headline" data-layout="upper-center" data-design-slot="${designSlot}" data-text-direction="${direction}" data-fitted-font-size="${fitted.fontSize}" data-fitted-lines="${fitted.lines.length}">
       <g id="sales-copy-editorial" data-metallic-gold="true">
         ${parts.join("\n        ")}
       </g>
@@ -454,6 +468,10 @@ export class OverlaySystem {
     const productUrl = opts.productImageUrl?.trim() || null;
     const designSlot: CreativeSlot = opts.designSlot ?? 1;
     const direction: TextDirection = opts.textDirection ?? "rtl";
+    const hasCommercialBadge = Boolean(promotion || priceText || offerText);
+    const zonesCollisionFree = assertZonesDoNotOverlap(
+      createAdZones(width, height, { price: hasCommercialBadge, offer: hasCommercialBadge }),
+    );
 
     const background =
       opts.background ??
@@ -472,17 +490,17 @@ export class OverlaySystem {
     };
 
     return `
-      <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" dir="${direction}" role="img" aria-label="${escapeXml(brand.brandName)}">
+      <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" dir="${direction}" data-layout-zones="${zonesCollisionFree ? "collision-free" : "overlap"}" role="img" aria-label="${escapeXml(brand.brandName)}">
         ${commonDefs()}
         <g id="scene-background" data-template="${template}" data-staged-product="${stagedContainsProduct ? "true" : "false"}"${stagedContainsProduct ? ' data-ai-composite="true"' : ""}>${background.markup}</g>
         ${opts.showLogo === false ? "" : floatingEmblem(opts.brandLogoUrl, brand)}
         ${opts.showLogo === false ? "" : '<g id="top-header-pill" data-layout="floating-emblem-compat"></g>'}
-        ${dualToneHeadline(width, headline, benefit, headlineLines, brand, designSlot, direction)}
+        ${dualToneHeadline(width, height, headline, benefit, headlineLines, brand, designSlot, direction)}
         ${heroPackshot(width, productUrl, { staged: Boolean(stagedImageUrl) })}
         ${promotion
-          ? promoBadge(width, DESIGN_LAYOUT.commercialBadgeY, promotion, brand, direction)
+          ? promoBadge(width, commercialBadgeYForSize(width, height), promotion, brand, direction)
           : priceText || offerText
-            ? operatorOfferBadge(width, DESIGN_LAYOUT.commercialBadgeY, priceText, offerText, brand, direction)
+            ? operatorOfferBadge(width, commercialBadgeYForSize(width, height), priceText, offerText, brand, direction)
             : ""}
         ${opts.showFooterBar === false ? "" : atmosphericContactBar(width, height, brand, direction)}
         ${legacyContactMarkers(brand)}

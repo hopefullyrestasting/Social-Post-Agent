@@ -10,7 +10,7 @@
     "start": "next start",
     "lint": "eslint src functions",
     "typecheck": "tsc --noEmit",
-    "test": "tsx scripts/test-al-rahma-pipeline.ts && tsx scripts/test-db-api.ts && tsx scripts/test-basic-studio.ts && tsx scripts/test-phase16.ts && tsx scripts/test-multi-tenant-phase4.ts"
+    "test": "tsx scripts/test-al-rahma-pipeline.ts && tsx scripts/test-db-api.ts && tsx scripts/test-basic-studio.ts && tsx scripts/test-phase16.ts && tsx scripts/test-multi-tenant-phase4.ts && tsx scripts/test-vision-layout.ts"
   },
   "dependencies": {
     "jszip": "^3.10.2",

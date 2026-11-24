@@ -18,6 +18,10 @@ import {
   type CreativeSlot,
   type TextDirection,
 } from "../../../src/lib/al-rahma/design-library";
+import {
+  optionalProductVisualBrief,
+  type ProductVisualCommercialBrief,
+} from "../../../src/lib/al-rahma/product-visual-brief";
 
 export interface NanoBananaEnv {
   GEMINI_API_KEY?: string;
@@ -37,6 +41,7 @@ export interface NanoBananaArtDirection {
   category?: string | null;
   name?: string | null;
   benefits?: string[] | null;
+  visualBrief?: ProductVisualCommercialBrief | null;
 }
 
 const MODEL_PRIMARY = "gemini-2.5-flash-image";
@@ -124,6 +129,7 @@ export function buildBackgroundPrompt(
       category: context.category ?? null,
       name: context.name ?? null,
       benefits: context.benefits ?? null,
+      visualBrief: context.visualBrief ?? null,
     },
   });
   return [templateDescription(template), moodModifier(detectStageMood(context)), BACKGROUND_ONLY_SUFFIX, designBlock]
@@ -291,14 +297,22 @@ export const onRequestPost: PagesFunction<NanoBananaEnv> = async ({ request, env
   }
 
   const template = (typeof body.template === "string" ? body.template : "simple-botanical-horizon") as TemplateId;
+  const name = typeof body.name === "string" ? body.name : null;
+  const category = typeof body.category === "string" ? body.category : null;
+  const industry = typeof body.industry === "string" ? body.industry : null;
   const context: NanoBananaArtDirection = {
     brand: typeof body.brand === "string" ? body.brand : null,
-    industry: typeof body.industry === "string" ? body.industry : null,
-    category: typeof body.category === "string" ? body.category : null,
-    name: typeof body.name === "string" ? body.name : null,
+    industry,
+    category,
+    name,
     benefits: Array.isArray(body.benefits)
       ? body.benefits.filter((item): item is string => typeof item === "string")
       : null,
+    visualBrief: optionalProductVisualBrief(
+      body.visualBrief,
+      "ar",
+      { identity: name ?? "product", category: category ?? "general", industry: industry ?? "general" },
+    ),
   };
   const slot: CreativeSlot | undefined = body.slot === 1 || body.slot === 2 ? body.slot : undefined;
   const textDirection: TextDirection = body.textDirection === "ltr" ? "ltr" : "rtl";

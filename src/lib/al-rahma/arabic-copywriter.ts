@@ -1,6 +1,7 @@
 import { AL_RAHMA_BRAND_CONFIG, buildBrandConfigFromTenant, type BrandConfig, type TenantBrandContext } from "./brand-core";
 import { creativeSlotRecipe, type CreativeSlot } from "./design-library";
-import { isSafeSalesLine, sanitizeSalesLine } from "./studio-fields";
+import type { ProductVisualCommercialBrief } from "./product-visual-brief";
+import { resolveSalesLine } from "./studio-fields";
 
 /**
  * Arabic copy for the pro designer WhatsApp Status composer.
@@ -41,6 +42,8 @@ export interface ProductDetails {
   warehouseStockStatus?: WarehouseStockStatus;
   /** Optional operator-owned, claim-free sales phrase. */
   salesLine?: string | null;
+  /** Guarded vision brief; only its claim-free shortSalesLine may affect copy. */
+  visualBrief?: ProductVisualCommercialBrief | null;
   /** Optional explicit price. Rendered as controlled visual metadata only. */
   price?: number | null;
   /** Optional operator-owned offer metadata. Never injected into copy. */
@@ -145,9 +148,7 @@ function deriveSalesCopy(
     .split(/\s+/)
     .slice(0, 2)
     .join(" ");
-  const salesLine = isSafeSalesLine(product.salesLine)
-    ? sanitizeSalesLine(product.salesLine)
-    : "";
+  const salesLine = resolveSalesLine(product);
 
   const candidates = [
     benefits[0] ?? "",
@@ -165,8 +166,9 @@ function deriveSalesCopy(
 }
 
 function buildHeadline(product: ProductDetails): string {
-  if (isSafeSalesLine(product.salesLine)) {
-    return sanitizeSalesLine(product.salesLine);
+  const salesLine = resolveSalesLine(product);
+  if (salesLine) {
+    return salesLine;
   }
   const raw = (product.badgeText || product.title || "").trim();
   const words = raw.split(/\s+/).filter(Boolean);
