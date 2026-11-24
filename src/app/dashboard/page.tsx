@@ -2,10 +2,15 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import IDMark from "@/components/idesign/id-mark";
 import LanguageSwitcher from "@/components/idesign/language-switcher";
-import { accessKeyHeaders, installAccessKeyFetch } from "@/lib/al-rahma/access-key";
+import {
+  accessKeyHeaders,
+  installAccessKeyFetch,
+  persistAccessKey,
+  readAccessKey,
+} from "@/lib/al-rahma/access-key";
 import { IDESIGN_STUDIO_CONFIG } from "@/lib/al-rahma/brand-core";
 import { downloadCreativesZip, type ExportCreative } from "@/lib/al-rahma/export";
 import {
@@ -36,6 +41,30 @@ type ApiFailure = {
   productIds?: string[];
 };
 
+type TenantBrandProfile = {
+  brandName?: string;
+  industry?: string;
+  logoUrl?: string | null;
+  contactInfo?: string | Record<string, unknown> | null;
+};
+
+type TenantInfo = {
+  id?: string;
+  label?: string;
+  status?: string;
+  days_remaining?: number | null;
+  brand_locked?: boolean;
+  brand?: TenantBrandProfile | null;
+  subscription?: { days_remaining?: number | null; unlimited_generation?: boolean };
+};
+
+type BrandSetupForm = {
+  brand_name: string;
+  industry: string;
+  logo_url: string;
+  contact_info: string;
+};
+
 type CampaignCreative = ExportCreative & {
   success?: boolean;
   variant_number?: number | null;
@@ -57,6 +86,10 @@ type ProductPatch = {
 const DEFAULT_COUNT = 5;
 const MAX_COUNT = 100;
 
+/** localStorage is an external store; useSyncExternalStore avoids effect-driven setState. */
+const subscribeToAccessKey = () => () => {};
+const serverAccessKey = () => "";
+
 async function readJson<T>(response: Response): Promise<T & { success?: boolean }> {
   return (await response.json()) as T & { success?: boolean };
 }
@@ -66,6 +99,29 @@ function failureMessage(body: ApiFailure, status: number, fallback: string): str
     return `${fallback}: ${(body.productIds ?? []).length}`;
   }
   return body.detail || body.error || `${fallback} (${status})`;
+}
+
+function maskAccessKey(key: string): string {
+  const trimmed = key.trim();
+  if (!trimmed) return "—";
+  if (trimmed.length <= 8) return "arh_••••";
+  return `${trimmed.slice(0, 4)}••••${trimmed.slice(-4)}`;
+}
+
+async function fetchTenant(signal?: AbortSignal): Promise<TenantInfo | null> {
+  installAccessKeyFetch();
+  const response = await fetch("/api/tenant/me", {
+    headers: { Accept: "application/json", ...accessKeyHeaders() },
+    cache: "no-store",
+    signal,
+  });
+  const body = await readJson<{ tenant?: TenantInfo }>(response);
+  if (!response.ok || body.success === false) {
+    const failed = body as ApiFailure;
+    if (failed.code === "access_key_required") return null;
+    throw new Error(failureMessage(failed, response.status, "Unable to read the access key status."));
+  }
+  return body.tenant ?? null;
 }
 
 async function fetchProducts(signal?: AbortSignal, fallback = ""): Promise<Product[]> {
@@ -100,9 +156,52 @@ export default function DashboardPage() {
   const [error, setError] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
 
+  const storedKey = useSyncExternalStore(subscribeToAccessKey, readAccessKey, serverAccessKey);
+  const [manualKey, setManualKey] = useState<string | null>(null);
+  const activeKey = manualKey ?? storedKey;
+  const accessKeyInput = manualKey ?? storedKey;
+  const [tenant, setTenant] = useState<TenantInfo | null>(null);
+  const [tenantError, setTenantError] = useState("");
+  const [checkingKey, setCheckingKey] = useState(true);
+  const [brandForm, setBrandForm] = useState<BrandSetupForm>({
+    brand_name: "",
+    industry: "",
+    logo_url: "",
+    contact_info: "",
+  });
+  const [lockingBrand, setLockingBrand] = useState(false);
+  const [brandError, setBrandError] = useState("");
+
   useEffect(() => {
     installAccessKeyFetch();
   }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchTenant(controller.signal)
+      .then((info) => {
+        if (controller.signal.aborted) return;
+        setTenant(info);
+        setTenantError(info ? "" : storedKey ? translate(language, "accessKeyInvalid") : "");
+        if (info?.brand) {
+          setBrandForm((previous) => ({
+            ...previous,
+            brand_name: previous.brand_name || info.brand?.brandName || "",
+            industry: previous.industry || info.brand?.industry || "",
+          }));
+        }
+      })
+      .catch((caught: unknown) => {
+        if (!controller.signal.aborted) {
+          setTenant(null);
+          setTenantError(caught instanceof Error ? caught.message : translate(language, "accessKeyInvalid"));
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setCheckingKey(false);
+      });
+    return () => controller.abort();
+  }, [refreshKey, language, storedKey]);
 
   useEffect(() => {
     document.documentElement.lang = language;
@@ -134,6 +233,67 @@ export default function DashboardPage() {
 
   const remaining = products.filter((product) => !product.last_advertised_at);
   const generated = products.filter((product) => Boolean(product.last_advertised_at));
+  const needsBrandSetup = Boolean(tenant && tenant.brand_locked !== true);
+
+  async function applyAccessKey() {
+    installAccessKeyFetch();
+    const key = accessKeyInput.trim();
+    if (!key) {
+      persistAccessKey("");
+      setManualKey("");
+      setTenant(null);
+      setError(text("keyRequired"));
+      return;
+    }
+    persistAccessKey(key);
+    setManualKey(key);
+    setTenantError("");
+    setCheckingKey(true);
+    setError("");
+    setNotice(text("accessKeySaved"));
+    setLoading(true);
+    setRefreshKey((value) => value + 1);
+  }
+
+  async function lockBrand() {
+    installAccessKeyFetch();
+    const brandName = brandForm.brand_name.trim();
+    const industry = brandForm.industry.trim();
+    if (!brandName || !industry) {
+      setBrandError(`${text("brandName")} · ${text("industry")}`);
+      return;
+    }
+    setBrandError("");
+    setLockingBrand(true);
+    try {
+      const response = await fetch("/api/tenant/lock-brand", {
+        method: "POST",
+        headers: accessKeyHeaders({
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        }),
+        body: JSON.stringify({
+          brand_name: brandName,
+          industry,
+          logo_url: brandForm.logo_url.trim() || null,
+          contact_info: brandForm.contact_info.trim() || null,
+          locale: language === "ar" ? "ar-EG" : language,
+          rtl: direction === "rtl",
+        }),
+      });
+      const body = await readJson<{ tenant?: TenantInfo }>(response);
+      if (!response.ok || body.success === false) {
+        throw new Error(failureMessage(body as ApiFailure, response.status, text("saveFailed")));
+      }
+      setTenant(body.tenant ?? null);
+      setNotice(text("brandLocked"));
+      setRefreshKey((value) => value + 1);
+    } catch (caught) {
+      setBrandError(caught instanceof Error ? caught.message : text("saveFailed"));
+    } finally {
+      setLockingBrand(false);
+    }
+  }
 
   async function uploadImages(files: FileList | File[]) {
     const list = Array.from(files ?? []).filter((file) => file.type.startsWith("image/"));
@@ -292,6 +452,48 @@ export default function DashboardPage() {
         </div>
       </header>
 
+      <section className="border-b border-blue-100 bg-blue-50/70" aria-label={text("accessKey")}>
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-5 py-3">
+          <label htmlFor="dashboard-access-key" className="shrink-0 text-sm font-extrabold text-[#1D4ED8]">
+            {text("accessKey")}
+          </label>
+          <input
+            id="dashboard-access-key"
+            dir="ltr"
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            value={accessKeyInput}
+            placeholder={text("accessKeyPlaceholder")}
+            onChange={(event) => setManualKey(event.target.value)}
+            className="min-w-[220px] flex-1 rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm"
+          />
+          <button
+            type="button"
+            onClick={() => void applyAccessKey()}
+            className="rounded-lg bg-[#2563EB] px-4 py-2 text-sm font-bold text-white transition hover:bg-[#1D4ED8]"
+          >
+            {text("applyKey")}
+          </button>
+          <p className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 text-xs font-semibold text-slate-600">
+            <span dir="ltr">
+              {text("keyStatus")}: {checkingKey ? "…" : maskAccessKey(activeKey)}
+            </span>
+            <span>
+              {text("brandStatus")}: {tenant?.brand?.brandName || (tenant ? text("brandSetupRequired") : "—")}
+            </span>
+            <span>
+              {text("remainingCount")}: {remaining.length} · {text("generatedCount")}: {generated.length}
+            </span>
+          </p>
+        </div>
+        {tenantError ? (
+          <p role="alert" className="mx-auto max-w-6xl px-5 pb-3 text-xs font-semibold text-red-700">
+            {tenantError}
+          </p>
+        ) : null}
+      </section>
+
       <div className="mx-auto max-w-6xl space-y-6 px-4 py-7 sm:px-5">
         <section className="rounded-2xl border border-blue-100 bg-gradient-to-br from-white to-blue-50 p-6 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-4">
@@ -331,6 +533,75 @@ export default function DashboardPage() {
             />
           </label>
         </section>
+
+        {needsBrandSetup ? (
+          <section className="rounded-2xl border border-amber-200 bg-amber-50/70 p-5 shadow-sm">
+            <div className="mb-4">
+              <h2 className="text-lg font-black text-[#1D4ED8]">{text("brandSetupTitle")}</h2>
+              <p className="mt-1 text-sm text-slate-700">{text("brandSetupHint")}</p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="text-sm font-semibold">
+                {text("brandName")}
+                <input
+                  dir="auto"
+                  value={brandForm.brand_name}
+                  onChange={(event) =>
+                    setBrandForm((previous) => ({ ...previous, brand_name: event.target.value }))
+                  }
+                  className="mt-1 w-full rounded-lg border border-blue-200 bg-white px-3 py-2"
+                />
+              </label>
+              <label className="text-sm font-semibold">
+                {text("industry")}
+                <input
+                  dir="auto"
+                  value={brandForm.industry}
+                  onChange={(event) =>
+                    setBrandForm((previous) => ({ ...previous, industry: event.target.value }))
+                  }
+                  className="mt-1 w-full rounded-lg border border-blue-200 bg-white px-3 py-2"
+                />
+              </label>
+              <label className="text-sm font-semibold sm:col-span-2">
+                {text("logoUrl")}
+                <input
+                  dir="ltr"
+                  type="url"
+                  value={brandForm.logo_url}
+                  onChange={(event) =>
+                    setBrandForm((previous) => ({ ...previous, logo_url: event.target.value }))
+                  }
+                  className="mt-1 w-full rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm"
+                />
+              </label>
+              <label className="text-sm font-semibold sm:col-span-2">
+                {text("contactInfo")}
+                <input
+                  dir="auto"
+                  value={brandForm.contact_info}
+                  onChange={(event) =>
+                    setBrandForm((previous) => ({ ...previous, contact_info: event.target.value }))
+                  }
+                  className="mt-1 w-full rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm"
+                />
+              </label>
+            </div>
+            {brandError ? (
+              <p role="alert" className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                {brandError}
+              </p>
+            ) : null}
+            <button
+              type="button"
+              disabled={lockingBrand}
+              onClick={() => void lockBrand()}
+              className="mt-4 rounded-lg bg-[#1D4ED8] px-4 py-2 text-sm font-bold text-white transition hover:bg-[#1E40AF] disabled:opacity-50"
+            >
+              {lockingBrand ? text("lockingBrand") : text("lockBrand")}
+            </button>
+          </section>
+        ) : null}
 
         <section className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
