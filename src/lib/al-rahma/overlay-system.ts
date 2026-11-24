@@ -1,3 +1,4 @@
+import { createAdZones, fitText } from "./layout-geometry";
 ﻿import { AL_RAHMA_BRAND_CONFIG, buildBrandConfigFromTenant, type BrandConfig, type TenantBrandContext } from "./brand-core";
 import {
   BackgroundLayer,
@@ -226,14 +227,16 @@ function dualToneHeadline(
   const line3 = (lines?.line3 ?? "").trim();
   if (!line1 && !line2 && !line3) return "";
 
-  const x = width / 2;
-  let y = 290;
+  const headlineZone = createAdZones(width, 1920).headlineZone;
+  const fitted = fitText([line1, line2, line3].filter(Boolean).join(" "), headlineZone, "rtl", 76, 36);
+  const x = headlineZone.x + headlineZone.width / 2;
+  let y = headlineZone.y + fitted.fontSize;
   const parts: string[] = [];
 
   if (line1) {
     const l1 = wrapHeadline(line1, 18, 1)[0] ?? line1;
     parts.push(
-      `<text id="headline-line-1" data-3d="true" x="${x}" y="${y}" font-family="${escapeXml(brand.visual.fonts.primary)}" font-size="76" font-weight="900" fill="url(#headline-silver-gradient)" text-anchor="middle" direction="rtl" filter="url(#headline-silver-depth)">${escapeXml(l1)}</text>`,
+      `<text id="headline-line-1" data-3d="true" x="${x}" y="${y}" font-family="${escapeXml(brand.visual.fonts.primary)}" font-size="${fitted.fontSize}" font-weight="900" fill="url(#headline-silver-gradient)" text-anchor="middle" direction="rtl" filter="url(#headline-silver-depth)">${escapeXml(l1)}</text>`,
     );
     y += 92;
   }
