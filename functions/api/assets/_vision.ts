@@ -1,3 +1,4 @@
+import { parseProductVisualBrief, visualBriefPrompt, type ProductVisualCommercialBrief } from "../../../src/lib/al-rahma/product-visual-brief";
 /**
  * Vision AI helpers for the Smart Asset Matcher.
  *
@@ -71,6 +72,8 @@ export interface VisionOutcome {
   geminiConfigured: boolean;
   workersAiBound: boolean;
   note: string;
+  /** Deep visual brief parsed from the provider reply; claims remain guarded. */
+  visualBrief: ProductVisualCommercialBrief | null;
 }
 
 interface RawGuess {
@@ -80,6 +83,8 @@ interface RawGuess {
   detectedBrand: string;
   detectedType: string;
   reasoning: string;
+  /** Original guarded provider JSON, used only for the deep visual brief. */
+  raw: Record<string, unknown>;
 }
 
 const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash"];
@@ -202,7 +207,8 @@ function promptFor(catalog: readonly VisionCatalogProduct[]): string {
     "Look at the bottle, box or sachet in the photo and read the brand and product name/type printed on the packaging.",
     "Then choose exactly one product from the CATALOG that matches what is printed on the pack.",
     "Never guess from the background. Only use text you can actually read on the packaging.",
-    'Reply with JSON only, no markdown: {"productId":"<catalog id or empty string>","confidence":"high|medium|low","detectedLabel":"<text printed on the pack>","detectedBrand":"<brand printed on the pack>","detectedType":"<product type, e.g. shampoo>","reasoning":"<short reason>"}',
+    'Reply with JSON only, no markdown: {"productId":"<catalog id or empty string>","confidence":"high|medium|low","detectedLabel":"<text printed on the pack>","detectedBrand":"<brand printed on the pack>","detectedType":"<product type, e.g. shampoo>","reasoning":"<short reason>","identity":"<product identity>","primaryFunction":"<function if visibly stated>","dominantTones":[],"surfaceFinish":"<matte|glossy|metallic|glass|textile|mixed>","palette":[],"lightingMood":"<warm|cool-studio|high-contrast|natural-daylight>","shortSalesLine":"<truthful short Arabic phrase>"}',
+    productVisualBriefInstructions("ar", "the product's own industry"),
     "If nothing in the CATALOG matches, return an empty productId and confidence low.",
     "",
     "CATALOG format: id | brand | product name | category",
@@ -295,6 +301,7 @@ function sanitizeGuess(value: Record<string, unknown> | null): RawGuess | null {
       120,
     ),
     reasoning: clampText(value.reasoning ?? value.reason, 400),
+    raw: value,
   };
 
   if (
@@ -306,6 +313,22 @@ function sanitizeGuess(value: Record<string, unknown> | null): RawGuess | null {
     return null;
   }
   return guess;
+}
+
+/** Converts the guarded provider reply into a deep brief for staging and copy. */
+function visualBriefFromGuess(
+  guess: RawGuess,
+  fileName: string,
+): ProductVisualCommercialBrief {
+  const fileStem = fileName
+    .replace(/\.[^.]+$/, "")
+    .replace(/[_-]+/g, " ")
+    .trim();
+  return buildProductVisualBrief(guess.raw, "ar", {
+    identity: guess.detectedLabel || fileStem || "منتج جديد",
+    category: guess.detectedType || "general",
+    industry: guess.detectedType || guess.detectedBrand || "general",
+  });
 }
 
 async function tryGemini(
@@ -334,7 +357,7 @@ async function tryGemini(
     ],
     generationConfig: {
       temperature: 0.1,
-      maxOutputTokens: 400,
+      maxOutputTokens: 700,
       responseMimeType: "application/json",
     },
   };
@@ -394,7 +417,7 @@ async function tryWorkersAi(
     const result = await env.AI.run(WORKERS_AI_MODEL, {
       prompt,
       image: [...image.bytes],
-      max_tokens: 400,
+      max_tokens: 700,
     });
     const guess = sanitizeGuess(extractJsonObject(extractText(result)));
     if (guess) return guess;
@@ -495,9 +518,11 @@ export async function predictProductFromImage(
       note: geminiConfigured || workersAiBound
         ? "تعذر قراءة العبوة بالذكاء الاصطناعي؛ تمت المطابقة من اسم الملف فقط."
         : "لم يُفعّل أي مزوّد رؤية (GEMINI_API_KEY أو Workers AI)؛ تمت المطابقة من اسم الملف فقط.",
+      visualBrief: null,
     };
   }
 
+  const visualBrief = visualBriefFromGuess(guess, fileName);
   const queryText = [
     guess.detectedLabel,
     guess.detectedBrand,
@@ -537,6 +562,7 @@ export async function predictProductFromImage(
         geminiConfigured,
         workersAiBound,
         note: "معرّف المنتج من الرؤية لم يكن في الكتالوج؛ تمت المطابقة من النص المقروء على العبوة.",
+        visualBrief,
       };
     }
 
@@ -548,6 +574,7 @@ export async function predictProductFromImage(
       note: fallback.productId
         ? "معرّف المنتج من الرؤية لم يكن في الكتالوج؛ تمت المطابقة من اسم الملف."
         : "لم يتم العثور على مطابقة واثقة؛ اختر المنتج يدوياً.",
+      visualBrief: null,
     };
   }
 
@@ -566,5 +593,24 @@ export async function predictProductFromImage(
     geminiConfigured,
     workersAiBound,
     note: "",
+    visualBrief,
   };
+}
+
+
+/** Converts a provider JSON reply into a guarded commercial brief for scene and copy stages. */
+export function buildProductVisualBrief(
+  response: unknown,
+  language: ProductVisualCommercialBrief["language"],
+  fallback: Pick<ProductVisualCommercialBrief, "identity" | "category" | "industry">,
+): ProductVisualCommercialBrief {
+  return parseProductVisualBrief(response, language, fallback);
+}
+
+/** Shared prompt fragment for deep product understanding; it explicitly prohibits invented commercial claims. */
+export function productVisualBriefInstructions(
+  language: ProductVisualCommercialBrief["language"],
+  industry: string,
+): string {
+  return visualBriefPrompt(language, industry);
 }

@@ -32,6 +32,7 @@ import {
   loadReferenceImage,
   onRequestPost as postProductComposite,
 } from "../functions/api/ai/product-composite";
+import { parseProductVisualBrief } from "../src/lib/al-rahma/product-visual-brief";
 
 /**
  * Regression tests for the three rotating luxury art directions, scene/composite
@@ -97,6 +98,38 @@ function testArtDirectionStyles() {
   assert.ok(/monochrome .* wall/i.test(adapted), "Botanical wall must be color-adapted to product mood.");
   assert.ok(/luxury fragrance editorial/i.test(adapted), "Fragrance mood must be injected.");
 
+  const slot1Scene = buildScenePrompt("coastal-sunlit-stone-caustics", { category: "perfume" }, 1);
+  const slot2Scene = buildScenePrompt("coastal-sunlit-stone-caustics", { category: "perfume" }, 2);
+  assert.match(slot1Scene, /DESIGN SYSTEM/);
+  assert.match(slot1Scene, /SLOT hero-clean/);
+  assert.match(slot2Scene, /SLOT contextual-angle/);
+  assert.notEqual(slot1Scene, slot2Scene, "scene slots must prescribe visibly different treatments.");
+  assert.match(slot1Scene, /no garbled pseudo-script/i);
+  assert.match(slot1Scene, /no generated price tags/i);
+  assert.match(slot1Scene, /Stage-first framing/i);
+  assert.doesNotMatch(slot1Scene, /Keep the authentic product as the unmistakable hero/);
+  assert.match(buildScenePrompt("coastal-sunlit-stone-caustics", {}, 1, "ltr"), /left-to-right/);
+
+  const visualBrief = parseProductVisualBrief(
+    {
+      dominantTones: ["champagne", "amber"],
+      palette: ["#B45309", "#FDE68A"],
+      surfaceFinish: "glass",
+      lightingMood: "warm",
+      shortSalesLine: "عطر مميز لك",
+    },
+    "ar",
+    { identity: "عطر", category: "perfume", industry: "fragrance" },
+  );
+  const briefScene = buildScenePrompt(
+    "coastal-sunlit-stone-caustics",
+    { category: "perfume", visualBrief },
+    1,
+  );
+  assert.match(briefScene, /PRODUCT VISUAL BRIEF/);
+  assert.match(briefScene, /dominant tones champagne, amber/);
+  assert.doesNotMatch(briefScene, /عطر مميز لك/, "brief copy must not enter image prompts");
+
   // Background-only contract: prompts forbid the product and never ask to preserve it.
   for (const template of [
     "simple-botanical-horizon",
@@ -111,7 +144,15 @@ function testArtDirectionStyles() {
     assert.ok(/no text|no letters/i.test(prompt), `Nano Banana ${template} must forbid text.`);
     assert.ok(/9:16/i.test(prompt), `Nano Banana ${template} must request a vertical plate.`);
     assert.equal(/preserve the original product|reference image/i.test(prompt), false);
+    assert.match(prompt, /Stage-first framing/i);
+    assert.doesNotMatch(prompt, /Keep the authentic product as the unmistakable hero/);
   }
+
+  const bgSlot1 = buildBackgroundPrompt({ category: "haircare" }, "simple-botanical-horizon", 1);
+  const bgSlot2 = buildBackgroundPrompt({ category: "haircare" }, "simple-botanical-horizon", 2);
+  assert.match(bgSlot1, /SLOT hero-clean background/);
+  assert.match(bgSlot2, /SLOT contextual-angle background/);
+  assert.notEqual(bgSlot1, bgSlot2);
 }
 
 function testStyleRotation() {
@@ -383,6 +424,23 @@ async function testProductComposite() {
   assert.match(coastalPrompt, /deep blue Mediterranean sea/i);
   assert.match(coastalPrompt, /No generated text, no watermarks, no extra bottles/i);
 
+  const compositeSlot1 = buildProductCompositePrompt({
+    styleId: "coastal-sunlit-stone-caustics",
+    context: { category: "perfume", name: "عطر منعش", brand: "عساف" },
+    slot: 1,
+  });
+  const compositeSlot2 = buildProductCompositePrompt({
+    styleId: "coastal-sunlit-stone-caustics",
+    context: { category: "perfume", name: "عطر منعش", brand: "عساف" },
+    slot: 2,
+  });
+  assert.match(compositeSlot1, /SLOT hero-clean/);
+  assert.match(compositeSlot2, /SLOT contextual-angle/);
+  assert.notEqual(compositeSlot1, compositeSlot2, "composite slots must prescribe visibly different treatments.");
+  assert.match(compositeSlot1, /Keep the authentic product as the unmistakable hero/i);
+  assert.match(compositeSlot1, /no garbled pseudo-script/i);
+  assert.match(compositeSlot1, /no generated price tags/i);
+
   const botanicalPrompt = buildProductCompositePrompt({
     styleId: "botanical-horizon-reflection",
     context: { category: "skincare", name: "كريم", brand: "إيفا" },
@@ -541,7 +599,7 @@ async function run() {
   testAdminProtection();
 
   console.log(
-    "Phase 16 tests passed: 4 rotating luxury art directions (Coastal Sunlit Stone & Caustics, Botanical Horizon Reflection, Noir Basalt & Golden Rim-Light), distinct variant pairs, color-adapted prompts, deterministic inline fallbacks, background-only Nano Banana, reference-conditioned product compositing (Gemini/HF/Workers AI klein with timeout-safe retries), harvest safety, and admin protection.",
+    "Phase 16 tests passed: 4 rotating luxury art directions (Coastal Sunlit Stone & Caustics, Botanical Horizon Reflection, Noir Basalt & Golden Rim-Light), distinct variant pairs, design-library slot directives, guarded visual-brief staging, color-adapted prompts with anti-clutter/no-garbled-text guards, deterministic inline fallbacks, background-only Nano Banana, reference-conditioned product compositing (Gemini/HF/Workers AI klein with timeout-safe retries), harvest safety, and admin protection.",
   );
 }
 

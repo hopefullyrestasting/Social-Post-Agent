@@ -30,6 +30,15 @@ import {
   detectBase64ImageMime,
   type ArtDirectionStyleId,
 } from "./studio-scene";
+import {
+  buildDesignPromptBlock,
+  type CreativeSlot,
+  type TextDirection,
+} from "../../../src/lib/al-rahma/design-library";
+import {
+  optionalProductVisualBrief,
+  type ProductVisualCommercialBrief,
+} from "../../../src/lib/al-rahma/product-visual-brief";
 
 interface AiBinding {
   run: (model: string, input: Record<string, unknown>) => Promise<unknown>;
@@ -49,6 +58,7 @@ export interface ProductCompositeContext {
   category?: string | null;
   name?: string | null;
   benefits?: string[] | null;
+  visualBrief?: ProductVisualCommercialBrief | null;
 }
 
 export type ProductCompositeProvider =
@@ -85,6 +95,9 @@ export interface ProductCompositePromptInput {
   context?: ProductCompositeContext;
   width?: number;
   height?: number;
+  /** Creative slot from the design library (1 = hero-clean, 2 = contextual-angle). */
+  slot?: CreativeSlot;
+  textDirection?: TextDirection;
 }
 
 const MODEL_GEMINI_PRIMARY = "gemini-2.5-flash-image";
@@ -270,6 +283,11 @@ export function buildProductCompositePrompt(
   // to prevent FLUX from rendering garbled sky/foreground artifacts.
   const zeroTextZone =
     "UPPER 35%: clean, open, and softly lit, and COMPLETELY FREE OF ANY VISUAL NOISE — NO LETTERS, NO NUMBERS, NO ARABIC SCRIPT, NO WATERMARKS for SVG typography overlay. NO generated text, NO price tags, NO discount badges, NO captions in the sky zone. BOTTOM 15%: COMPLETELY FREE OF ANY VISUAL NOISE — NO LETTERS, NO NUMBERS, NO WATERMARKS for contact text, and the bottom 12% reads naturally darker for the contact lockup. NO generated text, NO floating words. The authentic packshot label is preserved pixel-for-pixel from the reference; all other text must be rendered by the SVG overlay.";
+  const designBlock = buildDesignPromptBlock({
+    slot: input.slot,
+    textDirection: input.textDirection ?? "rtl",
+    context: input.context,
+  });
 
   return [
     `Commercial luxury product photography of the exact ${productName} bottle from the reference image standing upright on a natural ${env.surfaceMaterial} ledge, bathed in crisp natural golden-hour sunlight.`,
@@ -277,6 +295,7 @@ export function buildProductCompositePrompt(
     `Background features ${env.environmentalBackdrop} rendered in creamy cinematic shallow depth of field (85mm f/1.8 lens).`,
     zeroTextZone,
     "Strictly preserve the exact bottle shape, cap, glass color, colors, and original label text and logos from the reference image 100% authentic and undistorted. Copy every Arabic and Latin letter pixel-for-pixel: never redraw, reletter, translate, replace, crop or invent any packaging element; keep all printed text razor sharp and fully legible. DO NOT generate or restyle any text outside the reference image.",
+    designBlock,
     "No generated text, no watermarks, no extra bottles, no fake podium, no flat studio backdrop. One single authentic product only, photorealistic 8k commercial advertising photography.",
   ].join(" ");
 }
@@ -290,11 +309,18 @@ function buildCompactCompositePrompt(
 ): string {
   const styleId = input.styleId ?? "coastal-sunlit-stone-caustics";
   const env = resolveEditorialEnvironment(input.context, styleId);
+  const designBlock = buildDesignPromptBlock({
+    slot: input.slot,
+    textDirection: input.textDirection ?? "rtl",
+    context: input.context,
+    compact: true,
+  });
   return [
     "Edit the reference photo into a photorealistic 9:16 luxury product advertisement.",
     `Place the exact same product from the image upright on ${env.surfaceMaterial} in natural golden-hour sunlight with realistic directional shadows and light caustics, and ${env.environmentalBackdrop} in soft bokeh (85mm f/1.8).`,
     "UPPER 35%: clean, open, and softly lit, and COMPLETELY FREE OF ANY VISUAL NOISE — NO LETTERS, NO NUMBERS, NO ARABIC SCRIPT, NO WATERMARKS for SVG typography overlay. BOTTOM 15%: COMPLETELY FREE OF ANY VISUAL NOISE — NO LETTERS, NO NUMBERS, NO WATERMARKS for contact text, and the bottom 12% reads naturally darker. NO generated text, NO floating words. The authentic packshot label is preserved pixel-for-pixel from the reference; all other text must be rendered by the SVG overlay.",
     "Preserve the bottle shape, cap, colors and every letter of the original label and logo exactly as in the reference image, fully legible and undistorted.",
+    designBlock,
     "No generated text, no watermark, no extra products, no podium. One authentic product only.",
   ].join(" ");
 }
@@ -791,7 +817,12 @@ async function generateWithWorkersAi(
   prompt: string,
   diagnostics: string[],
   attempts: CompositeAttempt[],
-  options: { styleId?: ArtDirectionStyleId; context?: ProductCompositeContext } = {},
+  options: {
+    styleId?: ArtDirectionStyleId;
+    context?: ProductCompositeContext;
+    slot?: CreativeSlot;
+    textDirection?: TextDirection;
+  } = {},
 ): Promise<{ image: string; model: string } | null> {
   if (!env.AI || typeof env.AI.run !== "function") {
     pushAttempt(attempts, diagnostics, {
@@ -822,6 +853,8 @@ async function generateWithWorkersAi(
   const compactPrompt = buildCompactCompositePrompt({
     styleId: options.styleId,
     context: options.context,
+    slot: options.slot,
+    textDirection: options.textDirection,
   });
 
   const editAttempts: { model: string; editPrompt: string; label: string }[] = [
@@ -897,7 +930,13 @@ export async function compositeProductScene(
   env: ProductCompositeEnv,
   productImageUrl: string,
   context: ProductCompositeContext = {},
-  options: { styleId?: ArtDirectionStyleId; width?: number; height?: number } = {},
+  options: {
+    styleId?: ArtDirectionStyleId;
+    width?: number;
+    height?: number;
+    slot?: CreativeSlot;
+    textDirection?: TextDirection;
+  } = {},
 ): Promise<ProductCompositeOutcome> {
   const hasProvider = Boolean(
     env.GEMINI_API_KEY?.trim() || env.HF_TOKEN?.trim() || env.AI,
@@ -936,6 +975,8 @@ export async function compositeProductScene(
     context,
     width: options.width,
     height: options.height,
+    slot: options.slot,
+    textDirection: options.textDirection,
   });
   const diagnostics: string[] = [];
   const attempts: CompositeAttempt[] = [];
@@ -960,7 +1001,7 @@ export async function compositeProductScene(
     prompt,
     diagnostics,
     attempts,
-    { styleId: options.styleId, context },
+    { styleId: options.styleId, context, slot: options.slot, textDirection: options.textDirection },
   );
   if (workersAi) {
     return {
@@ -1067,20 +1108,33 @@ export const onRequestPost: PagesFunction<ProductCompositeEnv> = async ({
   const rawContext = (body.context && typeof body.context === "object"
     ? body.context
     : {}) as Record<string, unknown>;
+  const name = typeof rawContext.name === "string" ? rawContext.name : null;
+  const category = typeof rawContext.category === "string" ? rawContext.category : null;
+  const industry = typeof rawContext.industry === "string" ? rawContext.industry : null;
   const context: ProductCompositeContext = {
     brand: typeof rawContext.brand === "string" ? rawContext.brand : null,
-    category: typeof rawContext.category === "string" ? rawContext.category : null,
-    name: typeof rawContext.name === "string" ? rawContext.name : null,
+    industry,
+    category,
+    name,
     benefits: Array.isArray(rawContext.benefits)
       ? rawContext.benefits.filter(
           (item): item is string => typeof item === "string",
         )
       : null,
+    visualBrief: optionalProductVisualBrief(
+      rawContext.visualBrief,
+      "ar",
+      { identity: name ?? "product", category: category ?? "general", industry: industry ?? "general" },
+    ),
   };
 
   const styleId = isStyleId(body.styleId) ? body.styleId : undefined;
+  const slot = body.slot === 1 || body.slot === 2 ? body.slot : undefined;
+  const textDirection: TextDirection = body.textDirection === "ltr" ? "ltr" : "rtl";
   const outcome = await compositeProductScene(env, imageUrl, context, {
     styleId,
+    slot,
+    textDirection,
   });
 
   if (!outcome.image) {
@@ -1104,6 +1158,7 @@ export const onRequestPost: PagesFunction<ProductCompositeEnv> = async ({
     provider: outcome.provider,
     model: outcome.model,
     styleId: styleId ?? "coastal-sunlit-stone-caustics",
+    designSlot: slot ?? null,
     image: outcome.image,
     kind: "reference-conditioned-data-uri",
     usedReference: outcome.usedReference,

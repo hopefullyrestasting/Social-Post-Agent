@@ -1,1544 +1,530 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import IDMark from "@/components/idesign/id-mark";
+import LanguageSwitcher from "@/components/idesign/language-switcher";
+import { accessKeyHeaders, installAccessKeyFetch } from "@/lib/al-rahma/access-key";
+import { IDESIGN_STUDIO_CONFIG } from "@/lib/al-rahma/brand-core";
+import { downloadCreativesZip, type ExportCreative } from "@/lib/al-rahma/export";
 import {
-  buildOccasionGreeting,
-  type OccasionGreetingInput,
-  type PromotionRecord,
-} from "@/lib/al-rahma";
-import { adminWriteHeaders, persistAdminKey, readAdminKey } from "@/lib/al-rahma/admin-key";
-import {
-  readAccessKey,
-  persistAccessKey,
-  installAccessKeyFetch,
-  accessKeyHeaders,
-} from "@/lib/al-rahma/access-key";
-import AdPreview from "@/components/al-rahma/ad-preview";
-import BulkImportModal from "@/components/al-rahma/bulk-import-modal";
-import CampaignGallery from "@/components/al-rahma/campaign-gallery";
-import ProductAssetManager from "@/components/al-rahma/product-asset-manager";
-import SmartAssetMatcher from "@/components/al-rahma/smart-asset-matcher";
-import VerifyModal from "@/components/al-rahma/verify-modal";
-
-type Brand = {
-  id: string;
-  name_arabic: string;
-  name_english: string | null;
-  slug: string;
-  identity_status: string;
-  product_count: number;
-};
+  languageDirection,
+  translate,
+  type LanguageCode,
+  type TranslationKey,
+} from "@/lib/al-rahma/i18n";
 
 type Product = {
   id: string;
   name_arabic: string;
   name_english: string | null;
   category: string | null;
-  subcategory: string | null;
-  packaging_size: string | null;
-  variant: string | null;
-  egypt_market_status: string | null;
-  warehouse_stock_status: string | null;
-  verification_status: string;
-  confidence_score: number | null;
-  brand_arabic: string;
-  brand_english: string | null;
-  brand_slug: string;
   image_url: string | null;
-  image_source: string | null;
-};
-
-type Stats = {
-  products: number;
-  brands: number;
-  needsVerification: number;
-  verified: number;
-  referenceImages: number;
-  campaigns: number;
-  generatedImages: number;
-};
-
-type Research = {
-  product: {
-    id: string;
-    name_arabic: string;
-    name_english: string | null;
-    category: string | null;
-    subcategory: string | null;
-    packaging_size: string | null;
-    variant: string | null;
-    verification_status: string;
-    brand_arabic: string;
-    brand_english: string | null;
-    brand_slug: string;
-  };
-  referenceImages: {
-    id: string;
-    image_url: string | null;
-    source_url: string | null;
-    image_type: string | null;
-    verification_status: string | null;
-    is_primary: number;
-  }[];
-  informationSources: {
-    id: string;
-    source_url: string;
-    source_name: string | null;
-    source_type: string;
-    verification_status: string;
-    retrieved_at: number | null;
-    notes: string | null;
-  }[];
-  verifiedBenefits: ResearchClaim[];
-  verifiedUsage: ResearchClaim[];
-  unverifiedClaims: ResearchClaim[];
-  stockChecks: {
-    id: string;
-    stock_status: string;
-    checked_at: number;
-    checked_by: string | null;
-    notes: string | null;
-  }[];
-  latestStockStatus: string | null;
-};
-
-type ResearchClaim = {
-  id: string;
-  source_id: string;
-  source_name: string | null;
-  source_url: string;
-  claim_type: "benefit" | "usage";
-  claim_text: string;
+  sales_line: string | null;
+  offer_text: string | null;
+  price: number | null;
+  last_advertised_at: number | null;
   verification_status: string;
-  verified_at: number | null;
-  notes: string | null;
 };
 
-type PromotionApiRow = {
-  id: string;
-  product_id: string;
-  product_name_arabic?: string;
-  original_price: number;
-  discount_percent: number;
-  promo_price: number;
-  starts_at: string;
-  ends_at: string;
-  is_active: number;
-  valid?: boolean;
-  status?: string;
+type ApiFailure = {
+  success: false;
+  error?: string;
+  detail?: string;
+  code?: string;
+  productIds?: string[];
 };
 
-type OccasionApiRow = {
-  id: string;
-  country_code: string;
-  occasion_name_arabic: string;
-  greeting_text_arabic: string;
-  occasion_date: string;
-  next_occurrence: string | null;
-  lead_days: number;
-  accent_theme: string | null;
-  is_active: number;
-  days_until: number | null;
+type CampaignCreative = ExportCreative & {
+  success?: boolean;
+  variant_number?: number | null;
 };
 
-type ApiResult<T> =
-  | ({ success: true } & T)
-  | { success: false; error?: string; detail?: string };
-
-const PAGE_SIZE = 50;
-const BRAND = { brandName: "AI Social Ad Studio", activity: "منصة متعددة الصناعات لتوليد إعلانات السوشيال بالذكاء الاصطناعي", contact: { phone: "", whatsappUrl: "#" }, legalName: "AI Social Ad Studio" };
-
-const verificationLabels: Record<string, string> = {
-  verified: "موثّق",
-  needs_verification: "يحتاج مراجعة",
-  probable: "محتمل",
-  unconfirmed: "غير مؤكد",
-  discontinued: "متوقف",
+type CampaignResult = {
+  creatives?: CampaignCreative[];
+  selected_product_ids?: string[];
+  message?: string;
 };
 
-const categoryLabels: Record<string, string> = {
-  baby_care: "العناية بالأطفال",
-  conditioner: "بلسم",
-  fragrance: "عطور",
-  hair_mask: "ماسك الشعر",
-  oil: "زيوت",
-  other: "أخرى",
-  shampoo: "شامبو",
-  styling: "تصفيف الشعر",
+type ProductPatch = {
+  name_arabic?: string;
+  price?: number | null;
+  sales_line?: string;
+  offer_text?: string | null;
 };
 
-function categoryLabel(category: string) {
-  return categoryLabels[category] ?? category.replaceAll("_", " ");
+const DEFAULT_COUNT = 5;
+const MAX_COUNT = 100;
+
+async function readJson<T>(response: Response): Promise<T & { success?: boolean }> {
+  return (await response.json()) as T & { success?: boolean };
 }
 
-function verificationLabel(status: string) {
-  return verificationLabels[status] ?? status;
+function failureMessage(body: ApiFailure, status: number, fallback: string): string {
+  if (body.code === "already_generated") {
+    return `${fallback}: ${(body.productIds ?? []).length}`;
+  }
+  return body.detail || body.error || `${fallback} (${status})`;
 }
 
-function identityLabel(status: string) {
-  if (status === "verified") return "هوية موثّقة";
-  if (status === "identity_unconfirmed") return "هوية غير مؤكدة";
-  return "هوية تحتاج مراجعة";
-}
-
-function stockLabel(status: string | null) {
-  if (!status || status === "unknown") return "غير مسجل";
-  if (status === "in_stock") return "متوفر";
-  if (status === "out_of_stock") return "غير متوفر";
-  return status;
-}
-
-function toPromotionRecord(
-  row: PromotionApiRow | null | undefined,
-): PromotionRecord | null {
-  if (!row) return null;
-  return {
-    id: row.id,
-    product_id: row.product_id,
-    original_price: row.original_price,
-    discount_percent: row.discount_percent,
-    promo_price: row.promo_price,
-    starts_at: row.starts_at,
-    ends_at: row.ends_at,
-    is_active: row.is_active,
-  };
-}
-
-function toOccasionInput(
-  row: OccasionApiRow | null | undefined,
-): OccasionGreetingInput | null {
-  if (!row) return null;
-  return {
-    id: row.id,
-    occasionName: row.occasion_name_arabic,
-    greeting: buildOccasionGreeting({
-      id: row.id,
-      country_code: row.country_code,
-      occasion_name_arabic: row.occasion_name_arabic,
-      greeting_text_arabic: row.greeting_text_arabic,
-      occasion_date: row.occasion_date,
-      lead_days: row.lead_days,
-      accent_theme: row.accent_theme,
-      is_active: row.is_active,
-    }),
-    occasionDate: row.next_occurrence ?? row.occasion_date,
-    daysUntil: row.days_until ?? undefined,
-    accentTheme: row.accent_theme,
-  };
-}
-
-async function requestApi<T>(
-  url: string,
-  signal: AbortSignal,
-): Promise<T> {
-  const response = await fetch(url, {
-    headers: { Accept: "application/json" },
-    signal,
+async function fetchProducts(signal?: AbortSignal, fallback = ""): Promise<Product[]> {
+  const response = await fetch("/api/db/products?limit=100", {
+    headers: { Accept: "application/json", ...accessKeyHeaders() },
     cache: "no-store",
+    signal,
   });
-  const body = (await response.json()) as ApiResult<T>;
-
-  if (!response.ok || !body.success) {
-    const failure = body as { error?: string; detail?: string };
+  const body = await readJson<{ products?: Product[] }>(response);
+  if (!response.ok || body.success === false) {
     throw new Error(
-      failure.detail ||
-        failure.error ||
-        `تعذر تحميل البيانات (${response.status})`,
+      failureMessage(body as ApiFailure, response.status, fallback),
     );
   }
-
-  return body;
+  return Array.isArray(body.products) ? body.products : [];
 }
 
 export default function DashboardPage() {
-  const [brands, setBrands] = useState<Brand[]>([]);
-  const [stats, setStats] = useState<Stats | null>(null);
+  const [language, setLanguage] = useState<LanguageCode>("ar");
+  const direction = languageDirection(language);
+  const text = (key: TranslationKey) => translate(language, key);
+
   const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<string[]>([]);
-  const [total, setTotal] = useState(0);
-  const [search, setSearch] = useState("");
-  const [brandSlug, setBrandSlug] = useState("");
-  const [category, setCategory] = useState("");
-  const [verificationStatus, setVerificationStatus] = useState("");
-  const [page, setPage] = useState(0);
-  const [refreshKey, setRefreshKey] = useState(0);
-  const [loadingOverview, setLoadingOverview] = useState(true);
-  const [loadingProducts, setLoadingProducts] = useState(true);
-  const [overviewError, setOverviewError] = useState("");
-  const [productsError, setProductsError] = useState("");
-  const [researchProduct, setResearchProduct] = useState<Product | null>(null);
-  const [research, setResearch] = useState<Research | null>(null);
-  const [researchLoading, setResearchLoading] = useState(false);
-  const [researchError, setResearchError] = useState("");
-  const [verifyProduct, setVerifyProduct] = useState<Product | null>(null);
-  const [previewProduct, setPreviewProduct] = useState<Product | null>(null);
-  const [previewResearch, setPreviewResearch] = useState<Research | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [previewError, setPreviewError] = useState("");
-  const [previewPromotion, setPreviewPromotion] =
-    useState<PromotionRecord | null>(null);
-  const [previewOccasion, setPreviewOccasion] =
-    useState<OccasionGreetingInput | null>(null);
-  const [bulkOpen, setBulkOpen] = useState(false);
-  const [adminKey, setAdminKey] = useState(() => readAdminKey());
-  const [accessKey, setAccessKey] = useState(() => readAccessKey());
-  const [tenantInfo, setTenantInfo] = useState<Record<string, unknown> | null>(null);
-  const [lockBrandName, setLockBrandName] = useState("");
-  const [lockIndustry, setLockIndustry] = useState("");
-  const [lockLogoUrl, setLockLogoUrl] = useState("");
-  const [lockingBrand, setLockingBrand] = useState(false);
-  const [lockMessage, setLockMessage] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [selected, setSelected] = useState<string[]>([]);
+  const [customCount, setCustomCount] = useState(DEFAULT_COUNT);
+  const [generating, setGenerating] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [notice, setNotice] = useState("");
-  const [brandLogoUrl, setBrandLogoUrl] = useState<string | null>(null);
-  const [logoUploading, setLogoUploading] = useState(false);
-  const [logoMessage, setLogoMessage] = useState("");
-  const [harvesting, setHarvesting] = useState(false);
-  const [harvestMessage, setHarvestMessage] = useState("");
+  const [error, setError] = useState("");
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     installAccessKeyFetch();
   }, []);
 
   useEffect(() => {
-    const controller = new AbortController();
+    document.documentElement.lang = language;
+    document.documentElement.dir = direction;
+  }, [language, direction]);
 
-    Promise.all([
-      requestApi<{ brands: Brand[] }>("/api/db/brands", controller.signal),
-      requestApi<{ stats: Stats }>("/api/db/stats", controller.signal),
-    ])
-      .then(([brandResult, statsResult]) => {
-        setBrands(brandResult.brands);
-        setStats(statsResult.stats);
+  useEffect(() => {
+    const controller = new AbortController();
+    const saveFailed = translate(language, "saveFailed");
+    fetchProducts(controller.signal, saveFailed)
+      .then((items) => {
+        if (controller.signal.aborted) return;
+        setProducts(items);
+        const generatedIds = new Set(
+          items.filter((item) => item.last_advertised_at).map((item) => item.id),
+        );
+        setSelected((previous) => previous.filter((id) => !generatedIds.has(id)));
       })
-      .catch((error: unknown) => {
+      .catch((caught: unknown) => {
         if (!controller.signal.aborted) {
-          setOverviewError(
-            error instanceof Error ? error.message : "تعذر تحميل بيانات لوحة التحكم",
-          );
+          setLoadError(caught instanceof Error ? caught.message : saveFailed);
         }
       })
       .finally(() => {
-        if (!controller.signal.aborted) setLoadingOverview(false);
+        if (!controller.signal.aborted) setLoading(false);
       });
-
     return () => controller.abort();
-  }, [refreshKey]);
+  }, [refreshKey, language]);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    fetch("/api/db/settings", {
-      headers: { Accept: "application/json" },
-      signal: controller.signal,
-    })
-      .then((r) => r.json() as Promise<{ success?: boolean; settings?: { brand_logo_url?: string | null } }>)
-      .then((body) => {
-        if (body && body.success) {
-          setBrandLogoUrl(body.settings?.brand_logo_url ?? null);
-        }
-      })
-      .catch(() => {});
-    return () => controller.abort();
-  }, [refreshKey]);
+  const remaining = products.filter((product) => !product.last_advertised_at);
+  const generated = products.filter((product) => Boolean(product.last_advertised_at));
 
-  useEffect(() => {
-    const key = readAccessKey();
-    if (!key) {
-      const t = setTimeout(() => setTenantInfo(null), 0);
-      return () => clearTimeout(t);
-    }
-    let cancelled = false;
-    fetch("/api/tenant/me", { headers: accessKeyHeaders() })
-      .then((r) => r.json() as Promise<{ success?: boolean; tenant?: Record<string, unknown> }>)
-      .then((body) => {
-        if (cancelled) return;
-        setTenantInfo(body?.success ? (body.tenant ?? null) : null);
-      })
-      .catch(() => { if (!cancelled) setTenantInfo(null); });
-    return () => { cancelled = true; };
-  }, [accessKey]);
-
-  async function refreshTenantInfo() {
-    const key = readAccessKey();
-    if (!key) { setTenantInfo(null); return; }
-    try {
-      const r = await fetch("/api/tenant/me", { headers: accessKeyHeaders() });
-      const body = await r.json() as { success?: boolean; tenant?: Record<string, unknown> };
-      setTenantInfo(body?.success ? (body.tenant ?? null) : null);
-    } catch { setTenantInfo(null); }
-  }
-
-  async function submitBrandLock() {
-    setLockMessage("");
-    const brand_name = lockBrandName.trim();
-    const industry = lockIndustry.trim();
-    if (brand_name.length < 2 || industry.length < 2) {
-      setLockMessage("أدخل اسم الشركة والنشاط (حرفان على الأقل).");
-      return;
-    }
-    setLockingBrand(true);
-    try {
-      const res = await fetch("/api/tenant/lock-brand", {
-        method: "POST",
-        headers: accessKeyHeaders({ "Content-Type": "application/json", Accept: "application/json" }),
-        body: JSON.stringify({ brand_name, industry, logo_url: lockLogoUrl.trim() || null }),
-      });
-      const body = await res.json() as { success?: boolean; error?: string; code?: string };
-      if (!res.ok || !body.success) {
-        setLockMessage(body.code === "brand_locked" ? "تم قفل هوية العلامة مسبقاً ولا يمكن تغيير اسم الشركة أو النشاط." : (body.error || "تعذر حفظ هوية العلامة."));
-      } else {
-        setLockMessage("تم حفظ وقفل هوية العلامة بنجاح. لن يمكن تغيير اسم الشركة أو النشاط لاحقاً.");
-        setNotice("تم قفل هوية العلامة التجارية لهذه مساحة العمل.");
-        await refreshTenantInfo();
-      }
-    } catch (err) {
-      setLockMessage(err instanceof Error ? err.message : "تعذر حفظ هوية العلامة.");
-    } finally {
-      setLockingBrand(false);
-    }
-  }
-
-  async function harvestRandomProducts() {
-    setHarvesting(true);
-    setHarvestMessage("");
-    setNotice("");
-    try {
-      const response = await fetch("/api/ai/harvest-random", {
-        method: "POST",
-        headers: adminWriteHeaders({
-          Accept: "application/json",
-          "Content-Type": "application/json",
-        }),
-        body: JSON.stringify({ count: 5 }),
-        cache: "no-store",
-      });
-      const body = (await response.json()) as {
-        success?: boolean;
-        message?: string;
-        error?: string;
-        harvestedCount?: number;
-        skippedCount?: number;
-      };
-      if (!response.ok || !body.success) {
-        throw new Error(
-          response.status === 401
-            ? "المفتاح الإداري مطلوب أو غير صحيح. أدخل المفتاح من أعلى لوحة التحكم."
-            : body.error || `تعذر اكتشاف المنتجات (${response.status})`,
-        );
-      }
-      setHarvestMessage(body.message || "تمت عملية الاكتشاف.");
-      setNotice(body.message || "تمت عملية الاكتشاف.");
-      refresh();
-    } catch (err) {
-      setHarvestMessage(
-        err instanceof Error ? err.message : "تعذر اكتشاف منتجات جديدة.",
-      );
-    } finally {
-      setHarvesting(false);
-    }
-  }
-
-  async function handleBrandLogoUpload(file: File) {
-    setLogoMessage("");
-    if (!file) return;
-    if (file.type !== "image/png") {
-      setLogoMessage("يرجى رفع شعار بصيغة PNG فقط.");
-      return;
-    }
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result || ""));
-      reader.onerror = () => reject(new Error("read failed"));
-      reader.readAsDataURL(file);
-    });
-    if (dataUrl.length > 500 * 1024) {
-      setLogoMessage("حجم الشعار كبير. الحد الأقصى 500KB بصيغة PNG.");
-      return;
-    }
-    setLogoUploading(true);
-    try {
-      const response = await fetch("/api/db/settings", {
-        method: "POST",
-        headers: adminWriteHeaders({
-          Accept: "application/json",
-          "Content-Type": "application/json",
-        }),
-        body: JSON.stringify({ brand_logo_url: dataUrl }),
-      });
-      const body = (await response.json()) as { success?: boolean; error?: string; settings?: { brand_logo_url?: string | null } };
-      if (!response.ok || !body.success) {
-        throw new Error(
-          response.status === 401
-            ? "المفتاح الإداري مطلوب لحفظ الشعار."
-            : body.error || "تعذر حفظ شعار الشركة.",
-        );
-      }
-      setBrandLogoUrl(body.settings?.brand_logo_url ?? dataUrl);
-      setLogoMessage("تم حفظ شعار الشركة وسيظهر في الإعلانات الجديدة.");
-      setNotice("تم حفظ شعار الشركة بنجاح.");
-    } catch (err) {
-      setLogoMessage(err instanceof Error ? err.message : "تعذر حفظ شعار الشركة.");
-    } finally {
-      setLogoUploading(false);
-    }
-  }
-
-  useEffect(() => {
-    const controller = new AbortController();
-    const params = new URLSearchParams({
-      limit: String(PAGE_SIZE),
-      offset: String(page * PAGE_SIZE),
-    });
-
-    if (search.trim()) params.set("q", search.trim());
-    if (brandSlug) params.set("brand", brandSlug);
-    if (category) params.set("category", category);
-    if (verificationStatus) params.set("status", verificationStatus);
-
-    requestApi<{
-      products: Product[];
-      total: number;
-      categories: string[];
-    }>(`/api/db/products?${params.toString()}`, controller.signal)
-      .then((result) => {
-        setProducts(result.products);
-        setTotal(result.total);
-        setCategories(result.categories);
-      })
-      .catch((error: unknown) => {
-        if (!controller.signal.aborted) {
-          setProducts([]);
-          setTotal(0);
-          setProductsError(
-            error instanceof Error ? error.message : "تعذر تحميل المنتجات",
+  async function uploadImages(files: FileList | File[]) {
+    const list = Array.from(files ?? []).filter((file) => file.type.startsWith("image/"));
+    if (list.length === 0) return;
+    setUploading(true);
+    setError("");
+    let added = 0;
+    let failed = 0;
+    let lastSalesLine = "";
+    for (const file of list) {
+      const form = new FormData();
+      form.append("imageFile", file);
+      form.append("autoCreate", "true");
+      form.append("autoCutout", "true");
+      try {
+        const response = await fetch("/api/assets/upload", {
+          method: "POST",
+          headers: accessKeyHeaders({ Accept: "application/json" }),
+          body: form,
+        });
+        const body = await readJson<{ salesLine?: string | null }>(response);
+        if (!response.ok || body.success === false) {
+          const failedBody = body as ApiFailure;
+          throw new Error(
+            failureMessage(failedBody, response.status, text("uploadFailed")),
           );
         }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoadingProducts(false);
-      });
-
-    return () => controller.abort();
-  }, [search, brandSlug, category, verificationStatus, page, refreshKey]);
-
-  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const firstProduct = total === 0 ? 0 : page * PAGE_SIZE + 1;
-  const lastProduct = Math.min((page + 1) * PAGE_SIZE, total);
-  const error = overviewError || productsError;
-
-  function refresh() {
-    setLoadingOverview(true);
-    setLoadingProducts(true);
-    setOverviewError("");
-    setProductsError("");
+        added += 1;
+        if (typeof body.salesLine === "string") lastSalesLine = body.salesLine;
+      } catch (caught) {
+        failed += 1;
+        setError(caught instanceof Error ? caught.message : text("uploadFailed"));
+      }
+    }
+    setUploading(false);
+    setNotice(
+      `${text("uploadDone")} ${added}${lastSalesLine ? ` · ${text("salesLine")}: ${lastSalesLine}` : ""}${
+        failed ? ` · ${text("uploadFailed")} ${failed}` : ""
+      }`,
+    );
+    setLoading(true);
+    setLoadError("");
     setRefreshKey((value) => value + 1);
   }
 
-  function clearFilters() {
-    setLoadingProducts(true);
-    setProductsError("");
-    setSearch("");
-    setBrandSlug("");
-    setCategory("");
-    setVerificationStatus("");
-    setPage(0);
-  }
-
-  async function showResearch(product: Product) {
-    if (researchProduct?.id === product.id) {
-      setResearchProduct(null);
-      setResearch(null);
-      setResearchError("");
-      return;
-    }
-
-    setResearchProduct(product);
-    setResearch(null);
-    setResearchError("");
-    setResearchLoading(true);
+  async function saveProductField(product: Product, patch: ProductPatch) {
+    setError("");
     try {
-      const result = await requestApi<{ research: Research }>(
-        `/api/db/research?product_id=${encodeURIComponent(product.id)}`,
-        new AbortController().signal,
+      const response = await fetch(
+        `/api/db/products?id=${encodeURIComponent(product.id)}`,
+        {
+          method: "PATCH",
+          headers: accessKeyHeaders({
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          }),
+          body: JSON.stringify(patch),
+        },
       );
-      setResearch(result.research);
-    } catch (error) {
-      setResearchError(
-        error instanceof Error ? error.message : "تعذر تحميل بيانات البحث",
+      const body = await readJson(response);
+      if (!response.ok || body.success === false) {
+        const failed = body as ApiFailure;
+        throw new Error(failureMessage(failed, response.status, text("saveFailed")));
+      }
+      setNotice(text("saved"));
+      setProducts((previous) =>
+        previous.map((item) => (item.id === product.id ? { ...item, ...patch } : item)),
       );
-    } finally {
-      setResearchLoading(false);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : text("saveFailed"));
     }
   }
 
-  async function showPreview(product: Product) {
-    if (previewProduct?.id === product.id) {
-      setPreviewProduct(null);
-      setPreviewResearch(null);
-      setPreviewPromotion(null);
-      setPreviewOccasion(null);
-      setPreviewError("");
-      return;
-    }
-
-    setPreviewProduct(product);
-    setPreviewResearch(null);
-    setPreviewPromotion(null);
-    setPreviewOccasion(null);
-    setPreviewError("");
-    setPreviewLoading(true);
-    const signal = new AbortController().signal;
-    const productParam = encodeURIComponent(product.id);
-
+  async function generateAndDownload(body: Record<string, unknown>) {
+    setGenerating(true);
+    setNotice("");
+    setError("");
     try {
-      const [researchResult, promotionResult, calendarResult] =
-        await Promise.all([
-          requestApi<{ research: Research }>(
-            `/api/db/research?product_id=${productParam}`,
-            signal,
-          ),
-          requestApi<{ today: string; promos: PromotionApiRow[] }>(
-            `/api/db/promos?product_id=${productParam}`,
-            signal,
-          ).catch(() => null),
-          requestApi<{ today: string; occasions: OccasionApiRow[] }>(
-            "/api/db/calendar",
-            signal,
-          ).catch(() => null),
-        ]);
-
-      setPreviewResearch(researchResult.research);
-
-      const activePromotion = (promotionResult?.promos ?? []).find(
-        (row) =>
-          row.product_id === product.id &&
-          row.status !== "expired" &&
-          row.status !== "scheduled" &&
-          row.status !== "inactive" &&
-          row.valid !== false,
-      );
-      setPreviewPromotion(toPromotionRecord(activePromotion));
-
-      const occasion = (calendarResult?.occasions ?? []).find(
-        (row) => row.next_occurrence !== null,
-      );
-      setPreviewOccasion(toOccasionInput(occasion));
-    } catch (error) {
-      setPreviewError(
-        error instanceof Error ? error.message : "تعذر تجهيز معاينة الإعلان",
-      );
+      const response = await fetch("/api/db/campaigns/run", {
+        method: "POST",
+        headers: accessKeyHeaders({
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        }),
+        body: JSON.stringify(body),
+        cache: "no-store",
+      });
+      const result = await readJson<CampaignResult>(response);
+      if (!response.ok || result.success === false) {
+        const failed = result as ApiFailure;
+        if (failed.code === "already_generated") {
+          setSelected([]);
+          setLoading(true);
+          setRefreshKey((value) => value + 1);
+        }
+        throw new Error(failureMessage(failed, response.status, text("saveFailed")));
+      }
+      const creatives = Array.isArray(result.creatives) ? result.creatives : [];
+      if (creatives.length > 0) {
+        await downloadCreativesZip(
+          creatives,
+          `${IDESIGN_STUDIO_CONFIG.exportSlug}-${Date.now()}.zip`,
+        );
+      }
+      setNotice(result.message || `${text("generationDone")} ${creatives.length}`);
+      setSelected([]);
+      setLoading(true);
+      setRefreshKey((value) => value + 1);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : text("saveFailed"));
     } finally {
-      setPreviewLoading(false);
+      setGenerating(false);
     }
   }
-
-  function handleVerified(message: string) {
-    setVerifyProduct(null);
-    setNotice(message);
-    setPreviewProduct(null);
-    setPreviewResearch(null);
-    setPreviewPromotion(null);
-    setPreviewOccasion(null);
-    refresh();
-  }
-
-  function handleAssetsVerified(message: string) {
-    setNotice(message);
-    refresh();
-  }
-
-  const statCards = [
-    { label: "إجمالي المنتجات", value: stats?.products },
-    { label: "إجمالي البراندات", value: stats?.brands },
-    { label: "منتجات موثّقة", value: stats?.verified },
-    { label: "تحتاج إلى التحقق", value: stats?.needsVerification },
-    { label: "صور مرجعية متاحة", value: stats?.referenceImages },
-    { label: "حملات منشأة", value: stats?.campaigns },
-    { label: "صور إعلانية منشأة", value: stats?.generatedImages },
-  ];
 
   return (
-    <main dir="rtl" className="min-h-screen bg-slate-50 text-slate-900">
-      <header className="bg-[#071d3b] text-white">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-5 py-5">
-          <div>
-            <p className="text-sm text-cyan-200">
-              نظام إدارة منتجات {BRAND.brandName}
-            </p>
-            <h1 className="mt-1 text-2xl font-black">{BRAND.brandName}</h1>
-            <p className="mt-1 max-w-3xl text-sm text-slate-300">
-              {BRAND.activity}
-            </p>
-          </div>
-          <div className="flex w-full flex-col gap-3 sm:w-auto sm:items-end">
-            <div className="w-full sm:w-96">
-              <label className="text-xs font-semibold text-slate-200">
-                مفتاح الإدارة (X-Admin-Key)
-                <input
-                  type="password"
-                  value={adminKey}
-                  onChange={(event) => {
-                    setAdminKey(event.target.value);
-                    persistAdminKey(event.target.value);
-                  }}
-                  placeholder="اتركه فارغاً في وضع المعاينة"
-                  autoComplete="off"
-                  dir="ltr"
-                  className="mt-1 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder:text-slate-400"
-                />
-              </label>
-              <p className="mt-1 text-xs text-slate-400">
-                يُحفظ في هذا المتصفح فقط ويُرسل مع طلبات الكتابة. عند ربط
-                ADMIN_API_KEY في Cloudflare تصبح الكتابة محمية.
-              </p>
-            </div>
-            <div className="w-full sm:w-96">
-              <label className="text-xs font-semibold text-slate-200">
-                استيراد منتجات (CSV / Excel)
-                <input
-                  type="file"
-                  accept=".csv,.xlsx,.xls"
-                  onChange={async (event) => {
-                    const file = event.target.files?.[0];
-                    if (!file) return;
-                    try {
-                      const { parseSpreadsheetFile } = await import("@/lib/al-rahma/spreadsheet");
-                      const rows = await parseSpreadsheetFile(file);
-                      if (rows.length === 0) { setNotice("لم يتم العثور على صفوف."); return; }
-                      const res = await fetch("/api/db/products", {
-                        method: "POST",
-                        headers: accessKeyHeaders({ "Content-Type": "application/json" }),
-                        body: JSON.stringify(rows),
-                      });
-                      const body = (await res.json()) as { success?: boolean; count?: number; error?: string };
-                      if (body && body.success) {
-                        setNotice("تم استيراد " + (body.count ?? rows.length) + " منتج.");
-                        refresh();
-                      } else {
-                        setNotice(body?.error || "فشل الاستيراد.");
-                      }
-                    } catch (err) {
-                      setNotice(err instanceof Error ? err.message : "فشل الاستيراد.");
-                    }
-                  }}
-                  className="mt-1 w-full text-xs text-slate-100"
-                />
-              </label>
-            </div>
-            <div className="w-full sm:w-96">
-               <label className="text-xs font-semibold text-slate-200">
-                 مفتاح الوصول (X-Access-Key)
-                 <input
-                   type="password"
-                   value={accessKey}
-                   onChange={(event) => {
-                     setAccessKey(event.target.value);
-                     persistAccessKey(event.target.value);
-                   }}
-                   placeholder="مفتاح الوصول السنوي"
-                   autoComplete="off"
-                   dir="ltr"
-                   className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900/70 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-400"
-                 />
-               </label>
-               {tenantInfo ? (() => {
-                 const t = tenantInfo as { brand_locked?: boolean; brand?: { brandName?: string; industry?: string }; expires_at_iso?: string | null; status?: string };
-                 const locked = Boolean(t.brand_locked && t.brand);
-                 return (
-                   <div className="mt-2 rounded-lg border border-white/15 bg-white/5 p-3 text-xs text-slate-200">
-                     <p className="font-semibold text-emerald-300">{locked ? "هوية العلامة مقفلة لهذه المساحة" : "إعداد هوية العلامة (مرة واحدة)"}</p>
-                     {locked ? (
-                       <div className="mt-1 space-y-1">
-                         <p>الشركة: <span className="font-bold">{t.brand?.brandName}</span></p>
-                         <p>النشاط: <span className="font-bold">{t.brand?.industry}</span></p>
-                         {t.expires_at_iso ? <p>انتهاء الاشتراك السنوي: <span dir="ltr">{String(t.expires_at_iso).slice(0,10)}</span></p> : null}
-                         <p className="text-slate-400">لا يمكن تغيير اسم الشركة أو النشاط بعد القفل.</p>
-                       </div>
-                     ) : (
-                       <div className="mt-2 space-y-2">
-                         <input value={lockBrandName} onChange={(e)=>setLockBrandName(e.target.value)} placeholder="اسم الشركة" className="w-full rounded-md border border-slate-600 bg-slate-900/70 px-2 py-2 text-slate-100" />
-                         <input value={lockIndustry} onChange={(e)=>setLockIndustry(e.target.value)} placeholder="النشاط / الصناعة" className="w-full rounded-md border border-slate-600 bg-slate-900/70 px-2 py-2 text-slate-100" />
-                         <input value={lockLogoUrl} onChange={(e)=>setLockLogoUrl(e.target.value)} placeholder="رابط الشعار (اختياري)" dir="ltr" className="w-full rounded-md border border-slate-600 bg-slate-900/70 px-2 py-2 text-slate-100" />
-                         <button type="button" disabled={lockingBrand} onClick={()=>void submitBrandLock()} className="rounded-md bg-emerald-500 px-3 py-2 font-bold text-white disabled:opacity-50">{lockingBrand?"جارٍ الحفظ...":"حفظ وقفل الهوية"}</button>
-                         {lockMessage ? <p className={lockMessage.includes("بنجاح")?"text-emerald-300":"text-amber-300"}>{lockMessage}</p> : null}
-                         <p className="text-slate-400">يتم القفل مرة واحدة فقط لكل مفتاح سنوي.</p>
-                       </div>
-                     )}
-                   </div>
-                 );
-               })() : accessKey.trim() ? <p className="mt-1 text-xs text-slate-400">أدخل مفتاح وصول صالح لعرض حالة الاشتراك.</p> : null}
-             </div>
-            <div className="w-full sm:w-96 rounded-xl border border-white/15 bg-white/10 p-3">
-              <p className="text-xs font-bold text-slate-100">رفع شعار الشركة (Logo)</p>
-              <div className="mt-2 flex items-center gap-3">
-                {brandLogoUrl ? (
-                  <img src={brandLogoUrl} alt="شعار الشركة" className="h-12 w-12 rounded-md bg-white object-contain p-1" />
-                ) : (
-                  <div className="flex h-12 w-12 items-center justify-center rounded-md bg-white/20 text-[10px] text-slate-200">لا يوجد</div>
-                )}
-                <label className="inline-flex cursor-pointer items-center rounded-lg bg-white px-3 py-2 text-xs font-bold text-slate-900 hover:bg-slate-100">
-                  {logoUploading ? "جارٍ الرفع..." : "رفع شعار الشركة (Logo)"}
-                  <input
-                    type="file"
-                    accept="image/png"
-                    className="hidden"
-                    disabled={logoUploading}
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) void handleBrandLogoUpload(file);
-                      e.currentTarget.value = "";
-                    }}
-                  />
-                </label>
-              </div>
-              {logoMessage && <p className="mt-2 text-xs text-emerald-200">{logoMessage}</p>}
-              <p className="mt-1 text-[11px] text-slate-300">PNG بحد أقصى 500KB — يُحفظ مرة واحدة ويظهر في كل إعلان.</p>
-            </div>
-            {BRAND.contact.phone ? (
-              <a
-                className="rounded-xl bg-emerald-500 px-4 py-3 font-bold text-white transition hover:bg-emerald-400"
-                href={BRAND.contact.whatsappUrl}
-                target="_blank"
-                rel="noreferrer"
-              >
-                واتساب {BRAND.contact.phone}
-              </a>
-            ) : null}
+    <main dir={direction} className="min-h-screen bg-white text-slate-900">
+      <header className="border-b border-blue-100 bg-white">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-5 py-4">
+          <Link href="/" className="flex items-center gap-3" aria-label={IDESIGN_STUDIO_CONFIG.name}>
+            <IDMark />
+            <span className="leading-tight">
+              <span className="block text-lg font-black text-[#1D4ED8]">
+                {IDESIGN_STUDIO_CONFIG.name} · {IDESIGN_STUDIO_CONFIG.productName}
+              </span>
+              <span className="block text-xs font-semibold text-slate-500" dir="ltr">
+                {IDESIGN_STUDIO_CONFIG.tagline} · {IDESIGN_STUDIO_CONFIG.websiteLabel}
+              </span>
+            </span>
+          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <LanguageSwitcher
+              language={language}
+              onChange={setLanguage}
+              label={text("language")}
+              dir={direction}
+            />
+            <Link
+              href="/"
+              className="rounded-lg border border-blue-200 px-3 py-2 text-sm font-bold text-[#1D4ED8] transition hover:bg-blue-50"
+            >
+              {text("home")}
+            </Link>
+            <a
+              href={IDESIGN_STUDIO_CONFIG.whatsappUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-lg bg-[#2563EB] px-3 py-2 text-sm font-bold text-white transition hover:bg-[#1D4ED8]"
+            >
+              {text("support")}
+            </a>
           </div>
         </div>
       </header>
 
-      <div className="mx-auto max-w-7xl space-y-6 px-4 py-7 sm:px-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-xl font-extrabold">لوحة التحكم</h2>
-            <p className="text-sm text-slate-500">
-              إدارة مساحة عمل علامتك التجارية وتوليد الإعلانات بالذكاء الاصطناعي
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => void harvestRandomProducts()}
-              disabled={true}
-              className="rounded-lg bg-amber-500 px-5 py-2 text-sm font-black text-slate-950 shadow-sm transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {harvesting
-                ? "جارٍ البحث والتوثيق..."
-                : "🔍 اكتشاف وتوثيق 5 منتجات عشوائية جديدة — Available Soon — قريباً"}
-            </button>
-            <div className="flex flex-col items-start gap-1">
-              <button
-                type="button"
-                disabled
-                title="Available Soon — قريباً"
-                className="cursor-not-allowed rounded-lg bg-slate-200 px-5 py-2 text-sm font-black text-slate-500 shadow-sm"
-              >
-                اكتشاف وتوثيق منتجات من الويب (متوقف مؤقتاً)
-              </button>
-              <span className="inline-flex rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-800">Available Soon — قريباً</span>
+      <div className="mx-auto max-w-6xl space-y-6 px-4 py-7 sm:px-5">
+        <section className="rounded-2xl border border-blue-100 bg-gradient-to-br from-white to-blue-50 p-6 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-black text-slate-900">{text("title")}</h1>
+              <p className="mt-2 max-w-2xl text-sm text-slate-600">{text("subtitle")}</p>
+              <p className="mt-2 text-xs text-slate-500">{text("downloadHint")}</p>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                setNotice("");
-                setBulkOpen(true);
+            <div className="rounded-xl border border-blue-200 bg-white px-4 py-3 text-sm">
+              <p className="mb-1 font-bold text-[#1D4ED8]">{text("contact")}</p>
+              <a href={IDESIGN_STUDIO_CONFIG.websiteUrl} className="block text-blue-700 underline" dir="ltr">
+                {IDESIGN_STUDIO_CONFIG.websiteLabel}
+              </a>
+              <a href={IDESIGN_STUDIO_CONFIG.emailUrl} className="mt-1 block text-blue-700 underline" dir="ltr">
+                {IDESIGN_STUDIO_CONFIG.email}
+              </a>
+              <a href={IDESIGN_STUDIO_CONFIG.whatsappUrl} className="mt-1 block text-blue-700 underline" dir="ltr">
+                {IDESIGN_STUDIO_CONFIG.phoneLabel}
+              </a>
+            </div>
+          </div>
+          <label className="mt-5 block cursor-pointer rounded-2xl border-2 border-dashed border-blue-300 bg-white p-6 text-center transition hover:border-[#1D4ED8]">
+            <span className="block text-base font-extrabold text-[#1D4ED8]">
+              {uploading ? text("uploading") : text("upload")}
+            </span>
+            <span className="mt-1 block text-sm text-slate-500">{text("uploadHint")}</span>
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              multiple
+              className="mt-4 block w-full text-sm"
+              onChange={(event) => {
+                void uploadImages(event.currentTarget.files ?? []);
+                event.currentTarget.value = "";
               }}
-              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-emerald-500"
-            >
-              استيراد جماعي (Bulk JSON)
-            </button>
-            <button
-              type="button"
-              onClick={refresh}
-              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold transition hover:bg-slate-50"
-            >
-              تحديث البيانات ↻
-            </button>
-          </div>
-        </div>
-
-        {error && (
-          <div
-            role="alert"
-            className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-800"
-          >
-            تعذر تحميل بيانات قاعدة البيانات: {error}
-          </div>
-        )}
-
-        {notice && (
-          <div
-            role="status"
-            className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900"
-          >
-            {notice}
-          </div>
-        )}
-
-        {harvestMessage && (
-          <div
-            role="status"
-            className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900"
-          >
-            {harvestMessage}
-          </div>
-        )}
-
-        <section
-          aria-label="ملخص قاعدة البيانات"
-          className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7"
-        >
-          {statCards.map((item) => (
-            <div
-              key={item.label}
-              className="rounded-2xl border border-slate-200 bg-white p-4"
-            >
-              <p className="text-xs leading-5 text-slate-500">{item.label}</p>
-              <p className="mt-2 text-2xl font-black">
-                {loadingOverview ? "…" : (item.value ?? "—")}
-              </p>
-            </div>
-          ))}
+            />
+          </label>
         </section>
 
-        {/* Brand DNA Settings Card */}
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 mb-4">
-          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <section className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h3 className="font-extrabold">Brand DNA Settings</h3>
-              <p className="mt-1 text-sm text-slate-500">
-                Configuración de la identidad de marca para todos los anuncios
+              <h2 className="text-lg font-black">{text("products")}</h2>
+              <p className="text-sm text-slate-500">{text("productsHint")}</p>
+              <p className="mt-1 text-xs font-semibold text-[#1D4ED8]">
+                {text("remainingCount")}: {remaining.length} · {text("generatedCount")}: {generated.length}
               </p>
             </div>
-            <div className="flex flex-col items-start gap-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="flex items-center gap-2 text-sm font-semibold">
+                {text("count")}
+                <input
+                  type="number"
+                  min={1}
+                  max={MAX_COUNT}
+                  value={customCount}
+                  onChange={(event) =>
+                    setCustomCount(
+                      Math.max(1, Math.min(MAX_COUNT, Number(event.target.value) || 1)),
+                    )
+                  }
+                  className="w-20 rounded-lg border border-blue-200 px-2 py-1"
+                />
+              </label>
               <button
                 type="button"
-                disabled
-                title="Available Soon — قريباً"
-                className="cursor-not-allowed rounded-lg bg-slate-200 px-4 py-2 text-sm font-black text-slate-500 shadow-sm"
+                disabled={generating}
+                onClick={() => void generateAndDownload({ mode: "basic", count: customCount })}
+                className="rounded-lg bg-[#1D4ED8] px-4 py-2 text-sm font-bold text-white transition hover:bg-[#1E40AF] disabled:opacity-50"
               >
-                Edición de perfiles de marca
+                {generating ? text("generating") : text("generateNext")}
               </button>
-              <span className="inline-flex rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-800">Available Soon — قريباً</span>
-            </div>
-          </div>
-        </section>
-
-        {/* Product Thumbnails Selector Grid with Brand Filter */}
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 mb-4">
-          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <h3 className="font-extrabold">Selector de Miniaturas</h3>
-              <p className="mt-1 text-sm text-slate-500">
-                Selecciona productos para tus campañas con filtro por marca
-              </p>
-            </div>
-            <div className="flex flex-col items-start gap-1">
               <button
                 type="button"
-                disabled
-                title="Available Soon — قريباً"
-                className="cursor-not-allowed rounded-lg bg-slate-200 px-4 py-2 text-sm font-black text-slate-500 shadow-sm"
+                disabled={generating || selected.length === 0}
+                onClick={() => void generateAndDownload({ mode: "basic", productIds: selected })}
+                className="rounded-lg border border-[#1D4ED8] px-4 py-2 text-sm font-bold text-[#1D4ED8] transition hover:bg-blue-50 disabled:opacity-50"
               >
-                Filtrar por marca
+                {text("generateSelected")} ({selected.length})
               </button>
-              <span className="inline-flex rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-800">Available Soon — قريباً</span>
             </div>
           </div>
-        </section>
 
-        {/* Promo Offer Presets Dropdown */}
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 mb-4">
-          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <h3 className="font-extrabold">Presets de Ofertas Promo</h3>
-              <p className="mt-1 text-sm text-slate-500">
-                Selecciona un preset de oferta promocional predefinido
-              </p>
-            </div>
-            <div className="flex flex-col items-start gap-1">
-              <button
-                type="button"
-                disabled
-                title="Available Soon — bientôt"
-                className="cursor-not-allowed rounded-lg bg-slate-200 px-4 py-2 text-sm font-black text-slate-500 shadow-sm"
-              >
-                Seleccionar preset
-              </button>
-              <span className="inline-flex rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-800">Available Soon — bientôt</span>
-            </div>
-          </div>
-        </section>
-
-        <CampaignGallery key={refreshKey} />
-
-        <SmartAssetMatcher
-          pendingCount={stats?.needsVerification}
-          onVerified={handleAssetsVerified}
-        />
-
-        <ProductAssetManager
-          pendingCount={stats?.needsVerification}
-          onVerified={handleAssetsVerified}
-        />
-
-        <section className="rounded-2xl border border-slate-200 bg-white p-5">
-          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <h3 className="font-extrabold">إدارة البراندات</h3>
-              <p className="mt-1 text-sm text-slate-500">
-                الأسماء وحالات الهوية وأعداد المنتجات من D1
-              </p>
-            </div>
-            <span className="text-sm text-slate-500">
-              {loadingOverview ? "جاري التحميل..." : `${brands.length} براند`}
-            </span>
-          </div>
-          {brands.length === 0 && !loadingOverview ? (
-            <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
-              لا توجد براندات لعرضها.
+          {notice ? (
+            <p role="status" className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+              {notice}
             </p>
-          ) : (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {brands.map((item) => (
-                <article
-                  key={item.id}
-                  className="rounded-xl border border-slate-200 p-4"
-                >
-                  <p className="font-bold">{item.name_arabic}</p>
-                  <p className="text-sm text-slate-500">
-                    {item.name_english || item.slug}
-                  </p>
-                  <p className="mt-3 text-sm">
-                    <b>{item.product_count}</b> منتج
-                  </p>
-                  <p className="mt-1 text-xs text-slate-600">
-                    {identityLabel(item.identity_status)}
-                  </p>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
-
-        <section className="rounded-2xl border border-slate-200 bg-white p-5">
-          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <h3 className="font-extrabold">كتالوج المنتجات</h3>
-              <p className="mt-1 text-sm text-slate-500">
-                ابحث وصفِّ النتائج، ثم تنقّل بين صفحات الكتالوج كاملة
-              </p>
-            </div>
-            <span aria-live="polite" className="text-sm text-slate-500">
-              {loadingProducts
-                ? "جاري تحميل المنتجات..."
-                : `عرض ${firstProduct}–${lastProduct} من ${total}`}
-            </span>
-          </div>
-
-          <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <label className="text-sm font-semibold text-slate-700">
-              البحث
-              <input
-                type="search"
-                value={search}
-                onChange={(event) => {
-                  setLoadingProducts(true);
-                  setProductsError("");
-                  setSearch(event.target.value);
-                  setPage(0);
-                }}
-                placeholder="اسم المنتج أو التصنيف..."
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal"
-              />
-            </label>
-            <label className="text-sm font-semibold text-slate-700">
-              البراند
-              <select
-                value={brandSlug}
-                onChange={(event) => {
-                  setLoadingProducts(true);
-                  setProductsError("");
-                  setBrandSlug(event.target.value);
-                  setPage(0);
-                }}
-                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 font-normal"
-              >
-                <option value="">كل البراندات</option>
-                {brands.map((item) => (
-                  <option key={item.id} value={item.slug}>
-                    {item.name_arabic}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="text-sm font-semibold text-slate-700">
-              التصنيف
-              <select
-                value={category}
-                onChange={(event) => {
-                  setLoadingProducts(true);
-                  setProductsError("");
-                  setCategory(event.target.value);
-                  setPage(0);
-                }}
-                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 font-normal"
-              >
-                <option value="">كل التصنيفات</option>
-                {categories.map((item) => (
-                  <option key={item} value={item}>
-                    {categoryLabel(item)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="text-sm font-semibold text-slate-700">
-              حالة التحقق
-              <select
-                value={verificationStatus}
-                onChange={(event) => {
-                  setLoadingProducts(true);
-                  setProductsError("");
-                  setVerificationStatus(event.target.value);
-                  setPage(0);
-                }}
-                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 font-normal"
-              >
-                <option value="">كل الحالات</option>
-                <option value="needs_verification">يحتاج مراجعة</option>
-                <option value="verified">موثّق</option>
-                <option value="probable">محتمل</option>
-                <option value="unconfirmed">غير مؤكد</option>
-                <option value="discontinued">متوقف</option>
-              </select>
-            </label>
-          </div>
-
-          {productsError && (
-            <div
-              role="alert"
-              className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"
-            >
-              تعذر تحميل كتالوج المنتجات: {productsError}
-            </div>
-          )}
-
-          {loadingProducts ? (
-            <p className="py-8 text-center text-slate-500">
-              جاري تحميل المنتجات من D1...
+          ) : null}
+          {error || loadError ? (
+            <p role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+              {error || loadError}
             </p>
+          ) : null}
+
+          {loading ? (
+            <p className="py-8 text-center text-slate-500">…</p>
           ) : products.length === 0 ? (
-            <div className="rounded-xl bg-slate-50 p-6 text-center text-slate-600">
-              {total === 0 && (search || brandSlug || category || verificationStatus)
-                ? "لا توجد نتائج مطابقة للفلاتر الحالية."
-                : "لا توجد منتجات لعرضها."}
-              {(search || brandSlug || category || verificationStatus) && (
-                <button
-                  type="button"
-                  onClick={clearFilters}
-                  className="ms-2 font-bold text-emerald-700 underline"
-                >
-                  مسح الفلاتر
-                </button>
-              )}
-            </div>
+            <p className="rounded-xl bg-blue-50 p-6 text-center text-sm text-slate-600">{text("empty")}</p>
           ) : (
-            <>
-              <div className="overflow-x-auto rounded-lg border border-slate-200">
-                <table className="w-full min-w-[980px] text-right text-sm">
-                  <thead className="bg-slate-50 text-slate-600">
-                    <tr>
-                      <th scope="col" className="p-3">المنتج</th>
-                      <th scope="col" className="p-3">البراند</th>
-                      <th scope="col" className="p-3">التصنيف</th>
-                      <th scope="col" className="p-3">الحجم والمتغير</th>
-                      <th scope="col" className="p-3">حالة المخزون</th>
-                      <th scope="col" className="p-3">التحقق</th>
-                      <th scope="col" className="p-3">مرجع الصورة</th>
-                      <th scope="col" className="p-3">البحث</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {products.map((item) => (
-                      <tr key={item.id} className="border-t border-slate-100">
-                        <td className="p-3">
-                          <div className="flex items-center gap-3">
-                            {item.image_url ? (
-                              <Image
-                                src={item.image_url}
-                                alt={item.name_arabic}
-                                width={56}
-                                height={56}
-                                loading="lazy"
-                                unoptimized
-                                className="h-14 w-14 rounded-lg border border-slate-200 object-contain"
-                                onError={(event) => {
-                                  event.currentTarget.style.visibility = "hidden";
-                                }}
-                              />
-                            ) : (
-                              <div
-                                aria-hidden="true"
-                                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs text-slate-400"
-                              >
-                                بلا صورة
-                              </div>
-                            )}
-                            <div>
-                              <p className="font-bold">{item.name_arabic}</p>
-                              <p className="text-xs text-slate-500">
-                                {item.name_english || "—"}
-                              </p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="p-3">
-                          {item.brand_arabic}
-                          {item.brand_english && (
-                            <span className="mt-1 block text-xs text-slate-500">
-                              {item.brand_english}
-                            </span>
-                          )}
-                        </td>
-                        <td className="p-3">
-                          {item.category ? categoryLabel(item.category) : "—"}
-                          {item.subcategory && (
-                            <span className="mt-1 block text-xs text-slate-500">
-                              {categoryLabel(item.subcategory)}
-                            </span>
-                          )}
-                        </td>
-                        <td className="p-3">
-                          {item.packaging_size || "—"}
-                          {item.variant && (
-                            <span className="mt-1 block text-xs text-slate-500">
-                              {item.variant}
-                            </span>
-                          )}
-                        </td>
-                        <td className="p-3">
-                          {stockLabel(item.warehouse_stock_status)}
-                        </td>
-                        <td className="p-3">
-                          <span className="rounded-full bg-amber-50 px-2 py-1 text-xs text-amber-800">
-                            {verificationLabel(item.verification_status)}
-                          </span>
-                        </td>
-                        <td className="p-3">
-                          {item.image_source ? (
-                            <a
-                              href={item.image_source}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="font-semibold text-emerald-700 underline"
-                            >
-                              مرجع الصورة
-                            </a>
-                          ) : (
-                            "—"
-                          )}
-                        </td>
-                        <td className="p-3">
-                          <div className="flex flex-col items-start gap-1">
-                            <button
-                              type="button"
-                              onClick={() => showResearch(item)}
-                              className="font-semibold text-emerald-700 underline"
-                            >
-                              {researchProduct?.id === item.id
-                                ? "إغلاق"
-                                : "المصادر والتحقق"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setNotice("");
-                                setVerifyProduct(item);
-                              }}
-                              className="font-semibold text-slate-700 underline"
-                            >
-                              إضافة صورة مرجعية وتوثيق المنتج
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => showPreview(item)}
-                              className="font-semibold text-slate-700 underline"
-                            >
-                              {previewProduct?.id === item.id
-                                ? "إغلاق المعاينة"
-                                : "معاينة إعلانين (2 Variants)"}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {previewProduct && (
-                <section aria-live="polite" className="mt-4">
-                  {previewLoading && (
-                    <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
-                      جاري تجهيز النسختين على خلفية بيضاء وشبكة فضية...
-                    </p>
-                  )}
-                  {previewError && (
-                    <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">
-                      تعذر تجهيز معاينة الإعلان: {previewError}
-                    </p>
-                  )}
-                  {previewResearch && (
-                    <AdPreview
-                      product={previewProduct}
-                      research={previewResearch}
-                      promotion={previewPromotion}
-                      occasion={previewOccasion}
-                    />
-                  )}
-                </section>
-              )}
-
-              {researchProduct && (
-                <section
-                  aria-live="polite"
-                  className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50/50 p-4"
-                >
-                  <h4 className="font-bold">
-                    بحث المنتج: {researchProduct.name_arabic}
-                  </h4>
-                  {researchLoading && (
-                    <p className="mt-3 text-sm text-slate-600">
-                      جاري تحميل مصادر المنتج والتحقق منه...
-                    </p>
-                  )}
-                  {researchError && (
-                    <p role="alert" className="mt-3 text-sm text-red-700">
-                      تعذر تحميل بيانات البحث: {researchError}
-                    </p>
-                  )}
-                  {research && (
-                    <div className="mt-4 grid gap-4 md:grid-cols-2">
-                      <div>
-                        <h5 className="font-semibold">هوية المنتج</h5>
-                        <p className="mt-1 text-sm">
-                          {research.product.name_arabic}
-                          {research.product.name_english
-                            ? ` · ${research.product.name_english}`
-                            : ""}
-                        </p>
-                        <p className="text-sm text-slate-600">
-                          {research.product.brand_arabic}
-                          {research.product.brand_english
-                            ? ` · ${research.product.brand_english}`
-                            : ""}
-                          {" · "}
-                          {verificationLabel(
-                            research.product.verification_status,
-                          )}
-                        </p>
-                      </div>
-
-                      <div>
-                        <h5 className="font-semibold">صور المنتج المرجعية</h5>
-                        {research.referenceImages.length ? (
-                          <ul className="mt-1 space-y-1 text-sm">
-                            {research.referenceImages.map((image) => (
-                              <li key={image.id}>
-                                {image.image_url ? (
-                                  <a
-                                    href={image.image_url}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="text-emerald-800 underline"
-                                  >
-                                    {image.is_primary ? "الصورة الأساسية" : "صورة مرجعية"}
-                                  </a>
-                                ) : (
-                                  "الصورة بدون رابط متاح"
-                                )}
-                                {" · "}
-                                {image.verification_status || "غير موثقة"}
-                              </li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <p className="mt-1 text-sm text-slate-600">
-                            لا توجد صور مرجعية مسجلة لهذا المنتج.
-                          </p>
-                        )}
-                      </div>
-
-                      <div>
-                        <h5 className="font-semibold">مصادر معلومات المنتج</h5>
-                        {research.informationSources.length ? (
-                          <ul className="mt-1 space-y-1 text-sm">
-                            {research.informationSources.map((source) => (
-                              <li key={source.id}>
-                                <a
-                                  href={source.source_url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="text-emerald-800 underline"
-                                >
-                                  {source.source_name || source.source_url}
-                                </a>
-                                {" · "}
-                                {source.verification_status === "verified"
-                                  ? "مصدر موثّق"
-                                  : source.verification_status}
-                              </li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <p className="mt-1 text-sm text-slate-600">
-                            لم تُسجل مصادر معلومات بعد.
-                          </p>
-                        )}
-                      </div>
-
-                      <div>
-                        <h5 className="font-semibold">فوائد موثّقة بمصدر</h5>
-                        {research.verifiedBenefits.length ? (
-                          <ul className="mt-1 list-inside list-disc space-y-1 text-sm">
-                            {research.verifiedBenefits.map((claim) => (
-                              <li key={claim.id}>
-                                {claim.claim_text}
-                                {" · "}
-                                <a
-                                  href={claim.source_url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="text-emerald-800 underline"
-                                >
-                                  {claim.source_name || "المصدر"}
-                                </a>
-                              </li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <p className="mt-1 text-sm text-slate-600">
-                            لا توجد فوائد موثّقة؛ لن تُعرض ادعاءات غير مؤكدة.
-                          </p>
-                        )}
-                      </div>
-
-                      <div>
-                        <h5 className="font-semibold">طريقة الاستخدام الموثّقة</h5>
-                        {research.verifiedUsage.length ? (
-                          <ul className="mt-1 list-inside list-disc space-y-1 text-sm">
-                            {research.verifiedUsage.map((claim) => (
-                              <li key={claim.id}>
-                                {claim.claim_text}
-                                {" · "}
-                                <a
-                                  href={claim.source_url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="text-emerald-800 underline"
-                                >
-                                  {claim.source_name || "المصدر"}
-                                </a>
-                              </li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <p className="mt-1 text-sm text-slate-600">
-                            لا توجد طريقة استخدام موثّقة مسجلة.
-                          </p>
-                        )}
-                      </div>
-
-                      <div>
-                        <h5 className="font-semibold">تأكيد مخزون المستودع</h5>
-                        <p className="mt-1 text-sm">
-                          آخر حالة: {stockLabel(research.latestStockStatus)}
-                        </p>
-                        {research.stockChecks.length > 0 && (
-                          <p className="text-xs text-slate-600">
-                            تأكيد بواسطة:{" "}
-                            {research.stockChecks[0].checked_by || "غير مسجل"}
-                          </p>
-                        )}
-                      </div>
-
-                      {research.unverifiedClaims.length > 0 && (
-                        <div className="md:col-span-2">
-                          <h5 className="font-semibold text-amber-800">
-                            معلومات غير موثّقة — ليست ادعاءات معتمدة
-                          </h5>
-                          <ul className="mt-1 list-inside list-disc space-y-1 text-sm text-slate-700">
-                            {research.unverifiedClaims.map((claim) => (
-                              <li key={claim.id}>{claim.claim_text}</li>
-                            ))}
-                          </ul>
+            <div className="space-y-3">
+              {products.map((product) => {
+                const generatedAt = product.last_advertised_at
+                  ? new Date(product.last_advertised_at).toLocaleDateString(language)
+                  : "";
+                const isGenerated = Boolean(product.last_advertised_at);
+                return (
+                  <article
+                    key={product.id}
+                    className={`rounded-xl border p-4 ${
+                      isGenerated ? "border-slate-200 bg-slate-50" : "border-blue-200 bg-white"
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-start gap-3">
+                      <input
+                        type="checkbox"
+                        aria-label={`${text("selectProducts")}: ${product.name_arabic}`}
+                        disabled={isGenerated}
+                        checked={selected.includes(product.id)}
+                        onChange={(event) =>
+                          setSelected((previous) =>
+                            event.target.checked
+                              ? [...previous, product.id]
+                              : previous.filter((id) => id !== product.id),
+                          )
+                        }
+                        className="mt-2 h-4 w-4 accent-[#1D4ED8]"
+                      />
+                      {product.image_url ? (
+                        <Image
+                          src={product.image_url}
+                          alt={product.name_arabic}
+                          width={64}
+                          height={64}
+                          unoptimized
+                          className="h-16 w-16 rounded-lg border border-blue-100 object-contain"
+                        />
+                      ) : (
+                        <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-blue-50 text-xs text-blue-400">
+                          —
                         </div>
                       )}
+                      <div className="min-w-[220px] flex-1 space-y-2">
+                        <input
+                          aria-label={`${text("productName")}: ${product.name_arabic}`}
+                          defaultValue={product.name_arabic}
+                          onBlur={(event) => {
+                            const value = event.target.value.trim();
+                            if (value && value !== product.name_arabic) {
+                              void saveProductField(product, { name_arabic: value });
+                            }
+                          }}
+                          className="w-full rounded-lg border border-blue-200 px-3 py-2 font-bold"
+                        />
+                        <input
+                          aria-label={`${text("salesLine")}: ${product.name_arabic}`}
+                          defaultValue={product.sales_line ?? ""}
+                          placeholder={text("salesLine")}
+                          onBlur={(event) => {
+                            const value = event.target.value.trim();
+                            if (value !== (product.sales_line ?? "")) {
+                              void saveProductField(product, { sales_line: value });
+                            }
+                          }}
+                          className="w-full rounded-lg border border-blue-200 px-3 py-1.5 text-sm"
+                        />
+                        <div className="flex flex-wrap gap-2">
+                          <input
+                            aria-label={`${text("price")}: ${product.name_arabic}`}
+                            type="number"
+                            min={0}
+                            defaultValue={product.price ?? ""}
+                            placeholder={text("pricePlaceholder")}
+                            onBlur={(event) => {
+                              const value = event.target.value;
+                              const nextPrice = value === "" ? null : Number(value);
+                              if (nextPrice !== product.price) {
+                                void saveProductField(product, { price: nextPrice });
+                              }
+                            }}
+                            className="w-32 rounded-lg border border-blue-200 px-3 py-1.5 text-sm"
+                          />
+                          <input
+                            aria-label={`${text("offer")}: ${product.name_arabic}`}
+                            defaultValue={product.offer_text ?? ""}
+                            placeholder={text("offerPlaceholder")}
+                            onBlur={(event) => {
+                              const value = event.target.value.trim() || null;
+                              if (value !== (product.offer_text ?? null)) {
+                                void saveProductField(product, { offer_text: value });
+                              }
+                            }}
+                            className="min-w-[200px] flex-1 rounded-lg border border-blue-200 px-3 py-1.5 text-sm"
+                          />
+                        </div>
+                        <p className={`text-xs font-bold ${isGenerated ? "text-slate-500" : "text-[#1D4ED8]"}`}>
+                          {isGenerated
+                            ? `${text("generated")}: ${generatedAt}`
+                            : text("remaining")}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={generating || isGenerated}
+                        onClick={() =>
+                          void generateAndDownload({ mode: "basic", productIds: [product.id] })
+                        }
+                        className="rounded-lg bg-[#2563EB] px-3 py-2 text-sm font-bold text-white transition hover:bg-[#1D4ED8] disabled:opacity-50"
+                      >
+                        {text("generateOne")}
+                      </button>
                     </div>
-                  )}
-                </section>
-              )}
-
-              <nav
-                aria-label="صفحات المنتجات"
-                className="mt-4 flex flex-wrap items-center justify-between gap-3"
-              >
-                <p className="text-sm text-slate-500">
-                  الصفحة {page + 1} من {pageCount}
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    disabled={page === 0}
-                    onClick={() => {
-                      setLoadingProducts(true);
-                      setProductsError("");
-                      setPage((value) => Math.max(0, value - 1));
-                    }}
-                    className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    السابق
-                  </button>
-                  <button
-                    type="button"
-                    disabled={page + 1 >= pageCount}
-                    onClick={() => {
-                      setLoadingProducts(true);
-                      setProductsError("");
-                      setPage((value) => value + 1);
-                    }}
-                    className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    التالي
-                  </button>
-                </div>
-              </nav>
-            </>
+                  </article>
+                );
+              })}
+            </div>
           )}
+          <p className="mt-4 text-xs text-slate-500">{text("queueHint")}</p>
         </section>
 
-        <p className="text-center text-xs text-slate-500">
-          {BRAND.legalName} · منصة توليد إعلانات متعددة الصناعات
-        </p>
+        <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-blue-100 py-6 text-xs text-slate-500">
+          <p className="flex items-center gap-2">
+            <IDMark small /> {IDESIGN_STUDIO_CONFIG.productName} {IDESIGN_STUDIO_CONFIG.tagline}
+          </p>
+          <p className="flex flex-wrap gap-3">
+            <a href={IDESIGN_STUDIO_CONFIG.websiteUrl} className="text-blue-700 underline" dir="ltr">
+              {IDESIGN_STUDIO_CONFIG.websiteLabel}
+            </a>
+            <a href={IDESIGN_STUDIO_CONFIG.emailUrl} className="text-blue-700 underline" dir="ltr">
+              {IDESIGN_STUDIO_CONFIG.email}
+            </a>
+            <a href={IDESIGN_STUDIO_CONFIG.whatsappUrl} className="text-blue-700 underline" dir="ltr">
+              {IDESIGN_STUDIO_CONFIG.phoneLabel}
+            </a>
+          </p>
+        </footer>
       </div>
-
-      {verifyProduct && (
-        <VerifyModal
-          product={verifyProduct}
-          onClose={() => setVerifyProduct(null)}
-          onSaved={handleVerified}
-        />
-      )}
-      {bulkOpen && (
-        <BulkImportModal
-          onClose={() => setBulkOpen(false)}
-          onSaved={(message) => {
-            setBulkOpen(false);
-            handleVerified(message);
-          }}
-        />
-      )}
     </main>
   );
 }

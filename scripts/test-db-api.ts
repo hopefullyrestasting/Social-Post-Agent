@@ -695,12 +695,21 @@ async function testCampaignEndpoints() {
     "Run response must expose exactly the four rotating art directions.",
   );
 
-  // Selection query must randomize eligible products every run
+  // Selection query must walk the eligible products in a stable sequence and
+  // skip anything already advertised, so batches never repeat products.
   const selectCall = runDb.calls.find(
     (c) => c.sql.includes("FROM products p") && c.sql.includes("JOIN product_assets pa"),
   );
   assert.ok(selectCall, "eligible products query must run");
-  assert.ok(selectCall.sql.includes("ORDER BY RANDOM()"), "Campaign selection must use ORDER BY RANDOM()");
+  assert.ok(
+    selectCall.sql.includes("ORDER BY p.created_at ASC, p.id ASC"),
+    "Campaign selection must use the sequential created_at/id ordering.",
+  );
+  assert.equal(
+    selectCall.sql.includes("ORDER BY RANDOM()"),
+    false,
+    "Campaign selection must not randomize the queue.",
+  );
   assert.ok(
     selectCall.sql.includes("pa.is_primary = 1") &&
       selectCall.sql.includes("pa.image_type = 'reference'") &&
@@ -711,7 +720,10 @@ async function testCampaignEndpoints() {
     selectCall.sql.includes("WHERE p.verification_status = 'verified'"),
     "Campaign selection must only use verified products.",
   );
-  assert.equal(selectCall.sql.includes("last_advertised_at IS NULL"), false, "Random selection must not prioritize last_advertised_at cooldown ordering.");
+  assert.ok(
+    selectCall.sql.includes("p.last_advertised_at IS NULL"),
+    "Campaign selection must skip already-advertised products to prevent repeats.",
+  );
 
   // Persistence: campaign insert, 6 creative inserts, 3 last_advertised_at updates
   const campaignInserts = runDb.calls.filter((c) => c.sql.includes("INSERT INTO campaigns"));
@@ -1962,7 +1974,7 @@ async function run() {
   assert.equal(exportSource.includes("@imgly/background-removal"), false, "Client export must not import @imgly/background-removal.");
 
   console.log(
-    "D1 API tests passed: pagination, filters, validation, stats, brands, research, ingest, admin auth 401/unconfigured-preview, promos, 48h calendar, bulk ingest, campaign random selection + verified primary assets, product asset upload (R2/embedded, cutout fallback, grounded claims, filename matching), smart vision matching (Gemini, Workers AI, label and filename fallbacks), commit-match (verified primary image, BRIA cutout, provenance), socialCaption, and batch run/persistence.",
+    "D1 API tests passed: pagination, filters, validation, stats, brands, research, ingest, admin auth 401/unconfigured-preview, promos, 48h calendar, bulk ingest, sequential non-repeating campaign selection + verified primary assets, product asset upload (R2/embedded, cutout fallback, grounded claims, filename matching), smart vision matching (Gemini, Workers AI, label and filename fallbacks), commit-match (verified primary image, BRIA cutout, provenance), socialCaption, and batch run/persistence.",
   );
 }
 

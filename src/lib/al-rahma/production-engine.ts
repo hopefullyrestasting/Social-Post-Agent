@@ -20,6 +20,13 @@ import {
   ValidPromotion,
 } from "./commercial";
 import { cairoToday, isIsoDate } from "./dates";
+import {
+  creativeSlotRecipe,
+  headlinePlanForSlot,
+  type CreativeSlot,
+  type TextDirection,
+} from "./design-library";
+import { formatPriceText, isSafeOfferText, resolveSalesLine, sanitizeOfferText } from "./studio-fields";
 import { OverlayOptions, OverlaySystem } from "./overlay-system";
 import { QualityGate, QualityGateReport } from "./quality-gate";
 
@@ -48,6 +55,14 @@ export interface ProductionRequest {
   today?: string;
   /** Tenant brand context for dynamic multi-tenant rendering/copy/gate. */
   brand?: TenantBrandContext | BrandConfig | null;
+  /** Optional explicit price; falls back to product.price. */
+  price?: number | null;
+  /** Optional operator offer; falls back to product.offerText. */
+  offerText?: string | null;
+  /** Design-library slot used by `execute`; `executeVariants` always sets it. */
+  designSlot?: CreativeSlot;
+  /** Text direction for headline/commercial alignment. Defaults to RTL. */
+  textDirection?: TextDirection;
 }
 
 export type ProductionVariantsRequest = Omit<ProductionRequest, "variant" | "template" | "sceneImageUrl" | "stagedImageUrl"> & {
@@ -80,6 +95,9 @@ export interface ProductionResult {
   metadata: {
     productName: string;
     angle: string;
+    designSlot: CreativeSlot;
+    designRecipeId: string;
+    textDirection: TextDirection;
     variant: string;
     template: string;
     variantNumber: number;
@@ -89,6 +107,9 @@ export interface ProductionResult {
     sourceUrl: string | null;
     verifiedClaims: string[];
     warehouseStockStatus: string;
+    salesLine: string | null;
+    priceText: string | null;
+    offerText: string | null;
     promotion: {
       id: string;
       discountPercent: number;
@@ -146,6 +167,7 @@ export class ProductionEngine {
       ProductionEngine.build(
         {
           ...request,
+          designSlot: variantNumber,
           sceneImageUrl: request.sceneImageUrls?.[variantNumber] ?? null,
           stagedImageUrl: request.stagedImageUrls?.[variantNumber] ?? null,
           stagedImageContainsProduct:
@@ -167,6 +189,9 @@ export class ProductionEngine {
     const width = request.width ?? brand.visual.format.width;
     const height = request.height ?? brand.visual.format.height;
     const angle = resolveAngle(variantNumber, product);
+    const designSlot: CreativeSlot = request.designSlot ?? (variantNumber === 2 ? 2 : 1);
+    const textDirection: TextDirection = request.textDirection ?? "rtl";
+    const designRecipe = creativeSlotRecipe(designSlot);
 
     const today =
       request.today && isIsoDate(request.today)
@@ -179,11 +204,33 @@ export class ProductionEngine {
         : null;
     const occasion = normalizeOccasionInput(request.occasion);
 
+    const explicitPrice = request.price ?? product.price ?? null;
+    const priceText =
+      typeof explicitPrice === "number" && Number.isFinite(explicitPrice) && explicitPrice > 0
+        ? formatPriceText(explicitPrice, brand.commercial.currencyLabel)
+        : "";
+    const explicitOffer = request.offerText ?? product.offerText ?? null;
+    const offerText = isSafeOfferText(explicitOffer) ? sanitizeOfferText(explicitOffer) : "";
+    const salesLine = resolveSalesLine(product) || null;
+
     const copy = ArabicCopywriter.generatePost(product, angle, {
       variant: variantNumber,
+      designSlot,
       ctaIndex: variantNumber - 1,
       occasionGreeting: occasion?.greeting,
       brand,
+    });
+
+    const verifiedBenefit =
+      product.verificationStatus === "verified"
+        ? (product.verifiedBenefits ?? []).find((item) => item.trim().length > 0)?.trim() ?? ""
+        : "";
+    const headlineLines = headlinePlanForSlot(designSlot, {
+      productName: product.title,
+      headline: copy.headline,
+      benefitLine: copy.benefitLine,
+      salesLine,
+      verifiedBenefit,
     });
 
     const productImageUrl = product.productImageUrl?.trim() || null;
@@ -219,10 +266,15 @@ export class ProductionEngine {
       productImageUrl,
       headline: copy.headline,
       benefitLine: copy.benefitLine,
+      headlineLines,
+      designSlot,
+      textDirection,
       ctaText: copy.ctaShort,
       availabilityText: availabilityText(product.warehouseStockStatus),
       background,
       promotion: activePromotion,
+      priceText: priceText || null,
+      offerText: offerText || null,
       occasion,
     };
 
@@ -275,6 +327,9 @@ export class ProductionEngine {
       metadata: {
         productName: product.title,
         angle,
+        designSlot,
+        designRecipeId: designRecipe.id,
+        textDirection,
         variant: template,
         template,
         variantNumber,
@@ -284,6 +339,9 @@ export class ProductionEngine {
         sourceUrl: product.sourceUrl?.trim() || null,
         verifiedClaims,
         warehouseStockStatus: product.warehouseStockStatus ?? "unknown",
+        salesLine,
+        priceText: priceText || null,
+        offerText: offerText || null,
         promotion: activePromotion
           ? {
               id: activePromotion.id,

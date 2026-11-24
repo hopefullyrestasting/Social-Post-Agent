@@ -2,6 +2,7 @@
 import { AL_RAHMA_BRAND_CONFIG, buildBrandConfigFromTenant, type BrandConfig, type TenantBrandContext } from "./brand-core";
 import { OccasionGreetingInput, PromotionEvaluation } from "./commercial";
 import { OverlayOptions } from "./overlay-system";
+import { isSafeOfferText, isSafeSalesLine, isValidPriceText } from "./studio-fields";
 
 export interface QualityCheckResult {
   checkName: string;
@@ -189,6 +190,26 @@ export class QualityGate {
       if (!promotionOk) {
         errors.push("لا يمكن عرض سعر غير متوافق مع سجل العروض.");
       }
+    }
+
+    // 6b-2. Optional studio metadata is explicit, claim-free and bounded.
+    // These values are rendered only as controlled visual metadata; they never
+    // relax the copy-side pricing/benefit checks above.
+    const salesLineOk = !product.salesLine?.trim() || isSafeSalesLine(product.salesLine);
+    const priceTextOk = !visual?.priceText?.trim() || isValidPriceText(visual.priceText);
+    const offerTextOk = !visual?.offerText?.trim() || isSafeOfferText(visual.offerText);
+    const metadataOk = salesLineOk && priceTextOk && offerTextOk;
+    checks.push({
+      checkName: "Optional Studio Metadata",
+      category: "compliance",
+      passed: metadataOk,
+      score: metadataOk ? 100 : 0,
+      message: metadataOk
+        ? "اختياري: السعر والعرض وسطر البيع صريح وخالٍ من الادعاءات غير الموثّقة."
+        : "رُفضت بيانات اختيارية غير صالحة أو ادعائية؛ يجب إزالتها قبل النشر.",
+    });
+    if (!metadataOk) {
+      errors.push("بيانات السعر أو العرض أو سطر البيع غير صالحة؛ أزل النص الادعائي.");
     }
 
     // 6c. Cultural greeting

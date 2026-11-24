@@ -4,6 +4,15 @@
   resolveSimplePaletteKey,
   type SimplePaletteKey,
 } from "../../../src/lib/al-rahma/background-provider";
+import {
+  buildDesignPromptBlock,
+  type CreativeSlot,
+  type TextDirection,
+} from "../../../src/lib/al-rahma/design-library";
+import {
+  optionalProductVisualBrief,
+  type ProductVisualCommercialBrief,
+} from "../../../src/lib/al-rahma/product-visual-brief";
 
 /**
  * POST/GET /api/ai/studio-scene
@@ -44,6 +53,7 @@ export interface ArtDirectionContext {
   category?: string | null;
   name?: string | null;
   benefits?: string[] | null;
+  visualBrief?: ProductVisualCommercialBrief | null;
 }
 
 export interface ArtDirectionStyle {
@@ -234,13 +244,31 @@ function botanicalHue(context?: ArtDirectionContext): string {
   return hues[palette] ?? "sage-green";
 }
 
-export function buildScenePrompt(styleId: ArtDirectionStyleId, context?: ArtDirectionContext): string {
+export function buildScenePrompt(
+  styleId: ArtDirectionStyleId,
+  context?: ArtDirectionContext,
+  slot?: CreativeSlot,
+  textDirection: TextDirection = "rtl",
+): string {
   const style = ART_DIRECTION_STYLES[styleId] ?? ART_DIRECTION_STYLES[DEFAULT_ART_DIRECTION_STYLE];
   let prompt = style.scenePrompt;
   if (style.id === "botanical-horizon-reflection") {
     prompt = prompt.replace("color-matched monochrome sage/pastel wall", `color-matched monochrome ${botanicalHue(context)} wall`);
   }
-  return `${prompt} ${categoryMood(context)}`;
+  const designBlock = buildDesignPromptBlock({
+    slot,
+    textDirection,
+    backgroundOnly: true,
+    context: {
+      brand: context?.brand ?? null,
+      industry: context?.industry ?? null,
+      category: context?.category ?? null,
+      name: context?.name ?? null,
+      benefits: context?.benefits ?? null,
+      visualBrief: context?.visualBrief ?? null,
+    },
+  });
+  return `${prompt} ${categoryMood(context)} ${designBlock}`;
 }
 
 async function bytesFromUnknown(value: unknown): Promise<Uint8Array | null> {
@@ -399,25 +427,32 @@ export interface GeneratedArtDirectedScene {
   template: TemplateId;
   model?: string;
   fallbackReason?: string;
+  designSlot?: CreativeSlot | null;
 }
 
 export async function generateArtDirectedScene(
   env: SceneEnv,
   styleId: ArtDirectionStyleId,
   context?: ArtDirectionContext,
-  options?: { seed?: number; promptOverride?: string },
+  options?: {
+    seed?: number;
+    promptOverride?: string;
+    slot?: CreativeSlot;
+    textDirection?: TextDirection;
+  },
 ): Promise<GeneratedArtDirectedScene> {
   const style = ART_DIRECTION_STYLES[styleId] ?? ART_DIRECTION_STYLES[DEFAULT_ART_DIRECTION_STYLE];
-  const prompt = options?.promptOverride?.trim() || buildScenePrompt(style.id, context);
+  const prompt = options?.promptOverride?.trim() ||
+    buildScenePrompt(style.id, context, options?.slot, options?.textDirection ?? "rtl");
 
   const flux = await generateWithFlux(env, prompt, options?.seed);
   if (flux) {
-    return { image: flux, provider: "cloudflare-ai", styleId: style.id, styleLabelAr: style.labelAr, styleLabelEn: style.labelEn, template: style.template, model: MODEL_FLUX };
+    return { image: flux, provider: "cloudflare-ai", styleId: style.id, styleLabelAr: style.labelAr, styleLabelEn: style.labelEn, template: style.template, model: MODEL_FLUX, designSlot: options?.slot ?? null };
   }
 
   const gemini = await generateWithGemini(env, prompt);
   if (gemini) {
-    return { image: gemini.image, provider: "gemini-flash-image", styleId: style.id, styleLabelAr: style.labelAr, styleLabelEn: style.labelEn, template: style.template, model: gemini.model };
+    return { image: gemini.image, provider: "gemini-flash-image", styleId: style.id, styleLabelAr: style.labelAr, styleLabelEn: style.labelEn, template: style.template, model: gemini.model, designSlot: options?.slot ?? null };
   }
 
   const palette = resolveSimplePaletteKey(context);
@@ -432,6 +467,7 @@ export async function generateArtDirectedScene(
     styleLabelAr: style.labelAr,
     styleLabelEn: style.labelEn,
     template: style.template,
+    designSlot: options?.slot ?? null,
     fallbackReason:
       !env.AI && !env.GEMINI_API_KEY
         ? "No AI binding/key configured; using inline vector studio stage."
@@ -444,7 +480,7 @@ function noStoreJson(payload: unknown, status = 200): Response {
 }
 
 function parseSceneRequest(body: Record<string, unknown>): {
-  styleId: ArtDirectionStyleId; template: TemplateId; promptOverride?: string; seed?: number; context: ArtDirectionContext;
+  styleId: ArtDirectionStyleId; template: TemplateId; promptOverride?: string; seed?: number; context: ArtDirectionContext; slot?: CreativeSlot; textDirection: TextDirection;
 } {
   const styleId = isArtDirectionStyleId(body.style)
     ? body.style
@@ -455,14 +491,25 @@ function parseSceneRequest(body: Record<string, unknown>): {
   const template = isTemplateId(body.template) ? body.template : ART_DIRECTION_STYLES[styleId].template;
   const promptOverride = typeof body.prompt === "string" ? body.prompt : undefined;
   const seed = clampSeed(body.seed);
+  const slot = body.slot === 1 || body.slot === 2 ? body.slot : undefined;
+  const textDirection: TextDirection = body.textDirection === "ltr" ? "ltr" : "rtl";
   const rawContext = (body.context && typeof body.context === "object" ? body.context : {}) as Record<string, unknown>;
+  const name = typeof rawContext.name === "string" ? rawContext.name : null;
+  const category = typeof rawContext.category === "string" ? rawContext.category : null;
+  const industry = typeof rawContext.industry === "string" ? rawContext.industry : null;
   const context: ArtDirectionContext = {
     brand: typeof rawContext.brand === "string" ? rawContext.brand : null,
-    category: typeof rawContext.category === "string" ? rawContext.category : null,
-    name: typeof rawContext.name === "string" ? rawContext.name : null,
+    industry,
+    category,
+    name,
     benefits: Array.isArray(rawContext.benefits) ? rawContext.benefits.filter((item): item is string => typeof item === "string") : null,
+    visualBrief: optionalProductVisualBrief(
+      rawContext.visualBrief,
+      "ar",
+      { identity: name ?? "product", category: category ?? "general", industry: industry ?? "general" },
+    ),
   };
-  return { styleId, template, promptOverride, seed, context };
+  return { styleId, template, promptOverride, seed, context, slot, textDirection };
 }
 
 export const onRequestPost: PagesFunction<SceneEnv> = async ({ request, env }) => {
@@ -474,9 +521,9 @@ export const onRequestPost: PagesFunction<SceneEnv> = async ({ request, env }) =
     return noStoreJson({ success: false, error: "Request body must be valid JSON." }, 400);
   }
   const body = (payload && typeof payload === "object" ? payload : {}) as Record<string, unknown>;
-  const { styleId, seed, promptOverride, context } = parseSceneRequest(body);
-  const scene = await generateArtDirectedScene(env, styleId, context, { seed, promptOverride });
-  return noStoreJson({ success: true, provider: scene.provider, styleId: scene.styleId, styleLabelAr: scene.styleLabelAr, styleLabelEn: scene.styleLabelEn, template: scene.template, model: scene.model, image: scene.image, kind: scene.provider === "deterministic-studio" ? "inline-vector" : "data-uri", fallback: scene.fallbackReason });
+  const { styleId, seed, promptOverride, context, slot, textDirection } = parseSceneRequest(body);
+  const scene = await generateArtDirectedScene(env, styleId, context, { seed, promptOverride, slot, textDirection });
+  return noStoreJson({ success: true, provider: scene.provider, styleId: scene.styleId, styleLabelAr: scene.styleLabelAr, styleLabelEn: scene.styleLabelEn, template: scene.template, model: scene.model, designSlot: scene.designSlot ?? null, image: scene.image, kind: scene.provider === "deterministic-studio" ? "inline-vector" : "data-uri", fallback: scene.fallbackReason });
 };
 
 export const onRequestGet: PagesFunction<SceneEnv> = async ({ request, env }) => {
@@ -485,11 +532,14 @@ export const onRequestGet: PagesFunction<SceneEnv> = async ({ request, env }) =>
   const templateParam = url.searchParams.get("template");
   const seedParam = url.searchParams.get("seed");
   const promptOverride = url.searchParams.get("prompt") || undefined;
+  const slotParam = url.searchParams.get("slot");
+  const slot: CreativeSlot | undefined = slotParam === "1" || slotParam === "2" ? Number(slotParam) as CreativeSlot : undefined;
+  const textDirection: TextDirection = url.searchParams.get("textDirection") === "ltr" ? "ltr" : "rtl";
   const styleId = isArtDirectionStyleId(styleParam)
     ? styleParam
     : isTemplateId(templateParam)
       ? styleFromTemplate(templateParam)
       : DEFAULT_ART_DIRECTION_STYLE;
-  const scene = await generateArtDirectedScene(env, styleId, undefined, { seed: seedParam ? clampSeed(Number(seedParam)) : undefined, promptOverride });
-  return noStoreJson({ success: true, provider: scene.provider, styleId: scene.styleId, styleLabelAr: scene.styleLabelAr, styleLabelEn: scene.styleLabelEn, template: scene.template, model: scene.model, image: scene.image, kind: scene.provider === "deterministic-studio" ? "inline-vector" : "data-uri", fallback: scene.fallbackReason });
+  const scene = await generateArtDirectedScene(env, styleId, undefined, { seed: seedParam ? clampSeed(Number(seedParam)) : undefined, promptOverride, slot, textDirection });
+  return noStoreJson({ success: true, provider: scene.provider, styleId: scene.styleId, styleLabelAr: scene.styleLabelAr, styleLabelEn: scene.styleLabelEn, template: scene.template, model: scene.model, designSlot: scene.designSlot ?? null, image: scene.image, kind: scene.provider === "deterministic-studio" ? "inline-vector" : "data-uri", fallback: scene.fallbackReason });
 };

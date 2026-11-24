@@ -247,6 +247,33 @@ export interface TenantBrandContext {
 }
 
 /** Build a BrandConfig from locked tenant context, falling back to base config. */
+/**
+ * Studio/operator identity for the Basic Ad Studio UI shell only.
+ *
+ * All brand names, phone numbers and contact links used by the landing page,
+ * dashboard shell and export filenames must come from this object. Generated
+ * creatives use the tenant-locked BrandConfig above, never this config.
+ */
+export const IDESIGN_STUDIO_CONFIG = {
+  name: "iDesign",
+  productName: "AI Social Ad Studio",
+  tagline: "by iDesign",
+  websiteLabel: "idesign.social",
+  websiteUrl: "https://idesign.social",
+  email: "info@idesign.social",
+  emailUrl: "mailto:info@idesign.social",
+  phoneLabel: "+201097362000",
+  whatsappUrl: "https://wa.me/201097362000",
+  exportSlug: "basic-ad-studio",
+  colors: {
+    white: "#FFFFFF",
+    royalBlue: "#1D4ED8",
+    royalBlueBright: "#2563EB",
+  },
+} as const;
+
+export type IDesignStudioConfig = typeof IDESIGN_STUDIO_CONFIG;
+
 export function buildBrandConfigFromTenant(ctx?: TenantBrandContext | null): BrandConfig {
   const base = AL_RAHMA_BRAND_CONFIG;
   if (!ctx) return base;

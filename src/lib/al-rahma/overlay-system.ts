@@ -1,3 +1,4 @@
+import { assertZonesDoNotOverlap, createAdZones, fitText } from "./layout-geometry";
 ﻿import { AL_RAHMA_BRAND_CONFIG, buildBrandConfigFromTenant, type BrandConfig, type TenantBrandContext } from "./brand-core";
 import {
   BackgroundLayer,
@@ -6,6 +7,14 @@ import {
   resolveBackground,
 } from "./background-provider";
 import { OccasionGreetingInput, ValidPromotion } from "./commercial";
+import {
+  commercialBadgeAnchors,
+  commercialBadgeYForSize,
+  DESIGN_LAYOUT,
+  type CreativeSlot,
+  type TextDirection,
+} from "./design-library";
+import { isSafeOfferText, isValidPriceText, sanitizeOfferText } from "./studio-fields";
 import { escapeXml } from "./svg-utils";
 
 export type { DesignerTemplate } from "./background-provider";
@@ -45,6 +54,10 @@ export interface OverlayOptions {
   benefitLine?: string;
   /** Explicit dual-tone headline lines (master art direction). */
   headlineLines?: HeadlineLines;
+  /** Design-library slot 1 or 2; changes hierarchy without changing inputs. */
+  designSlot?: CreativeSlot;
+  /** Header/commercial badge reading flow. Defaults to RTL. */
+  textDirection?: TextDirection;
   ctaText?: string;
   availabilityText?: string;
   footerText?: string;
@@ -53,6 +66,10 @@ export interface OverlayOptions {
   background?: BackgroundLayer;
   /** Already validated as active and in-window. Never raw user input. */
   promotion?: ValidPromotion | null;
+  /** Optional explicit price, rendered only as controlled visual metadata. */
+  priceText?: string | null;
+  /** Optional operator-entered offer, never injected into Arabic copy. */
+  offerText?: string | null;
   /** Already validated by the API (48h cultural window). */
   occasion?: OccasionGreetingInput | null;
 }
@@ -216,43 +233,58 @@ function wrapHeadline(text: string, maxChars: number, maxLines: number): string[
 
 function dualToneHeadline(
   width: number,
+  height: number,
   headline: string | undefined,
   benefitLine: string | undefined,
   lines: HeadlineLines | undefined,
   brand: BrandConfig,
+  designSlot: CreativeSlot,
+  direction: TextDirection,
 ): string {
   const line1 = (lines?.line1 ?? headline ?? "").trim();
   const line2 = (lines?.line2 ?? benefitLine ?? "").trim();
   const line3 = (lines?.line3 ?? "").trim();
   if (!line1 && !line2 && !line3) return "";
 
-  const x = width / 2;
-  let y = 290;
+  // Geometry guard: place the headline inside the reserved upper zone and keep
+  // a deterministic fit measurement for QA. The master 76/78/42px type scale
+  // stays fixed so the signed-off art direction does not drift between batches.
+  const headlineZone = createAdZones(width, height).headlineZone;
+  const fitted = fitText(
+    [line1, line2, line3].filter(Boolean).join(" "),
+    headlineZone,
+    direction,
+    76,
+    36,
+  );
+  const x = headlineZone.x + headlineZone.width / 2;
+  let y = headlineZone.y + 76;
   const parts: string[] = [];
+  const dir = `direction="${direction}" unicode-bidi="plaintext"`;
 
   if (line1) {
     const l1 = wrapHeadline(line1, 18, 1)[0] ?? line1;
     parts.push(
-      `<text id="headline-line-1" data-3d="true" x="${x}" y="${y}" font-family="${escapeXml(brand.visual.fonts.primary)}" font-size="76" font-weight="900" fill="url(#headline-silver-gradient)" text-anchor="middle" direction="rtl" filter="url(#headline-silver-depth)">${escapeXml(l1)}</text>`,
+      `<text id="headline-line-1" data-3d="true" x="${x}" y="${y}" font-family="${escapeXml(brand.visual.fonts.primary)}" font-size="76" font-weight="900" fill="url(#headline-silver-gradient)" text-anchor="middle" ${dir} filter="url(#headline-silver-depth)">${escapeXml(l1)}</text>`,
     );
     y += 92;
   }
   if (line2) {
     const l2 = wrapHeadline(line2, 18, 1)[0] ?? line2;
     parts.push(
-      `<text id="headline-line-2" data-metallic-gold="true" x="${x}" y="${y}" font-family="${escapeXml(brand.visual.fonts.primary)}" font-size="78" font-weight="900" fill="url(#headline-gold-gradient)" text-anchor="middle" direction="rtl" filter="url(#headline-gold-bevel)">${escapeXml(l2)}</text>`,
+      `<text id="headline-line-2" data-metallic-gold="true" x="${x}" y="${y}" font-family="${escapeXml(brand.visual.fonts.primary)}" font-size="78" font-weight="900" fill="url(#headline-gold-gradient)" text-anchor="middle" ${dir} filter="url(#headline-gold-bevel)">${escapeXml(l2)}</text>`,
     );
     y += 74;
   }
   if (line3) {
     const l3 = wrapHeadline(line3, 28, 1)[0] ?? line3;
     parts.push(
-      `<text id="headline-line-3" x="${x}" y="${y}" font-family="${escapeXml(brand.visual.fonts.primary)}" font-size="42" font-weight="700" fill="#F8FAFC" text-anchor="middle" direction="rtl" filter="url(#headline-sub-shadow)">${escapeXml(l3)}</text>`,
+      `<text id="headline-line-3" x="${x}" y="${y}" font-family="${escapeXml(brand.visual.fonts.primary)}" font-size="42" font-weight="700" fill="#F8FAFC" text-anchor="middle" ${dir} filter="url(#headline-sub-shadow)">${escapeXml(l3)}</text>`,
     );
   }
 
   return `
-    <g id="dual-tone-headline" data-layout="upper-center">
+    <g id="dual-tone-headline" data-layout="upper-center" data-design-slot="${designSlot}" data-text-direction="${direction}" data-fitted-font-size="${fitted.fontSize}" data-fitted-lines="${fitted.lines.length}">
       <g id="sales-copy-editorial" data-metallic-gold="true">
         ${parts.join("\n        ")}
       </g>
@@ -342,37 +374,74 @@ function formatPriceValue(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(2);
 }
 
-function promoBadge(width: number, y: number, promotion: ValidPromotion, brand: BrandConfig): string {
+function promoBadge(
+  width: number,
+  y: number,
+  promotion: ValidPromotion,
+  brand: BrandConfig,
+  direction: TextDirection,
+): string {
   const badgeWidth = Math.min(660, width - 140);
   const x = (width - badgeWidth) / 2;
   const height = 120;
   const currency = brand.commercial.currencyLabel;
+  const anchors = commercialBadgeAnchors(badgeWidth, direction);
+  const dir = `direction="${direction}" unicode-bidi="plaintext"`;
   return `
-    <g id="promo-badge" data-metallic-gold="true" transform="translate(${x}, ${y})" filter="url(#card-shadow)">
+    <g id="promo-badge" data-metallic-gold="true" data-text-direction="${direction}" transform="translate(${x}, ${y})" filter="url(#card-shadow)">
       <rect width="${badgeWidth}" height="${height}" rx="24" fill="#061826" fill-opacity="0.55" stroke="url(#metallic-gold-rim)" stroke-width="2.5" />
       <g transform="translate(24, 34)">
         <rect width="160" height="46" rx="23" fill="#DC2626" />
-        <text x="80" y="31" font-family="${escapeXml(brand.visual.fonts.primary)}" font-size="20" font-weight="900" fill="#FFFFFF" text-anchor="middle">خصم ${promotion.discountPercent}%</text>
+        <text x="80" y="31" font-family="${escapeXml(brand.visual.fonts.primary)}" font-size="20" font-weight="900" fill="#FFFFFF" text-anchor="middle" ${dir}>خصم ${promotion.discountPercent}%</text>
       </g>
-      <text x="${badgeWidth - 28}" y="74" font-family="${escapeXml(brand.visual.fonts.primary)}" font-size="44" font-weight="900" fill="url(#headline-gold-gradient)" stroke="url(#metallic-gold-rim)" stroke-opacity="0.5" stroke-width="0.9" paint-order="stroke" filter="url(#metallic-text-depth)" text-anchor="end">${escapeXml(formatPriceValue(promotion.promoPrice))} ${escapeXml(currency)}</text>
-      <text x="24" y="98" font-family="${escapeXml(brand.visual.fonts.primary)}" font-size="20" font-weight="700" fill="#F8FAFC" fill-opacity="0.78" text-anchor="start" text-decoration="line-through">${escapeXml(formatPriceValue(promotion.originalPrice))} ${escapeXml(currency)}</text>
+      <text x="${anchors.priceX}" y="74" font-family="${escapeXml(brand.visual.fonts.primary)}" font-size="44" font-weight="900" fill="url(#headline-gold-gradient)" stroke="url(#metallic-gold-rim)" stroke-opacity="0.5" stroke-width="0.9" paint-order="stroke" filter="url(#metallic-text-depth)" text-anchor="${anchors.priceAnchor}" ${dir}>${escapeXml(formatPriceValue(promotion.promoPrice))} ${escapeXml(currency)}</text>
+      <text x="${anchors.offerX}" y="98" font-family="${escapeXml(brand.visual.fonts.primary)}" font-size="20" font-weight="700" fill="#F8FAFC" fill-opacity="0.78" text-anchor="${anchors.offerAnchor}" ${dir} text-decoration="line-through">${escapeXml(formatPriceValue(promotion.originalPrice))} ${escapeXml(currency)}</text>
     </g>
   `;
 }
 
-function atmosphericContactBar(width: number, height: number, brand: BrandConfig): string {
-  const y = 1770;
+function operatorOfferBadge(
+  width: number,
+  y: number,
+  priceText: string,
+  offerText: string,
+  brand: BrandConfig,
+  direction: TextDirection,
+): string {
+  const badgeWidth = Math.min(660, width - 140);
+  const x = (width - badgeWidth) / 2;
+  const height = offerText ? 132 : 96;
+  const anchors = commercialBadgeAnchors(badgeWidth, direction);
+  const dir = `direction="${direction}" unicode-bidi="plaintext"`;
+  return `
+    <g id="operator-offer-badge" data-price="${escapeXml(priceText)}" data-offer="${escapeXml(offerText)}" data-text-direction="${direction}" transform="translate(${x}, ${y})" filter="url(#card-shadow)">
+      <rect width="${badgeWidth}" height="${height}" rx="24" fill="#061826" fill-opacity="0.62" stroke="url(#metallic-gold-rim)" stroke-width="2.5" />
+      ${priceText ? `<text x="${anchors.priceX}" y="62" font-family="${escapeXml(brand.visual.fonts.primary)}" font-size="46" font-weight="900" fill="url(#headline-gold-gradient)" filter="url(#metallic-text-depth)" text-anchor="${anchors.priceAnchor}" ${dir}>${escapeXml(priceText)}</text>` : ""}
+      ${offerText ? `<text x="${anchors.offerX}" y="${priceText ? 104 : 64}" font-family="${escapeXml(brand.visual.fonts.primary)}" font-size="30" font-weight="700" fill="#F8FAFC" text-anchor="${anchors.offerAnchor}" ${dir}>${escapeXml(offerText)}</text>` : ""}
+    </g>
+  `;
+}
+
+function atmosphericContactBar(
+  width: number,
+  height: number,
+  brand: BrandConfig,
+  direction: TextDirection,
+): string {
+  const y = DESIGN_LAYOUT.contactBarY;
   const barH = height - y;
   const centerY = y + Math.round(barH / 2);
   const label = `${brand.brandName} - للطلب والتواصل:`;
   const phone = brand.contact.phone;
+  const phoneTspan = `<tspan dx="14" fill="#FFFFFF" font-weight="700" direction="ltr">${escapeXml(phone)}</tspan>`;
+  const labelTspan = `<tspan fill="#FBBF24" direction="rtl">${escapeXml(label)}</tspan>`;
+  const spans = direction === "ltr"
+    ? `${phoneTspan}${labelTspan}`
+    : `${labelTspan}${phoneTspan}`;
   return `
-    <g id="contact-block" data-layout="atmospheric-contact-bar" data-metallic="true">
+    <g id="contact-block" data-layout="atmospheric-contact-bar" data-metallic="true" data-text-direction="${direction}">
       <rect id="contact-vignette" x="0" y="${y}" width="${width}" height="${barH}" fill="url(#bottom-atmospheric-vignette)" />
-      <text x="${width / 2}" y="${centerY + 14}" font-family="${escapeXml(brand.visual.fonts.primary)}" font-size="42" font-weight="700" text-anchor="middle" direction="rtl">
-        <tspan fill="#FBBF24">${escapeXml(label)}</tspan>
-        <tspan dx="14" fill="#FFFFFF" font-weight="700" direction="ltr">${escapeXml(phone)}</tspan>
-      </text>
+      <text x="${width / 2}" y="${centerY + 14}" font-family="${escapeXml(brand.visual.fonts.primary)}" font-size="42" font-weight="700" text-anchor="middle" direction="${direction}" unicode-bidi="plaintext">${spans}</text>
     </g>
   `;
 }
@@ -392,9 +461,17 @@ export class OverlaySystem {
     const headline = (opts.headline ?? "").trim();
     const benefit = (opts.benefitLine ?? "").trim();
     const promotion = opts.promotion ?? null;
+    const priceText = isValidPriceText(opts.priceText) ? (opts.priceText ?? "").trim() : "";
+    const offerText = isSafeOfferText(opts.offerText) ? sanitizeOfferText(opts.offerText) : "";
     const stagedImageUrl = opts.stagedImageUrl?.trim() || null;
     const stagedContainsProduct = Boolean(stagedImageUrl && opts.stagedImageContainsProduct);
     const productUrl = opts.productImageUrl?.trim() || null;
+    const designSlot: CreativeSlot = opts.designSlot ?? 1;
+    const direction: TextDirection = opts.textDirection ?? "rtl";
+    const hasCommercialBadge = Boolean(promotion || priceText || offerText);
+    const zonesCollisionFree = assertZonesDoNotOverlap(
+      createAdZones(width, height, { price: hasCommercialBadge, offer: hasCommercialBadge }),
+    );
 
     const background =
       opts.background ??
@@ -413,15 +490,19 @@ export class OverlaySystem {
     };
 
     return `
-      <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" role="img" aria-label="${escapeXml(brand.brandName)}">
+      <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" dir="${direction}" data-layout-zones="${zonesCollisionFree ? "collision-free" : "overlap"}" role="img" aria-label="${escapeXml(brand.brandName)}">
         ${commonDefs()}
         <g id="scene-background" data-template="${template}" data-staged-product="${stagedContainsProduct ? "true" : "false"}"${stagedContainsProduct ? ' data-ai-composite="true"' : ""}>${background.markup}</g>
         ${opts.showLogo === false ? "" : floatingEmblem(opts.brandLogoUrl, brand)}
         ${opts.showLogo === false ? "" : '<g id="top-header-pill" data-layout="floating-emblem-compat"></g>'}
-        ${dualToneHeadline(width, headline, benefit, headlineLines, brand)}
+        ${dualToneHeadline(width, height, headline, benefit, headlineLines, brand, designSlot, direction)}
         ${heroPackshot(width, productUrl, { staged: Boolean(stagedImageUrl) })}
-        ${promotion ? promoBadge(width, 1480, promotion, brand) : ""}
-        ${opts.showFooterBar === false ? "" : atmosphericContactBar(width, height, brand)}
+        ${promotion
+          ? promoBadge(width, commercialBadgeYForSize(width, height), promotion, brand, direction)
+          : priceText || offerText
+            ? operatorOfferBadge(width, commercialBadgeYForSize(width, height), priceText, offerText, brand, direction)
+            : ""}
+        ${opts.showFooterBar === false ? "" : atmosphericContactBar(width, height, brand, direction)}
         ${legacyContactMarkers(brand)}
       </svg>
     `.trim();
