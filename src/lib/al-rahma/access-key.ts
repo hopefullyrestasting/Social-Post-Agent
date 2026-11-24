@@ -2,13 +2,31 @@ export const ACCESS_KEY_STORAGE_KEY = "al-rahma-access-key";
 export const ACCESS_KEY_HEADER = "X-Access-Key";
 export const ACCESS_KEY_COOKIE = "al_rahma_access_key";
 
+/** Cookie fallback covers restored browser sessions and <img> asset loads. */
+function readAccessKeyCookie(): string {
+  if (typeof document === "undefined") return "";
+  try {
+    for (const part of document.cookie.split(";")) {
+      const separator = part.indexOf("=");
+      if (separator < 0) continue;
+      if (part.slice(0, separator).trim() !== ACCESS_KEY_COOKIE) continue;
+      return decodeURIComponent(part.slice(separator + 1).trim());
+    }
+  } catch {
+    // Storage/cookies can be blocked.
+  }
+  return "";
+}
+
 export function readAccessKey(): string {
   if (typeof window === "undefined") return "";
   try {
-    return window.localStorage.getItem(ACCESS_KEY_STORAGE_KEY) ?? "";
+    const stored = window.localStorage.getItem(ACCESS_KEY_STORAGE_KEY) ?? "";
+    if (stored.trim()) return stored.trim();
   } catch {
-    return "";
+    // Storage can be blocked (private mode).
   }
+  return readAccessKeyCookie().trim();
 }
 
 export function persistAccessKey(value: string): void {

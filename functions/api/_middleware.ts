@@ -1,9 +1,14 @@
 import {
   AUTH_MODE_HEADER,
   authorizeAdminRequest,
+  isTenantWriteRequest,
   type AuthEnv,
 } from "./_auth";
-import { resolveTenantScope } from "./_tenant";
+import {
+  accessKeyRequiredResponse,
+  extractAccessKey,
+  resolveTenantScope,
+} from "./_tenant";
 
 interface Env extends AuthEnv {
   DB: D1Database;
@@ -15,14 +20,11 @@ const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 /**
  * Applies to every route under `/api`.
  *
- * Writes and generation endpoints require:
- *   1. a valid admin key when `ADMIN_API_KEY` is bound, and
- *   2. a valid annual access key once tenant keys are provisioned
- *      (`/api/tenant/*` is exempt: provisioning is admin-only and brand
- *      locking authenticates the tenant inside its own handler).
- *
- * Reads pass through this layer; each read handler resolves the tenant scope so
- * one key can never read another tenant's rows.
+ * Admin/provisioning routes require `ADMIN_API_KEY`. Normal tenant studio
+ * writes (`/api/db/*`, `/api/assets/*`, `/api/ai/*`) accept either a valid
+ * admin key or a valid, non-expired annual access key. With an access key the
+ * request is scoped to that tenant, so one customer can never touch another's
+ * rows. Reads pass through; handlers resolve their own tenant scope.
  */
 export const onRequest: PagesFunction<Env> = async (context) => {
   const decision = await authorizeAdminRequest(context.request, context.env);
@@ -33,19 +35,28 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
   const url = new URL(context.request.url);
   const mutating = MUTATING_METHODS.has(context.request.method.toUpperCase());
-  const tenantScopedWrite =
-    mutating &&
-    (url.pathname.startsWith("/api/db/") ||
-      url.pathname.startsWith("/api/assets/") ||
-      url.pathname.startsWith("/api/ai/"));
+  const tenantScopedWrite = isTenantWriteRequest(context.request);
+  const hasAccessKey = Boolean(extractAccessKey(context.request).trim());
 
   if (tenantScopedWrite && context.env.DB) {
-    const scope = await resolveTenantScope(context.request, context.env);
-    if (!scope.ok) return scope.response;
+    if (decision.requiresTenantKey && !hasAccessKey) {
+      // An admin key is bound, but this is a tenant studio write. Report the
+      // actual problem instead of falsely asking for an admin key.
+      const response = accessKeyRequiredResponse();
+      response.headers.set(AUTH_MODE_HEADER, decision.mode);
+      return response;
+    }
+
+    // A matching admin key may run unscoped. Any supplied access key is still
+    // validated so an invalid/expired key never silently falls back to admin.
+    if (!decision.viaAdmin || hasAccessKey) {
+      const scope = await resolveTenantScope(context.request, context.env);
+      if (!scope.ok) return scope.response;
+    }
   }
 
-  const response = await context.next();
-
+  // When no admin key is configured, tenant writes may still be blocked by
+  // resolveTenantScope once keys exist; tag the legacy anonymous mode.
   if (
     decision.mode === "unconfigured-preview" &&
     (url.pathname.startsWith("/api/db/") ||
@@ -53,6 +64,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       url.pathname === "/api/ai/harvest-random") &&
     mutating
   ) {
+    const response = await context.next();
     const headers = new Headers(response.headers);
     headers.set(AUTH_MODE_HEADER, "unconfigured-preview");
     return new Response(response.body, {
@@ -62,5 +74,5 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     });
   }
 
-  return response;
+  return context.next();
 };
