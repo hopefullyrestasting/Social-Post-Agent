@@ -576,6 +576,14 @@ async function testBrandingAndLanguageContract() {
   assert.ok(dashboard.includes("multiple"));
   assert.ok(dashboard.includes('mode: "basic"'));
   assert.ok(dashboard.includes("last_advertised_at"));
+  assert.ok(dashboard.includes("/api/tenant/me"));
+  assert.ok(dashboard.includes("/api/tenant/lock-brand"));
+  assert.ok(dashboard.includes("persistAccessKey"));
+  assert.ok(dashboard.includes("installAccessKeyFetch"));
+  assert.ok(dashboard.includes("needsBrandSetup"));
+  assert.ok(dashboard.includes("brand_locked"));
+  assert.ok(dashboard.includes("brand_name"));
+  assert.ok(dashboard.includes("industry"));
 
   // Six languages, accurate labels and RTL/LTR direction metadata.
   assert.deepEqual(
@@ -594,6 +602,18 @@ async function testBrandingAndLanguageContract() {
     assert.equal(languageDirection(code), "ltr");
     assert.ok(translate(code, "title").length > 0);
     assert.ok(I18N[code].generateNext.length > 0);
+  }
+  for (const code of ["ar", "en", "ms", "fr", "de", "zh"] as const) {
+    for (const key of [
+      "accessKey",
+      "applyKey",
+      "brandSetupTitle",
+      "brandName",
+      "industry",
+      "lockBrand",
+    ] as const) {
+      assert.ok(translate(code, key).length > 0, `${code}.${key} must be translated`);
+    }
   }
   assert.equal(translate("ar", "title"), I18N.ar.title);
 
@@ -621,7 +641,7 @@ async function run() {
   await testConditionalMetadata();
   await testBrandingAndLanguageContract();
   console.log(
-    "Basic Studio tests passed: sequential non-repeating batches with reload persistence, 2 distinct design slots per product, custom count/selection, already-generated 409, design-library hierarchy/prompt rules, guarded vision-brief copy fallback, conditional price/offer metadata with intact quality gate, RTL/LTR alignment, centralised iDesign branding/links, and six-language switcher contract.",
+    "Basic Studio tests passed: sequential non-repeating batches with reload persistence, 2 distinct design slots per product, custom count/selection, already-generated 409, design-library hierarchy/prompt rules, guarded vision-brief copy fallback, conditional price/offer metadata with intact quality gate, access key bar, one-time brand lock card, RTL/LTR alignment, centralised iDesign branding/links, and six-language switcher contract.",
   );
 }
 

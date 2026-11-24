@@ -342,6 +342,22 @@ async function run() {
   assert.ok(created);
   assert.equal(created.tenant_key_id, db.activationKeys.find((r)=>r.label==="B")!.id);
 
+  // --- Middleware: one-time brand setup works with the tenant key ----------
+  const keyLock = await provisionKey(db, "LockViaMiddleware");
+  const lockViaKey = await throughApiMiddleware(
+    lockBrand,
+    db,
+    "https://x/api/tenant/lock-brand",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-access-key": keyLock },
+      body: JSON.stringify({ brand_name: "Lock Co", industry: "Retail" }),
+    },
+  );
+  const lockViaKeyBody = await json(lockViaKey);
+  assert.equal(lockViaKey.status, 200, JSON.stringify(lockViaKeyBody));
+  assert.equal(lockViaKeyBody.tenant.brand_locked, true);
+
   // --- Middleware: tenant access keys authorize normal studio writes --------
   // ADMIN_API_KEY is bound here, but a valid annual key is enough for uploads
   // and product creation. This is the dashboard's production failure mode.
