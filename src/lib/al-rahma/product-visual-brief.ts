@@ -1,0 +1,53 @@
+export type LightingMood = "warm" | "cool-studio" | "high-contrast" | "natural-daylight";
+export type SurfaceFinish = "matte" | "glossy" | "metallic" | "glass" | "textile" | "mixed";
+
+export interface ProductVisualCommercialBrief {
+  identity: string; primaryFunction: string; category: string; industry: string;
+  dominantTones: string[]; surfaceFinish: SurfaceFinish; palette: string[];
+  lightingMood: LightingMood; shortSalesLine: string; language: "ar" | "en" | "ms" | "fr" | "de" | "zh";
+}
+
+const INDUSTRY_GUARDS: Record<string, string[]> = {
+  automotive: ["beauty", "cosmetic", "spa", "skincare"],
+  industrial: ["beauty", "cosmetic", "spa", "skincare"],
+  beauty: ["engine", "automotive", "mechanical", "industrial"],
+};
+
+function clean(value: unknown, max = 160): string {
+  return typeof value === "string" ? value.trim().replace(/\s+/g, " ").slice(0, max) : "";
+}
+function list(value: unknown, max = 5): string[] {
+  return Array.isArray(value) ? value.map(item => clean(item, 40)).filter(Boolean).slice(0, max) : [];
+}
+function mood(value: unknown): LightingMood {
+  return ["warm", "cool-studio", "high-contrast", "natural-daylight"].includes(String(value))
+    ? value as LightingMood : "cool-studio";
+}
+function finish(value: unknown): SurfaceFinish {
+  return ["matte", "glossy", "metallic", "glass", "textile", "mixed"].includes(String(value))
+    ? value as SurfaceFinish : "mixed";
+}
+export function isIndustryCompatible(industry: string, category: string, identity: string): boolean {
+  const text = `${category} ${identity}`.toLowerCase();
+  return !(INDUSTRY_GUARDS[industry.toLowerCase()] ?? []).some(forbidden => text.includes(forbidden));
+}
+export function parseProductVisualBrief(raw: unknown, language: ProductVisualCommercialBrief["language"], fallback: Pick<ProductVisualCommercialBrief, "identity" | "category" | "industry">): ProductVisualCommercialBrief {
+  const value = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+  const identity = clean(value.identity) || fallback.identity;
+  const category = clean(value.category) || fallback.category;
+  const industry = clean(value.industry) || fallback.industry;
+  const compatible = isIndustryCompatible(industry, category, identity);
+  return {
+    identity, category: compatible ? category : fallback.category, industry,
+    primaryFunction: clean(value.primaryFunction) || "Product benefit requires verification",
+    dominantTones: list(value.dominantTones),
+    surfaceFinish: finish(value.surfaceFinish),
+    palette: list(value.palette).length ? list(value.palette) : ["#FFFFFF", "#1D4ED8", "#2563EB"],
+    lightingMood: mood(value.lightingMood),
+    shortSalesLine: clean(value.shortSalesLine, 110) || identity,
+    language,
+  };
+}
+export function visualBriefPrompt(language: ProductVisualCommercialBrief["language"], industry: string): string {
+  return `Return JSON only. Analyze the product itself, never the background. Identify its function, category, dominant tones, surface finish, and a harmonious palette. Keep the industry context as ${industry}; do not substitute an unrelated setting. Write a truthful short sales line in ${language}; never invent a price, discount, or claim.`;
+}
