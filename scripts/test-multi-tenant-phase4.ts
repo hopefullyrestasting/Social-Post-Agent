@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { onRequest as apiMiddleware } from "../functions/api/_middleware";
 import { onRequestPost as provision } from "../functions/api/tenant/provision";
 import { onRequestGet as tenantMe } from "../functions/api/tenant/me";
 import { onRequestPost as lockBrand } from "../functions/api/tenant/lock-brand";
@@ -237,6 +238,24 @@ async function provisionKey(db: MockDB, label: string) {
   return body.access_key as string;
 }
 
+/** Runs a handler through the real /api middleware with ADMIN_API_KEY bound. */
+async function throughApiMiddleware(
+  handler: (context: any) => Promise<Response> | Response,
+  db: MockDB,
+  url: string,
+  init: RequestInit = {},
+) {
+  const base = ctx({ DB: db, ADMIN_API_KEY: "admin" }, url, init);
+  return apiMiddleware({ ...base, next: async () => handler(base) } as any);
+}
+
+function imageForm(name: string) {
+  const form = new FormData();
+  form.append("imageFile", new File([new Uint8Array([137, 80, 78, 71])], `${name}.png`, { type: "image/png" }));
+  form.append("autoCreate", "true");
+  return form;
+}
+
 async function run() {
   const db = new MockDB();
 
@@ -322,6 +341,98 @@ async function run() {
   const created = db.products.find((p) => p.id === upBody.product.id);
   assert.ok(created);
   assert.equal(created.tenant_key_id, db.activationKeys.find((r)=>r.label==="B")!.id);
+
+  // --- Middleware: tenant access keys authorize normal studio writes --------
+  // ADMIN_API_KEY is bound here, but a valid annual key is enough for uploads
+  // and product creation. This is the dashboard's production failure mode.
+  const tenantUpload = await throughApiMiddleware(
+    uploadAsset,
+    db,
+    "https://x/api/assets/upload",
+    { method: "POST", headers: { "x-access-key": keyA }, body: imageForm("tenant-key-upload") },
+  );
+  const tenantUploadBody = await json(tenantUpload);
+  assert.equal(tenantUpload.status, 200, JSON.stringify(tenantUploadBody));
+  assert.equal(tenantUploadBody.success, true);
+  assert.equal(tenantUploadBody.autoCreated, true);
+
+  const tenantProducts = await throughApiMiddleware(
+    postProducts,
+    db,
+    "https://x/api/db/products",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${keyA}` },
+      body: JSON.stringify([{ name_arabic: "منتج بمفتاح الوصول", category: "food" }]),
+    },
+  );
+  const tenantProductsBody = await json(tenantProducts);
+  assert.equal(tenantProducts.status, 200, JSON.stringify(tenantProductsBody));
+
+  const cookieUpload = await throughApiMiddleware(
+    uploadAsset,
+    db,
+    "https://x/api/assets/upload",
+    {
+      method: "POST",
+      headers: { cookie: `al_rahma_access_key=${encodeURIComponent(keyB)}` },
+      body: imageForm("cookie-upload"),
+    },
+  );
+  const cookieUploadBody = await json(cookieUpload);
+  assert.equal(cookieUpload.status, 200, JSON.stringify(cookieUploadBody));
+
+  // Missing/invalid/expired keys report the real reason, never "admin key".
+  const missingKey = await throughApiMiddleware(
+    uploadAsset,
+    db,
+    "https://x/api/assets/upload",
+    { method: "POST", body: imageForm("missing-key") },
+  );
+  const missingBody = await json(missingKey);
+  assert.equal(missingKey.status, 401);
+  assert.equal(missingBody.code, "access_key_required");
+  assert.doesNotMatch(String(missingBody.error), /admin key/i);
+
+  const invalidKey = await throughApiMiddleware(
+    postProducts,
+    db,
+    "https://x/api/db/products",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-access-key": "arh_invalid" },
+      body: JSON.stringify([{ name_arabic: "منتج غير مصرح", category: "food" }]),
+    },
+  );
+  const invalidBody = await json(invalidKey);
+  assert.equal(invalidKey.status, 401);
+  assert.equal(invalidBody.code, "access_key_invalid");
+  assert.doesNotMatch(String(invalidBody.error), /admin key/i);
+
+  const expiredKey = await throughApiMiddleware(
+    uploadAsset,
+    db,
+    "https://x/api/assets/upload",
+    { method: "POST", headers: { "x-access-key": keyExp }, body: imageForm("expired") },
+  );
+  const expiredBody = await json(expiredKey);
+  assert.equal(expiredKey.status, 403);
+  assert.equal(expiredBody.code, "access_key_expired");
+
+  // Provisioning remains admin-only even for a valid tenant key.
+  const tenantProvision = await throughApiMiddleware(
+    provision,
+    db,
+    "https://x/api/tenant/provision",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-access-key": keyA },
+      body: JSON.stringify({ label: "Tenant cannot provision" }),
+    },
+  );
+  const tenantProvisionBody = await json(tenantProvision);
+  assert.equal(tenantProvision.status, 401);
+  assert.equal(tenantProvisionBody.code, "admin_key_required");
 
   console.log("multi-tenant phase4 tests passed");
 }

@@ -205,6 +205,15 @@ export function tenantFromRow(row: ActivationKeyRow): TenantContext {
   };
 }
 
+/** Clear 401 for requests that must present an access key but did not. */
+export function accessKeyRequiredResponse(): Response {
+  return failure(
+    401,
+    "access_key_required",
+    "An access key is required. Send X-Access-Key, X-Activation-Key, Authorization: Bearer <key>, or use the saved dashboard key.",
+  ).response;
+}
+
 function failure(
   status: number,
   code: string,
@@ -270,7 +279,7 @@ export async function authenticateTenant(
     return failure(
       401,
       "access_key_required",
-      "An access key is required. Send X-Access-Key or Authorization: Bearer <key>.",
+      "An access key is required. Send X-Access-Key, X-Activation-Key, Authorization: Bearer <key>, or use the saved dashboard key.",
     );
   }
 
@@ -529,7 +538,7 @@ export async function resolveTenantScope(
     return failure(
       401,
       "access_key_required",
-      "An access key is required. Send X-Access-Key or Authorization: Bearer <key>.",
+      "An access key is required. Send X-Access-Key, X-Activation-Key, Authorization: Bearer <key>, or use the saved dashboard key.",
     );
   }
 
@@ -538,7 +547,7 @@ export async function resolveTenantScope(
     return failure(
       401,
       "access_key_required",
-      "An access key is required. Send X-Access-Key or Authorization: Bearer <key>.",
+      "An access key is required. Send X-Access-Key, X-Activation-Key, Authorization: Bearer <key>, or use the saved dashboard key.",
     );
   }
 

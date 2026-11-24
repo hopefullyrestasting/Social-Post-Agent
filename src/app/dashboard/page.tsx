@@ -69,6 +69,7 @@ function failureMessage(body: ApiFailure, status: number, fallback: string): str
 }
 
 async function fetchProducts(signal?: AbortSignal, fallback = ""): Promise<Product[]> {
+  installAccessKeyFetch();
   const response = await fetch("/api/db/products?limit=100", {
     headers: { Accept: "application/json", ...accessKeyHeaders() },
     cache: "no-store",
@@ -137,6 +138,7 @@ export default function DashboardPage() {
   async function uploadImages(files: FileList | File[]) {
     const list = Array.from(files ?? []).filter((file) => file.type.startsWith("image/"));
     if (list.length === 0) return;
+    installAccessKeyFetch();
     setUploading(true);
     setError("");
     let added = 0;
@@ -179,6 +181,7 @@ export default function DashboardPage() {
   }
 
   async function saveProductField(product: Product, patch: ProductPatch) {
+    installAccessKeyFetch();
     setError("");
     try {
       const response = await fetch(
@@ -207,6 +210,7 @@ export default function DashboardPage() {
   }
 
   async function generateAndDownload(body: Record<string, unknown>) {
+    installAccessKeyFetch();
     setGenerating(true);
     setNotice("");
     setError("");
