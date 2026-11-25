@@ -1,5 +1,5 @@
 import { requireAdmin, noStore } from "./_admin";
-import { annualExpiryFrom, hashAccessKey, nowSeconds, tenantSettingKey } from "../_tenant";
+import { hashAccessKey, nowSeconds, tenantSettingKey } from "../_tenant";
 interface Env { DB:D1Database; ADMIN_API_KEY?:string; }
 const key=()=> "arh_"+Array.from(crypto.getRandomValues(new Uint8Array(24))).map(x=>x.toString(16).padStart(2,"0")).join("");
 export const onRequestPost: PagesFunction<Env> = async ({request,env}) => {

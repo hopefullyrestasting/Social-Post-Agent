@@ -1,18 +1,21 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import IDMark from "@/components/idesign/id-mark";
+import { IDESIGN_STUDIO_CONFIG } from "@/lib/al-rahma/brand-core";
 
 type Tenant = { id:string; label:string|null; status:string; expires_at:number|null; brand_locked:number; locked_brand_name:string|null; locked_industry:string|null; total_products:number; generated_products:number; };
 type Health = { tenants:{total:number;active:number;revoked:number;expired:number};products:{total:number;generated:number;remaining:number} };
+type TenantsResponse = { tenants:Tenant[] };
 
 export default function AdminPage() {
  const [key,setKey]=useState(""); const [health,setHealth]=useState<Health|null>(null); const [tenants,setTenants]=useState<Tenant[]>([]); const [query,setQuery]=useState(""); const [status,setStatus]=useState(""); const [error,setError]=useState("");
  const headers=useMemo(()=>({"X-Admin-Key":key}),[key]);
- const load=async()=>{ if(!key.trim()) return; setError(""); try { const [h,t]=await Promise.all([fetch("/api/admin/health",{headers}),fetch("/api/admin/tenants?limit=50&q="+encodeURIComponent(query)+"&status="+encodeURIComponent(status),{headers})]); if(!h.ok||!t.ok) throw new Error("Admin access was rejected."); setHealth(await h.json()); setTenants((await t.json()).tenants); } catch(e){setError(e instanceof Error?e.message:"Unable to load admin data.");} };
- useEffect(()=>{void load();},[key,status]); // key is held only in page memory
+ const load=useCallback(async()=>{ if(!key.trim()) return; setError(""); try { const [h,t]=await Promise.all([fetch("/api/admin/health",{headers}),fetch("/api/admin/tenants?limit=50&q="+encodeURIComponent(query)+"&status="+encodeURIComponent(status),{headers})]); if(!h.ok||!t.ok) throw new Error("Admin access was rejected."); setHealth((await h.json()) as Health); setTenants(((await t.json()) as TenantsResponse).tenants); } catch(e){setError(e instanceof Error?e.message:"Unable to load admin data.");} },[key,headers,query,status]);
+ useEffect(()=>{queueMicrotask(()=>{void load();});},[load]); // key is held only in page memory
  const action=async(tenantId:string,action:string,statusOverride?:string)=>{ if(!confirm("Confirm support action: "+action+"?")) return; const response=await fetch("/api/admin/support",{method:"POST",headers:{...headers,"Content-Type":"application/json"},body:JSON.stringify({tenantId,action,...(statusOverride?{status:statusOverride}:{})})}); if(!response.ok){setError("Support action failed.");return;} void load(); };
  return <main dir="ltr" style={{minHeight:"100vh",background:"#fff",color:"#102a5c",fontFamily:"Arial, sans-serif",padding:24}}>
   <header style={{display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"2px solid #2563EB",paddingBottom:18}}>
-   <div><b style={{fontSize:30,color:"#1D4ED8"}}>iD</b><span style={{marginLeft:10,fontWeight:700}}>Owner Admin & Support</span><small style={{display:"block",color:"#2563EB"}}>idesign.social · info@idesign.social · +201097362000</small></div>
+   <div><IDMark size={30} small /><span style={{marginLeft:10,fontWeight:700}}>Owner Admin & Support</span><small style={{display:"block",color:"#2563EB"}}>{IDESIGN_STUDIO_CONFIG.websiteLabel} · {IDESIGN_STUDIO_CONFIG.email} · {IDESIGN_STUDIO_CONFIG.phoneLabel}</small></div>
    <label>Admin key <input type="password" value={key} onChange={e=>setKey(e.target.value)} placeholder="Held only in this tab" style={{marginLeft:8,padding:8,border:"1px solid #2563EB"}} /></label>
   </header>
   {error && <p style={{color:"#b91c1c"}}>{error}</p>}
