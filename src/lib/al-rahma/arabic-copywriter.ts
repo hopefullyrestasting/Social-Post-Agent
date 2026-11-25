@@ -1,3 +1,4 @@
+import { assertTenantBrandExclusive, cleanMarketingText } from "./strict-design-rules";
 import { AL_RAHMA_BRAND_CONFIG, buildBrandConfigFromTenant, type BrandConfig, type TenantBrandContext } from "./brand-core";
 import { creativeSlotRecipe, type CreativeSlot } from "./design-library";
 import type { ProductVisualCommercialBrief } from "./product-visual-brief";
@@ -143,7 +144,7 @@ function deriveSalesCopy(
   // Never use usage instructions.
   const benefits = clean(product.verifiedBenefits);
   const category = categoryLabel(product.category);
-  const name = (product.badgeText || product.title || "")
+  const name = cleanMarketingText(product.badgeText || product.title, categoryLabel(product.category))
     .trim()
     .split(/\s+/)
     .slice(0, 2)
@@ -170,7 +171,7 @@ function buildHeadline(product: ProductDetails): string {
   if (salesLine) {
     return salesLine;
   }
-  const raw = (product.badgeText || product.title || "").trim();
+  const raw = cleanMarketingText(product.badgeText || product.title, categoryLabel(product.category));
   const words = raw.split(/\s+/).filter(Boolean);
   if (words.length >= 2) return raw;
   const category = categoryLabel(product.category);
@@ -210,6 +211,7 @@ export class ArabicCopywriter {
     const brand = (brandOpt && "brandName" in brandOpt && "visual" in brandOpt
       ? (brandOpt as unknown as BrandConfig)
       : buildBrandConfigFromTenant(brandOpt as TenantBrandContext | null | undefined));
+    assertTenantBrandExclusive(brandOpt as TenantBrandContext | BrandConfig | null | undefined, brand);
     const variant: CopyVariant = options.variant ?? 1;
     const cta = renderTemplate(
       CTA_TEMPLATES[(options.ctaIndex ?? variant - 1) % CTA_TEMPLATES.length],
