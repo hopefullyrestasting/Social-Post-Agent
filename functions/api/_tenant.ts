@@ -42,6 +42,9 @@ export interface ActivationKeyRow {
   locked_at: number | null;
   quota_total: number | null;
   quota_used: number | null;
+  /** Columns added by 0004_tenant_generation_lease.sql. */
+  in_flight_until?: number | null;
+  last_generation_at?: number | null;
 }
 
 export interface TenantBrandLock {
@@ -56,6 +59,15 @@ export interface TenantBrandLock {
   lockedAt: number | null;
 }
 
+export type GenerationState = "idle" | "running" | "cooldown";
+
+export interface TenantGenerationStatus {
+  state: GenerationState;
+  inFlightUntil: number | null;
+  lastGenerationAt: number | null;
+  retryAfterSeconds: number;
+}
+
 export interface TenantContext {
   id: string;
   label: string | null;
@@ -65,6 +77,7 @@ export interface TenantContext {
   brandLocked: boolean;
   brand: TenantBrandLock | null;
   quota: { total: number; used: number; enforced: false };
+  generation: TenantGenerationStatus;
 }
 
 export interface TenantAuthSuccess {
@@ -140,6 +153,50 @@ export function isoFromSeconds(value: number | null | undefined): string | null 
   return new Date(value * 1000).toISOString();
 }
 
+function epochOrNull(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/**
+ * Derives user-facing generation status from the persisted lease fields.
+ * An `in_flight_until` in the past is stale and deliberately treated as idle;
+ * only a future lease can block a new run. The short cooldown is informational
+ * and always has a finite end, so it cannot leave a dashboard stuck forever.
+ */
+export function generationStateFromRow(
+  row: Pick<ActivationKeyRow, "in_flight_until" | "last_generation_at"> | null,
+  now = nowSeconds(),
+  cooldownSeconds = DEFAULT_COOLDOWN_SECONDS,
+): TenantGenerationStatus {
+  const inFlightUntil = epochOrNull(row?.in_flight_until);
+  const lastGenerationAt = epochOrNull(row?.last_generation_at);
+  if (inFlightUntil !== null && inFlightUntil > now) {
+    return {
+      state: "running",
+      inFlightUntil,
+      lastGenerationAt,
+      retryAfterSeconds: Math.max(1, Math.ceil(inFlightUntil - now)),
+    };
+  }
+  if (lastGenerationAt !== null && lastGenerationAt > now - cooldownSeconds) {
+    return {
+      state: "cooldown",
+      inFlightUntil,
+      lastGenerationAt,
+      retryAfterSeconds: Math.max(
+        1,
+        Math.ceil(lastGenerationAt + cooldownSeconds - now),
+      ),
+    };
+  }
+  return {
+    state: "idle",
+    inFlightUntil,
+    lastGenerationAt,
+    retryAfterSeconds: 0,
+  };
+}
+
 function parseJson(value: string | null): Record<string, unknown> {
   if (!value) return {};
   try {
@@ -202,6 +259,7 @@ export function tenantFromRow(row: ActivationKeyRow): TenantContext {
       used: Number.isFinite(quotaUsed) ? quotaUsed : 0,
       enforced: false,
     },
+    generation: generationStateFromRow(row),
   };
 }
 
@@ -245,7 +303,8 @@ export async function loadActivationKey(
   return env.DB.prepare(
     `SELECT id, label, status, created_at, expires_at, brand_locked,
             locked_brand_name, locked_industry, locked_logo_url,
-            locked_brand_json, locked_at, quota_total, quota_used
+            locked_brand_json, locked_at, quota_total, quota_used,
+            in_flight_until, last_generation_at
      FROM activation_keys
      WHERE key_hash = ?
      LIMIT 1`,
@@ -261,7 +320,8 @@ export async function loadActivationKeyById(
   return env.DB.prepare(
     `SELECT id, label, status, created_at, expires_at, brand_locked,
             locked_brand_name, locked_industry, locked_logo_url,
-            locked_brand_json, locked_at, quota_total, quota_used
+            locked_brand_json, locked_at, quota_total, quota_used,
+            in_flight_until, last_generation_at
      FROM activation_keys
      WHERE id = ?
      LIMIT 1`,
@@ -353,6 +413,14 @@ export function tenantMePayload(tenant: TenantContext): Record<string, unknown> 
     brand_locked: tenant.brandLocked,
     brand: tenant.brand,
     quota: tenant.quota,
+    generation: {
+      state: tenant.generation.state,
+      busy: tenant.generation.state !== "idle",
+      in_flight_until: tenant.generation.inFlightUntil,
+      in_flight_until_iso: isoFromSeconds(tenant.generation.inFlightUntil),
+      last_generation_at: tenant.generation.lastGenerationAt,
+      retry_after_seconds: tenant.generation.retryAfterSeconds,
+    },
     subscription: {
       plan: "annual",
       status: tenant.status,
@@ -364,18 +432,34 @@ export function tenantMePayload(tenant: TenantContext): Record<string, unknown> 
   };
 }
 
+export type GenerationLeaseReason =
+  | "acquired"
+  | "running"
+  | "cooldown"
+  | "inactive"
+  | "conflict";
+
+export interface GenerationLeaseResult {
+  acquired: boolean;
+  leaseUntil: number;
+  retryAfterSeconds: number;
+  reason: GenerationLeaseReason;
+}
+
 /**
  * Atomically lease one generation slot for a key.
  *
  * Uses a conditional UPDATE so two Worker isolates cannot both hold the lease.
  * `RETURNING` is avoided for maximum D1 compatibility; the change count is
- * read from `meta.changes`.
+ * read from `meta.changes`. An expired lease is reclaimable by the same
+ * condition, and a failed claim reports the real remaining wait instead of a
+ * generic cooldown so the dashboard never shows a stuck spinner forever.
  */
 export async function leaseGenerationSlot(
   env: TenantEnv,
   tenantId: string,
   options: { cooldownSeconds?: number; leaseSeconds?: number } = {},
-): Promise<{ acquired: boolean; leaseUntil: number; retryAfterSeconds: number }> {
+): Promise<GenerationLeaseResult> {
   const cooldownSeconds = Math.max(
     0,
     options.cooldownSeconds ?? DEFAULT_COOLDOWN_SECONDS,
@@ -385,25 +469,61 @@ export async function leaseGenerationSlot(
   const leaseUntil = now + leaseSeconds;
   const cooldownThreshold = now - cooldownSeconds;
 
-  const result = await env.DB.prepare(
-    `UPDATE activation_keys
-     SET in_flight_until = ?, last_generation_at = ?
-     WHERE id = ?
-       AND status = 'active'
-       AND (in_flight_until IS NULL OR in_flight_until <= ?)
-       AND (last_generation_at IS NULL OR last_generation_at <= ?)`,
-  )
-    .bind(leaseUntil, now, tenantId, now, cooldownThreshold)
-    .run();
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const result = await env.DB.prepare(
+      `UPDATE activation_keys
+       SET in_flight_until = ?, last_generation_at = ?
+       WHERE id = ?
+         AND status = 'active'
+         AND (in_flight_until IS NULL OR in_flight_until <= ?)
+         AND (last_generation_at IS NULL OR last_generation_at <= ?)`,
+    )
+      .bind(leaseUntil, now, tenantId, now, cooldownThreshold)
+      .run();
 
-  const changes = (result as { meta?: { changes?: number } } | undefined)?.meta
-    ?.changes;
-  const acquired = changes === undefined ? true : changes > 0;
+    const changes = (result as { meta?: { changes?: number } } | undefined)?.meta
+      ?.changes;
+    if (changes === undefined || changes > 0) {
+      return {
+        acquired: true,
+        leaseUntil,
+        retryAfterSeconds: 0,
+        reason: "acquired",
+      };
+    }
+
+    let row: ActivationKeyRow | null = null;
+    try {
+      row = await loadActivationKeyById(env, tenantId);
+    } catch (error) {
+      console.error("Unable to inspect a busy generation lease.", error);
+    }
+    if (row?.status && row.status !== "active") {
+      return {
+        acquired: false,
+        leaseUntil,
+        retryAfterSeconds: 0,
+        reason: "inactive",
+      };
+    }
+    const state = generationStateFromRow(row, now, cooldownSeconds);
+    if (state.state !== "idle") {
+      return {
+        acquired: false,
+        leaseUntil: state.inFlightUntil ?? leaseUntil,
+        retryAfterSeconds: state.retryAfterSeconds,
+        reason: state.state,
+      };
+    }
+    // The row looked free (e.g. a lease released between UPDATE and SELECT):
+    // retry the conditional claim once rather than reporting a false conflict.
+  }
 
   return {
-    acquired,
+    acquired: false,
     leaseUntil,
-    retryAfterSeconds: acquired ? 0 : Math.max(1, cooldownSeconds),
+    retryAfterSeconds: 1,
+    reason: "conflict",
   };
 }
 

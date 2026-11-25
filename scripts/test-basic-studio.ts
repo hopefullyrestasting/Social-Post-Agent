@@ -645,6 +645,65 @@ async function testBrandingAndLanguageContract() {
   assert.ok(AL_RAHMA_BRAND_CONFIG.contact.whatsappUrl.startsWith("https://wa.me/"));
 }
 
+async function testGeneratedCreativesContract() {
+  const dashboard = read("src/app/dashboard/page.tsx");
+  const gallery = read("src/components/idesign/generated-creatives-gallery.tsx");
+
+  // The dashboard must mount the persistent gallery and hydrate it from D1.
+  assert.ok(dashboard.includes("GeneratedCreativesGallery"));
+  assert.ok(dashboard.includes('fetch("/api/db/campaigns?limit=20"'));
+  assert.ok(dashboard.includes("accessKeyHeaders()"));
+  assert.ok(dashboard.includes("setCampaigns("));
+  assert.ok(dashboard.includes("galleryLoading"));
+  assert.ok(dashboard.includes("onRefresh="));
+  assert.ok(dashboard.includes("generation_rate_limited"));
+  assert.ok(dashboard.includes("retryGeneration"));
+  assert.ok(dashboard.includes("generationSingleStatus"));
+  assert.ok(dashboard.includes("generationBatchStatus"));
+  assert.ok(dashboard.includes('phase: "preparing"'));
+  assert.ok(dashboard.includes('phase: "running"'));
+  assert.ok(dashboard.includes('phase: "complete"'));
+  assert.ok(dashboard.includes('phase: "busy"'));
+
+  // Every card offers a preview, per-image download and slot/variant label;
+  // product and bulk ZIP downloads are always available.
+  assert.ok(gallery.includes("<Image"));
+  assert.ok(gallery.includes("loading=\"lazy\""));
+  assert.ok(gallery.includes("downloadCreativePng("));
+  assert.ok(gallery.includes("downloadCreativesZip("));
+  assert.ok(gallery.includes("variantLabel"));
+  assert.ok(gallery.includes("creative.headline_arabic"));
+  assert.ok(gallery.includes("group.items.length"));
+  assert.ok(gallery.includes("text(\"price\")"));
+  assert.ok(gallery.includes("text(\"offer\")"));
+  assert.ok(gallery.includes("noGeneratedCreatives"));
+  assert.ok(gallery.includes("onRefresh"));
+
+  const creativesKeys = [
+    "generationPreparing",
+    "generationBatchStatus",
+    "generationSingleStatus",
+    "generationComplete",
+    "generationBusy",
+    "generationSeconds",
+    "retryGeneration",
+    "generatedCreativesTitle",
+    "generatedCreativesHint",
+    "noGeneratedCreatives",
+    "galleryLoading",
+    "refreshCreatives",
+    "downloadImage",
+    "downloadAllZip",
+    "variantLabel",
+    "creativeProductFallback",
+  ] as const;
+  for (const code of ["ar", "en", "ms", "fr", "de", "zh"] as const) {
+    for (const key of creativesKeys) {
+      assert.ok(translate(code, key).length > 0, `${code}.${key} must be translated`);
+    }
+  }
+}
+
 async function run() {
   await testSequentialNonRepeatingBatches();
   await testSingleProductAndCustomSelection();
@@ -652,8 +711,9 @@ async function run() {
   testDesignLibraryContract();
   await testConditionalMetadata();
   await testBrandingAndLanguageContract();
+  await testGeneratedCreativesContract();
   console.log(
-    "Basic Studio tests passed: sequential non-repeating batches with reload persistence, 2 distinct design slots per product, custom count/selection, already-generated 409, design-library hierarchy/prompt rules, guarded vision-brief copy fallback, conditional price/offer metadata with intact quality gate, access key bar, one-time brand lock card, RTL/LTR alignment, centralised iDesign branding/links, and six-language switcher contract.",
+    "Basic Studio tests passed: sequential non-repeating batches with reload persistence, 2 distinct design slots per product, custom count/selection, already-generated 409, design-library hierarchy/prompt rules, guarded vision-brief copy fallback, conditional price/offer metadata with intact quality gate, access key bar, one-time brand lock card, RTL/LTR alignment, centralised iDesign branding/links, six-language switcher contract, and persistent Generated Creatives gallery with generation progress.",
   );
 }
 

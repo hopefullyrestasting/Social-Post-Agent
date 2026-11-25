@@ -31,6 +31,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     await env.DB.prepare(sql).bind(...(action === "delete_product" ? [productId,tenantId] : [Date.now(),productId,tenantId])).run();
   } else if (action === "reset_queue") {
     await env.DB.prepare("UPDATE products SET last_advertised_at = NULL, updated_at = ? WHERE tenant_key_id = ?").bind(Date.now(),tenantId).run();
+  } else if (action === "clear_generation_lease") {
+    // Owner escape hatch for a worker that died while holding a future lease.
+    // Scoped to one tenant row; never a bulk update.
+    await env.DB.prepare("UPDATE activation_keys SET in_flight_until = NULL, last_generation_at = 0 WHERE id = ?").bind(tenantId).run();
   } else return Response.json({success:false,error:"Unsupported action."},{status:400});
   return Response.json({success:true,action,tenantId},{headers:noStore()});
 };
