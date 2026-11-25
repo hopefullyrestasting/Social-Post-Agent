@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import IDMark from "@/components/idesign/id-mark";
 import LanguageSwitcher from "@/components/idesign/language-switcher";
 import {
@@ -19,6 +19,12 @@ import {
   type LanguageCode,
   type TranslationKey,
 } from "@/lib/al-rahma/i18n";
+import {
+  isSupportedLogoMime,
+  logoAcceptAttribute,
+  prepareLogoFile,
+  usableAssetUrl,
+} from "@/lib/al-rahma/logo-upload";
 
 type Product = {
   id: string;
@@ -48,6 +54,21 @@ type TenantBrandProfile = {
   contactInfo?: string | Record<string, unknown> | null;
 };
 
+type ProvisionedBrandDefaults = {
+  brand_name?: string | null;
+  industry?: string | null;
+  locale?: string | null;
+  rtl?: boolean | null;
+  support_contact?: string | null;
+  logo_url?: string | null;
+};
+
+type TenantProvisioning = {
+  copy_kind?: string | null;
+  notes?: string | null;
+  brand_defaults?: ProvisionedBrandDefaults | null;
+};
+
 type TenantInfo = {
   id?: string;
   label?: string;
@@ -55,6 +76,7 @@ type TenantInfo = {
   days_remaining?: number | null;
   brand_locked?: boolean;
   brand?: TenantBrandProfile | null;
+  provisioning?: TenantProvisioning | null;
   subscription?: { days_remaining?: number | null; unlimited_generation?: boolean };
 };
 
@@ -108,6 +130,14 @@ function maskAccessKey(key: string): string {
   return `${trimmed.slice(0, 4)}••••${trimmed.slice(-4)}`;
 }
 
+function languageFromLocale(locale?: string | null): LanguageCode | null {
+  const base = (locale ?? "").split(/[-_]/)[0]?.toLowerCase();
+  if (base === "ar" || base === "en" || base === "ms" || base === "fr" || base === "de" || base === "zh") {
+    return base;
+  }
+  return null;
+}
+
 async function fetchTenant(signal?: AbortSignal): Promise<TenantInfo | null> {
   installAccessKeyFetch();
   const response = await fetch("/api/tenant/me", {
@@ -142,6 +172,7 @@ async function fetchProducts(signal?: AbortSignal, fallback = ""): Promise<Produ
 
 export default function DashboardPage() {
   const [language, setLanguage] = useState<LanguageCode>("ar");
+  const appliedLocaleKey = useRef("");
   const direction = languageDirection(language);
   const text = (key: TranslationKey) => translate(language, key);
 
@@ -171,6 +202,8 @@ export default function DashboardPage() {
   });
   const [lockingBrand, setLockingBrand] = useState(false);
   const [brandError, setBrandError] = useState("");
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [logoPreview, setLogoPreview] = useState("");
 
   useEffect(() => {
     installAccessKeyFetch();
@@ -183,11 +216,26 @@ export default function DashboardPage() {
         if (controller.signal.aborted) return;
         setTenant(info);
         setTenantError(info ? "" : storedKey ? translate(language, "accessKeyInvalid") : "");
+        const defaults = info?.provisioning?.brand_defaults;
+        if (info?.id && appliedLocaleKey.current !== info.id) {
+          appliedLocaleKey.current = info.id;
+          const preferred = languageFromLocale(defaults?.locale);
+          if (preferred) setLanguage(preferred);
+        }
         if (info?.brand) {
           setBrandForm((previous) => ({
             ...previous,
             brand_name: previous.brand_name || info.brand?.brandName || "",
             industry: previous.industry || info.brand?.industry || "",
+            logo_url: previous.logo_url || info.brand?.logoUrl || "",
+          }));
+        } else if (defaults) {
+          setBrandForm((previous) => ({
+            ...previous,
+            brand_name: previous.brand_name || defaults.brand_name || "",
+            industry: previous.industry || defaults.industry || "",
+            logo_url: previous.logo_url || defaults.logo_url || "",
+            contact_info: previous.contact_info || defaults.support_contact || "",
           }));
         }
       })
@@ -277,8 +325,10 @@ export default function DashboardPage() {
           industry,
           logo_url: brandForm.logo_url.trim() || null,
           contact_info: brandForm.contact_info.trim() || null,
-          locale: language === "ar" ? "ar-EG" : language,
-          rtl: direction === "rtl",
+          locale:
+            tenant?.provisioning?.brand_defaults?.locale ||
+            (language === "ar" ? "ar-EG" : language),
+          rtl: tenant?.provisioning?.brand_defaults?.rtl ?? direction === "rtl",
         }),
       });
       const body = await readJson<{ tenant?: TenantInfo }>(response);
@@ -292,6 +342,43 @@ export default function DashboardPage() {
       setBrandError(caught instanceof Error ? caught.message : text("saveFailed"));
     } finally {
       setLockingBrand(false);
+    }
+  }
+
+  async function uploadLogo(file: File) {
+    installAccessKeyFetch();
+    setBrandError("");
+    setUploadingLogo(true);
+    const previewUrl = URL.createObjectURL(file);
+    setLogoPreview(previewUrl);
+    try {
+      const prepared = await prepareLogoFile(file);
+      const form = new FormData();
+      form.append("imageFile", prepared);
+      form.append("autoCreate", "true");
+      form.append("autoCutout", "false");
+      form.append("assetRole", "logo");
+      const response = await fetch("/api/assets/upload", {
+        method: "POST",
+        headers: accessKeyHeaders({ Accept: "application/json" }),
+        body: form,
+      });
+      const body = await readJson(response);
+      if (!response.ok || body.success === false) {
+        throw new Error(
+          failureMessage(body as ApiFailure, response.status, text("logoUploadFailed")),
+        );
+      }
+      const assetUrl = usableAssetUrl(body);
+      if (!assetUrl) throw new Error(text("logoUploadFailed"));
+      setBrandForm((previous) => ({ ...previous, logo_url: assetUrl }));
+      setNotice(text("logoUploaded"));
+    } catch (caught) {
+      setBrandError(caught instanceof Error ? caught.message : text("logoUploadFailed"));
+    } finally {
+      URL.revokeObjectURL(previewUrl);
+      setLogoPreview("");
+      setUploadingLogo(false);
     }
   }
 
@@ -539,6 +626,11 @@ export default function DashboardPage() {
             <div className="mb-4">
               <h2 className="text-lg font-black text-[#1D4ED8]">{text("brandSetupTitle")}</h2>
               <p className="mt-1 text-sm text-slate-700">{text("brandSetupHint")}</p>
+              {tenant?.provisioning?.brand_defaults ? (
+                <p className="mt-1 text-xs font-semibold text-[#1D4ED8]">
+                  {text("provisionedDefaults")}
+                </p>
+              ) : null}
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="text-sm font-semibold">
@@ -575,6 +667,51 @@ export default function DashboardPage() {
                   className="mt-1 w-full rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm"
                 />
               </label>
+              <label className="text-sm font-semibold sm:col-span-2">
+                {text("logoFile")}
+                <input
+                  type="file"
+                  accept={logoAcceptAttribute()}
+                  className="mt-1 block w-full text-sm"
+                  onChange={(event) => {
+                    const file = event.currentTarget.files?.[0];
+                    event.currentTarget.value = "";
+                    if (!file) return;
+                    if (!isSupportedLogoMime(file.type)) {
+                      setBrandError(text("logoUploadFailed"));
+                      return;
+                    }
+                    void uploadLogo(file);
+                  }}
+                />
+                <span className="mt-1 block text-xs font-normal text-slate-500">
+                  {uploadingLogo ? text("logoUploading") : text("logoFileHint")}
+                </span>
+              </label>
+              {logoPreview || brandForm.logo_url ? (
+                <div className="flex items-center gap-3 rounded-lg border border-blue-100 bg-white p-3 sm:col-span-2">
+                  <Image
+                    src={logoPreview || brandForm.logo_url}
+                    alt={text("logoFile")}
+                    width={72}
+                    height={72}
+                    unoptimized
+                    className="h-16 w-16 rounded-md object-contain"
+                  />
+                  <span className="flex-1 text-xs text-slate-500">
+                    {uploadingLogo ? text("logoUploading") : text("logoUploaded")}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setBrandForm((previous) => ({ ...previous, logo_url: "" }))
+                    }
+                    className="rounded-md border border-blue-200 px-2 py-1 text-xs font-bold text-[#1D4ED8]"
+                  >
+                    {text("logoRemove")}
+                  </button>
+                </div>
+              ) : null}
               <label className="text-sm font-semibold sm:col-span-2">
                 {text("contactInfo")}
                 <input

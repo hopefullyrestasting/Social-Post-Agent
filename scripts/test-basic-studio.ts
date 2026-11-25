@@ -584,6 +584,11 @@ async function testBrandingAndLanguageContract() {
   assert.ok(dashboard.includes("brand_locked"));
   assert.ok(dashboard.includes("brand_name"));
   assert.ok(dashboard.includes("industry"));
+  assert.ok(dashboard.includes("/api/assets/upload"));
+  assert.ok(dashboard.includes("assetRole"));
+  assert.ok(dashboard.includes("usableAssetUrl"));
+  assert.ok(dashboard.includes("prepareLogoFile"));
+  assert.ok(dashboard.includes("accept={logoAcceptAttribute()}"));
 
   // Six languages, accurate labels and RTL/LTR direction metadata.
   assert.deepEqual(
@@ -610,6 +615,13 @@ async function testBrandingAndLanguageContract() {
       "brandSetupTitle",
       "brandName",
       "industry",
+      "logoFile",
+      "logoFileHint",
+      "logoUploading",
+      "logoUploaded",
+      "logoUploadFailed",
+      "logoRemove",
+      "provisionedDefaults",
       "lockBrand",
     ] as const) {
       assert.ok(translate(code, key).length > 0, `${code}.${key} must be translated`);

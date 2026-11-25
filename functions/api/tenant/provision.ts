@@ -6,6 +6,7 @@ import {
   nowSeconds,
   tenantFromRow,
   tenantMePayload,
+  tenantSettingKey,
   type ActivationKeyRow,
   type TenantEnv,
 } from "../_tenant";
@@ -24,14 +25,31 @@ interface ProvisionEnv extends TenantEnv {
   ADMIN_API_KEY?: string;
 }
 
+const brandDefaultsSchema = z
+  .object({
+    brand_name: z.string().trim().max(120).optional(),
+    industry: z.string().trim().max(120).optional(),
+    locale: z.string().trim().max(16).optional(),
+    rtl: z.boolean().optional(),
+    support_contact: z.string().trim().max(500).optional(),
+    logo_url: z.string().trim().max(2048).optional(),
+  })
+  .strict();
+
 const schema = z
   .object({
     label: z.string().trim().max(120).optional(),
+    notes: z.string().trim().max(2000).optional(),
+    copy_kind: z.enum(["customer", "marketing", "demo"]).optional(),
     expires_at: z.union([z.string().trim().max(40), z.number().finite()]).optional(),
+    expires_in_days: z.number().int().min(1).max(3650).optional(),
     quota_total: z.number().int().min(0).max(1_000_000_000).optional(),
     adoptLegacyData: z.boolean().optional(),
+    brand_defaults: brandDefaultsSchema.optional(),
   })
   .strict();
+
+type ProvisionSettings = Record<string, string | null>;
 
 function randomKey(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(24));
@@ -91,13 +109,25 @@ export const onRequestPost: PagesFunction<ProvisionEnv> = async ({
       {
         success: false,
         error:
-          "Invalid provisioning payload. label/expires_at/quota_total/adoptLegacyData only.",
+          "Invalid provisioning payload. Use label, notes, copy_kind, expires_at or expires_in_days, quota_total, adoptLegacyData and brand_defaults.",
       },
       { status: 400 },
     );
   }
+  if (parsed.data.expires_at !== undefined && parsed.data.expires_in_days !== undefined) {
+    return Response.json(
+      { success: false, error: "Use expires_at or expires_in_days, not both." },
+      { status: 400 },
+    );
+  }
 
-  const expiresAt = parseExpiry(parsed.data.expires_at);
+  const issuedAt = nowSeconds();
+  const expiresAt =
+    parsed.data.expires_in_days !== undefined
+      ? issuedAt + parsed.data.expires_in_days * 86_400
+      : parsed.data.expires_at !== undefined
+        ? parseExpiry(parsed.data.expires_at)
+        : annualExpiryFrom(issuedAt);
   if (!Number.isFinite(expiresAt) || expiresAt <= nowSeconds()) {
     return Response.json(
       {
@@ -112,6 +142,7 @@ export const onRequestPost: PagesFunction<ProvisionEnv> = async ({
   const keyHash = await hashAccessKey(rawKey);
   const id = crypto.randomUUID();
   const now = nowSeconds();
+  const brandDefaults = parsed.data.brand_defaults ?? {};
 
   try {
     await env.DB.prepare(
@@ -147,6 +178,25 @@ export const onRequestPost: PagesFunction<ProvisionEnv> = async ({
         ),
       );
     }
+
+    const settings: ProvisionSettings = {
+      "provisioning.notes": parsed.data.notes ?? null,
+      "provisioning.copy_kind": parsed.data.copy_kind ?? "customer",
+      "provisioning.brand_defaults":
+        Object.keys(brandDefaults).length > 0 ? JSON.stringify(brandDefaults) : null,
+    };
+    await env.DB.batch(
+      Object.entries(settings).map(([key, value]) =>
+        env.DB.prepare(
+          `INSERT INTO business_settings (key, value, updated_at, tenant_key_id)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(key) DO UPDATE SET
+             value = excluded.value,
+             updated_at = excluded.updated_at,
+             tenant_key_id = excluded.tenant_key_id`,
+        ).bind(tenantSettingKey(id, key), value, now, id),
+      ),
+    );
   } catch (error) {
     console.error("Failed to provision an activation key.", error);
     return Response.json(
@@ -181,6 +231,12 @@ export const onRequestPost: PagesFunction<ProvisionEnv> = async ({
       // Returned exactly once; store it securely.
       access_key: rawKey,
       expires_at: expiresAt,
+      provisioning: {
+        notes: parsed.data.notes ?? null,
+        copy_kind: parsed.data.copy_kind ?? "customer",
+        brand_defaults:
+          Object.keys(brandDefaults).length > 0 ? brandDefaults : null,
+      },
       tenant: tenantMePayload(tenantFromRow(row)),
     },
     { headers: { "Cache-Control": "no-store, max-age=0, must-revalidate" } },

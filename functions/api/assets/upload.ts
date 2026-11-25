@@ -89,6 +89,11 @@ export const onRequestPost: PagesFunction<UploadEnv> = async ({
   }
 
   const productId = textField(form, "productId");
+  const assetRoleRaw = textField(form, "assetRole").toLowerCase();
+  if (assetRoleRaw && assetRoleRaw !== "product" && assetRoleRaw !== "logo") {
+    return noStore({ success: false, error: "Invalid assetRole." }, 400);
+  }
+  const assetRole = assetRoleRaw === "logo" ? "logo" : "product";
   const autoCreateRaw = textField(form, "autoCreate").toLowerCase();
   const autoCreate = autoCreateRaw === "true" || autoCreateRaw === "1" || !productId;
   if (productId && productId.length > 100) {
@@ -120,6 +125,17 @@ export const onRequestPost: PagesFunction<UploadEnv> = async ({
       415,
     );
   }
+  if (
+    assetRole === "logo" &&
+    mime !== "image/png" &&
+    mime !== "image/jpeg" &&
+    mime !== "image/webp"
+  ) {
+    return noStore(
+      { success: false, error: "Logo files must be PNG, JPEG or WebP." },
+      415,
+    );
+  }
 
   if (!imageFile.size) {
     return noStore({ success: false, error: "The image file is empty." }, 400);
@@ -135,7 +151,8 @@ export const onRequestPost: PagesFunction<UploadEnv> = async ({
   }
 
   const autoCutoutRaw = textField(form, "autoCutout").toLowerCase();
-  const autoCutout = autoCutoutRaw === "true" || autoCutoutRaw === "1";
+  const autoCutout =
+    assetRole !== "logo" && (autoCutoutRaw === "true" || autoCutoutRaw === "1");
 
   const sourceUrl = textField(form, "sourceUrl");
   if (sourceUrl && !isHttpUrl(sourceUrl)) {
@@ -176,6 +193,7 @@ export const onRequestPost: PagesFunction<UploadEnv> = async ({
         bytes: sourceBytes,
         mime,
         salesLine,
+        skipVision: assetRole === "logo",
       });
       product = await loadProduct(env, created.productId, scope.tenantId);
       autoCreated = true;
@@ -222,6 +240,7 @@ export const onRequestPost: PagesFunction<UploadEnv> = async ({
     return noStore({
       success: true,
       autoCreated,
+      assetRole,
       salesLine: resolvedSalesLine || null,
       product: {
         id: product.id,
@@ -238,6 +257,8 @@ export const onRequestPost: PagesFunction<UploadEnv> = async ({
         storage: asset.storage,
         storage_key: asset.storageKey,
         url: asset.publicUrl,
+        usable_url: asset.publicUrl ?? asset.imageUrl,
+        data_url: asset.storage === "embedded" ? asset.imageUrl : null,
         content_type: asset.contentType,
         bytes: asset.bytes,
       },
@@ -274,6 +295,7 @@ type AutoCreateInput = {
   bytes: Uint8Array;
   mime: string;
   salesLine: string;
+  skipVision?: boolean;
 };
 
 async function autoCreateProductFromImage(
@@ -287,18 +309,20 @@ async function autoCreateProductFromImage(
   let detectedLabel = "";
   let detectedType = "";
   let visualBrief: Awaited<ReturnType<typeof predictProductFromImage>>["visualBrief"] = null;
-  try {
-    const vision = await predictProductFromImage(
-      env,
-      { bytes: input.bytes, mime: input.mime, base64 },
-      input.fileName,
-      [],
-    );
-    detectedLabel = vision.match?.detectedLabel?.trim() || "";
-    detectedType = vision.match?.detectedType?.trim() || "";
-    visualBrief = vision.visualBrief;
-  } catch {
-    /* best-effort inference */
+  if (!input.skipVision) {
+    try {
+      const vision = await predictProductFromImage(
+        env,
+        { bytes: input.bytes, mime: input.mime, base64 },
+        input.fileName,
+        [],
+      );
+      detectedLabel = vision.match?.detectedLabel?.trim() || "";
+      detectedType = vision.match?.detectedType?.trim() || "";
+      visualBrief = vision.visualBrief;
+    } catch {
+      /* best-effort inference */
+    }
   }
 
   const fileStem = input.fileName
@@ -307,16 +331,19 @@ async function autoCreateProductFromImage(
     .replace(/\s+/g, " ")
     .trim();
   const inferredName = (detectedLabel || fileStem || "منتج جديد").slice(0, 160);
-  const inferredCategory = (detectedType || input.tenantIndustry || "عام").slice(0, 80);
-  const salesLine =
-    (isSafeSalesLine(input.salesLine) ? sanitizeSalesLine(input.salesLine) : "") ||
-    resolveSalesLine({ visualBrief }) ||
-    buildStudioSalesLine({
-      detectedLabel,
-      detectedType,
-      tenantIndustry: input.tenantIndustry,
-      fileName: input.fileName,
-    });
+  const inferredCategory = input.skipVision
+    ? "brand_logo"
+    : (detectedType || input.tenantIndustry || "عام").slice(0, 80);
+  const salesLine = input.skipVision
+    ? ""
+    : (isSafeSalesLine(input.salesLine) ? sanitizeSalesLine(input.salesLine) : "") ||
+      resolveSalesLine({ visualBrief }) ||
+      buildStudioSalesLine({
+        detectedLabel,
+        detectedType,
+        tenantIndustry: input.tenantIndustry,
+        fileName: input.fileName,
+      });
 
   const brand = await ensureTenantBrand(env, input.tenantId, input.tenantBrandName);
   const id = crypto.randomUUID();

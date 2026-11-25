@@ -1,5 +1,6 @@
 import {
   authenticateTenant,
+  loadTenantProvisioning,
   tenantMePayload,
   type TenantEnv,
 } from "../_tenant";
@@ -7,8 +8,9 @@ import {
 /**
  * GET /api/tenant/me
  *
- * Returns the annual subscription state + one-time brand lock state for the
- * key supplied in the request. Never returns the key hash or the raw key.
+ * Returns the annual subscription state, one-time brand lock state and the
+ * operator-supplied provisioning defaults for the supplied access key. Never
+ * returns the key hash, raw key or admin key.
  */
 export const onRequestGet: PagesFunction<TenantEnv> = async ({
   request,
@@ -17,8 +19,12 @@ export const onRequestGet: PagesFunction<TenantEnv> = async ({
   const auth = await authenticateTenant(request, env);
   if (!auth.ok) return auth.response;
 
+  const provisioning = await loadTenantProvisioning(env, auth.tenant.id);
   return Response.json(
-    { success: true, tenant: tenantMePayload(auth.tenant) },
+    {
+      success: true,
+      tenant: { ...tenantMePayload(auth.tenant), provisioning },
+    },
     { headers: { "Cache-Control": "no-store, max-age=0, must-revalidate" } },
   );
 };

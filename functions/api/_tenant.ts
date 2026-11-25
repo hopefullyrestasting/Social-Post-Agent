@@ -456,6 +456,41 @@ export function tenantSettingKey(tenantId: string, key: string): string {
   return `${tenantId}:${key}`;
 }
 
+export interface TenantProvisioning {
+  notes: string | null;
+  copy_kind: string | null;
+  brand_defaults: Record<string, unknown> | null;
+}
+
+/** Operator metadata attached by /api/tenant/provision; never contains secrets. */
+export async function loadTenantProvisioning(
+  env: TenantEnv,
+  tenantId: string,
+): Promise<TenantProvisioning | null> {
+  const keys = [
+    "provisioning.notes",
+    "provisioning.copy_kind",
+    "provisioning.brand_defaults",
+  ].map((key) => tenantSettingKey(tenantId, key));
+  const result = await env.DB.prepare(
+    `SELECT key, value FROM business_settings WHERE key IN (?, ?, ?)`,
+  )
+    .bind(...keys)
+    .all<{ key: string; value: string | null }>();
+  const values = new Map(result.results.map((row) => [row.key, row.value]));
+  const rawDefaults = values.get(keys[2]!);
+  const parsedDefaults = rawDefaults ? parseJson(rawDefaults) : {};
+  const hasDefaults = Object.keys(parsedDefaults).length > 0;
+  const notes = values.get(keys[0]!) ?? null;
+  const copyKind = values.get(keys[1]!) ?? null;
+  if (!notes && !copyKind && !hasDefaults) return null;
+  return {
+    notes,
+    copy_kind: copyKind,
+    brand_defaults: hasDefaults ? parsedDefaults : null,
+  };
+}
+
 /** Splits a tenant-namespaced settings key back into `[tenantId, key]`. */
 /** Tenant-scoped business_settings key for one product's optional offer text. */
 export function productOfferSettingKey(

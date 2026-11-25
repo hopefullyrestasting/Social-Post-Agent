@@ -139,6 +139,11 @@ class MockDB {
       const tenant = s.includes("tenant_key_id = ?") ? v[0] : null;
       return this.creatives.filter((r) => !tenant || r.tenant_key_id === tenant) as T[];
     }
+    if (s.includes("from business_settings") && s.includes("key in (")) {
+      return this.settings
+        .filter((row) => v.includes(row.key))
+        .map((row) => ({ key: row.key, value: row.value })) as T[];
+    }
     return [] as T[];
   }
 
@@ -256,6 +261,15 @@ function imageForm(name: string) {
   return form;
 }
 
+function logoForm(name = "logo") {
+  const form = new FormData();
+  form.append("imageFile", new File([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], `${name}.png`, { type: "image/png" }));
+  form.append("autoCreate", "true");
+  form.append("autoCutout", "true");
+  form.append("assetRole", "logo");
+  return form;
+}
+
 async function run() {
   const db = new MockDB();
 
@@ -341,6 +355,42 @@ async function run() {
   const created = db.products.find((p) => p.id === upBody.product.id);
   assert.ok(created);
   assert.equal(created.tenant_key_id, db.activationKeys.find((r)=>r.label==="B")!.id);
+
+  // Logo file upload -> usable asset URL -> one-time brand lock.
+  const keyLogo = await provisionKey(db, "LogoFlow");
+  const logoUpload = await uploadAsset(ctx({ DB: db }, "https://x/api/assets/upload", { method: "POST", headers: { "x-access-key": keyLogo }, body: logoForm() }));
+  const logoBody = await json(logoUpload);
+  assert.equal(logoUpload.status, 200, JSON.stringify(logoBody));
+  assert.equal(logoBody.assetRole, "logo");
+  assert.equal(logoBody.cutout.requested, false, "logo uploads must skip cutout");
+  const logoUrl = logoBody.asset?.usable_url;
+  assert.equal(typeof logoUrl, "string");
+  assert.ok(logoUrl.startsWith("data:image/png;base64,"));
+  const logoLock = await lockBrand(ctx({ DB: db }, "https://x/api/tenant/lock-brand", { method: "POST", headers: { "content-type": "application/json", "x-access-key": keyLogo }, body: JSON.stringify({ brand_name: "Logo Co", industry: "Retail", logo_url: logoUrl }) }));
+  const logoLockBody = await json(logoLock);
+  assert.equal(logoLock.status, 200, JSON.stringify(logoLockBody));
+  assert.equal(logoLockBody.tenant.brand.logoUrl, logoUrl);
+  const logoKeyRow = db.activationKeys.find((r) => r.label === "LogoFlow")!;
+  assert.equal(logoKeyRow.locked_logo_url, logoUrl);
+  const logoMe = await json(await tenantMe(ctx({ DB: db }, "https://x/api/tenant/me", { headers: { "x-access-key": keyLogo } })));
+  assert.equal(logoMe.tenant.brand.logoUrl, logoUrl);
+
+  // Invalid logo references are rejected by the brand-lock contract.
+  const badLogoLock = await lockBrand(ctx({ DB: db }, "https://x/api/tenant/lock-brand", { method: "POST", headers: { "content-type": "application/json", "x-access-key": keyU }, body: JSON.stringify({ brand_name: "Unique Co", industry: "Retail", logo_url: "javascript:alert(1)" }) }));
+  const badLogoBody = await json(badLogoLock);
+  assert.equal(badLogoLock.status, 400);
+  assert.equal(badLogoBody.code, "invalid_logo");
+
+  // Provisioning metadata is namespaced per key and returned by tenant/me.
+  const metaRes = await provision(ctx({ DB: db, ADMIN_API_KEY: "admin" }, "https://x/api/tenant/provision", { method: "POST", headers: { "content-type": "application/json", "x-admin-key": "admin" }, body: JSON.stringify({ label: "Meta", notes: "Reseller handoff", copy_kind: "marketing", expires_in_days: 30, brand_defaults: { brand_name: "Meta Store", industry: "Retail", locale: "ms", rtl: false, support_contact: "support@example.test" } }) }));
+  const metaBody = await json(metaRes);
+  assert.equal(metaRes.status, 200, JSON.stringify(metaBody));
+  assert.equal(metaBody.provisioning.copy_kind, "marketing");
+  assert.equal(metaBody.provisioning.brand_defaults.brand_name, "Meta Store");
+  const metaMe = await json(await tenantMe(ctx({ DB: db }, "https://x/api/tenant/me", { headers: { "x-access-key": metaBody.access_key } })));
+  assert.equal(metaMe.tenant.provisioning.notes, "Reseller handoff");
+  assert.equal(metaMe.tenant.provisioning.brand_defaults.locale, "ms");
+  assert.equal(metaMe.tenant.provisioning.brand_defaults.rtl, false);
 
   // --- Middleware: one-time brand setup works with the tenant key ----------
   const keyLock = await provisionKey(db, "LockViaMiddleware");
