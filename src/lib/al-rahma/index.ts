@@ -11,6 +11,15 @@ export * from "./studio-fields";
 export * from "./svg-utils";
 export * from "./product-visual-brief";
 export {
+  assertNoLegacyBrandLeak,
+  assertSafeZones,
+  assertTenantBrandExclusive,
+  cleanMarketingText,
+  isRawFilename,
+  pickMarketingText,
+  type RuleZones,
+} from "./strict-design-rules";
+export {
   assertZonesDoNotOverlap,
   createAdZones,
   fitText,

@@ -1,3 +1,5 @@
+import { cleanMarketingText, isRawFilename } from "./strict-design-rules";
+
 /**
  * Validation helpers for the Basic Studio's operator-owned product fields.
  *
@@ -121,8 +123,13 @@ export function buildStudioSalesLine(input: {
     .replace(/[_-]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  const source = [input.detectedType, input.tenantIndustry, fileStem, input.detectedLabel]
-    .map((item) => collapse(item ?? ""))
+  const source = [
+    input.detectedType,
+    input.tenantIndustry,
+    isRawFilename(input.fileName) ? "" : fileStem,
+    input.detectedLabel,
+  ]
+    .map((item) => cleanMarketingText(collapse(item ?? ""), ""))
     .find((item) => item.length > 0);
   if (!source) return "منتج مختار بعناية لك";
   const category = source.split(/\s+/).slice(0, 3).join(" ");

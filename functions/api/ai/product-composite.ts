@@ -35,6 +35,7 @@ import {
   type CreativeSlot,
   type TextDirection,
 } from "../../../src/lib/al-rahma/design-library";
+import { cleanMarketingText } from "../../../src/lib/al-rahma/strict-design-rules";
 import {
   optionalProductVisualBrief,
   type ProductVisualCommercialBrief,
@@ -271,8 +272,8 @@ export function buildProductCompositePrompt(
 ): string {
   const styleId = input.styleId ?? "coastal-sunlit-stone-caustics";
   const env = resolveEditorialEnvironment(input.context, styleId);
-  const name = (input.context?.name || "").trim() || "product";
-  const brand = (input.context?.brand || "").trim();
+  const name = cleanMarketingText(input.context?.name, "product");
+  const brand = cleanMarketingText(input.context?.brand, "");
   const productName = [brand, name].filter(Boolean).join(" ");
 
   // Enforce strict zero-text constraints in safe zones for SVG overlay compatibility.

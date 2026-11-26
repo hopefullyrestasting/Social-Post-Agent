@@ -249,7 +249,7 @@ assert.notEqual(variants[0].svgOverlay, variants[1].svgOverlay, "Variants must d
       result.svgOverlay.includes('transform="translate(0, 2480) scale(1, -1)"'),
       "Reflection must flip the packshot vertically about y=1240.",
     );
-    assert.ok(result.svgOverlay.includes('data-reflect-from="1240"') && result.svgOverlay.includes('data-reflect-to="1510"'));
+    assert.ok(result.svgOverlay.includes('data-reflect-from="1240"') && result.svgOverlay.includes('data-reflect-to="1480"'));
     assert.ok(result.svgOverlay.includes('mask="url(#reflection-fade)"'), "Reflection must use the alpha-fade mask.");
     assert.ok(result.svgOverlay.includes('filter="url(#reflection-blur)"'), "Reflection must use the blur filter.");
     assert.ok(result.svgOverlay.includes('stdDeviation="2.5"'), "Reflection blur must be 2.5px.");

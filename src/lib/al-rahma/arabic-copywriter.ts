@@ -1,6 +1,12 @@
-import { AL_RAHMA_BRAND_CONFIG, buildBrandConfigFromTenant, type BrandConfig, type TenantBrandContext } from "./brand-core";
+import { buildBrandConfigFromTenant, type BrandConfig, type TenantBrandSource } from "./brand-core";
 import { creativeSlotRecipe, type CreativeSlot } from "./design-library";
 import type { ProductVisualCommercialBrief } from "./product-visual-brief";
+import {
+  assertNoLegacyBrandLeak,
+  assertTenantBrandExclusive,
+  cleanMarketingText,
+  pickMarketingText,
+} from "./strict-design-rules";
 import { resolveSalesLine } from "./studio-fields";
 
 /**
@@ -57,7 +63,7 @@ export interface CopyOptions {
   /** In-window cultural greeting prepended to the post body. */
   occasionGreeting?: string;
   /** Tenant brand context for dynamic multi-tenant copy. */
-  brand?: TenantBrandContext | BrandConfig | null;
+  brand?: TenantBrandSource | BrandConfig | null;
   /** Design-library creative slot; selects the complementary claim-free hook. */
   designSlot?: CreativeSlot;
 }
@@ -86,7 +92,7 @@ const CTA_SHORT_TEMPLATES: [string, string] = [
   "تواصل معنا الآن",
 ];
 
-function renderTemplate(template: string, brand: BrandConfig = AL_RAHMA_BRAND_CONFIG): string {
+function renderTemplate(template: string, brand: BrandConfig): string {
   const values: Record<string, string> = {
     brand: brand.brandName,
     phone: brand.contact.phone,
@@ -131,24 +137,28 @@ function clampWords(text: string, min: number, max: number): string {
 
 function categoryLabel(category: string): string {
   const normalized = (category || "").trim().replaceAll("_", " ");
-  if (!normalized) return "منتجات العناية";
-  return normalized;
+  return cleanMarketingText(normalized, "منتجات متنوعة");
 }
 
 function deriveSalesCopy(
   product: ProductDetails,
   variant: CopyVariant,
+  brand: BrandConfig,
 ): string {
   // Sales copy MUST come only from verified benefit claims or category/value propositions.
   // Never use usage instructions.
-  const benefits = clean(product.verifiedBenefits);
+  const benefits = clean(product.verifiedBenefits)
+    .map((item) => cleanMarketingText(item, ""))
+    .filter(Boolean);
   const category = categoryLabel(product.category);
-  const name = (product.badgeText || product.title || "")
-    .trim()
+  const name = pickMarketingText(
+    [product.badgeText, product.title],
+    category,
+  )
     .split(/\s+/)
     .slice(0, 2)
     .join(" ");
-  const salesLine = resolveSalesLine(product);
+  const salesLine = cleanMarketingText(resolveSalesLine(product), "");
 
   const candidates = [
     benefits[0] ?? "",
@@ -156,7 +166,7 @@ function deriveSalesCopy(
     salesLine,
     `جودة ${category} مميزة`,
     `${name} ${category}`.trim(),
-    `عناية مميزة من ${AL_RAHMA_BRAND_CONFIG.brandName}`,
+    `عناية مميزة من ${brand.brandName}`,
   ]
     .map((item) => item.trim())
     .filter(Boolean);
@@ -166,28 +176,38 @@ function deriveSalesCopy(
 }
 
 function buildHeadline(product: ProductDetails): string {
-  const salesLine = resolveSalesLine(product);
+  const salesLine = cleanMarketingText(resolveSalesLine(product), "");
   if (salesLine) {
     return salesLine;
   }
-  const raw = (product.badgeText || product.title || "").trim();
+  const raw = pickMarketingText(
+    [product.badgeText, product.title],
+    categoryLabel(product.category),
+  );
   const words = raw.split(/\s+/).filter(Boolean);
   if (words.length >= 2) return raw;
   const category = categoryLabel(product.category);
   return `${raw} ${category}`.trim();
 }
 
-function deriveSocialBenefits(product: ProductDetails, salesCopy: string): [string, string, string] {
+function deriveSocialBenefits(
+  product: ProductDetails,
+  salesCopy: string,
+  brand: BrandConfig,
+): [string, string, string] {
   const verified = clean(product.verifiedBenefits);
   const category = categoryLabel(product.category);
+  const safeVerified = verified
+    .map((item) => cleanMarketingText(item, ""))
+    .filter(Boolean);
   const safeFallbacks = [
     clampWords(salesCopy, 4, 8),
     `جودة موثّقة في ${category}`,
-    `اختيار موثّق من ${AL_RAHMA_BRAND_CONFIG.brandName}`,
+    `اختيار موثّق من ${brand.brandName}`,
   ].map((s) => s.trim()).filter(Boolean);
 
   const items: string[] = [];
-  for (const b of verified) {
+  for (const b of safeVerified) {
     if (items.length >= 3) break;
     if (!items.includes(b)) items.push(b);
   }
@@ -195,7 +215,7 @@ function deriveSocialBenefits(product: ProductDetails, salesCopy: string): [stri
     if (items.length >= 3) break;
     if (!items.includes(f)) items.push(f);
   }
-  while (items.length < 3) items.push(`اختيار موثّق من ${AL_RAHMA_BRAND_CONFIG.brandName}`);
+  while (items.length < 3) items.push(`اختيار موثّق من ${brand.brandName}`);
   return [items[0], items[1], items[2]];
 }
 
@@ -206,21 +226,29 @@ export class ArabicCopywriter {
     options: CopyOptions = {},
   ): GeneratedArabicCopy {
     void angle;
-    const brandOpt = options.brand as Record<string, unknown> | BrandConfig | TenantBrandContext | null | undefined;
+    const brandOpt = options.brand as Record<string, unknown> | BrandConfig | TenantBrandSource | null | undefined;
     const brand = (brandOpt && "brandName" in brandOpt && "visual" in brandOpt
       ? (brandOpt as unknown as BrandConfig)
-      : buildBrandConfigFromTenant(brandOpt as TenantBrandContext | null | undefined));
+      : buildBrandConfigFromTenant(brandOpt as TenantBrandSource | null | undefined));
+    assertTenantBrandExclusive(brandOpt as TenantBrandSource | BrandConfig | null | undefined, brand);
     const variant: CopyVariant = options.variant ?? 1;
-    const cta = renderTemplate(
-      CTA_TEMPLATES[(options.ctaIndex ?? variant - 1) % CTA_TEMPLATES.length],
-      brand
-    );
-    const ctaShort = renderTemplate(
-      CTA_SHORT_TEMPLATES[(options.ctaIndex ?? variant - 1) % CTA_SHORT_TEMPLATES.length],
-      brand
-    );
+    const ctaIndex = (options.ctaIndex ?? variant - 1) % CTA_TEMPLATES.length;
+    const hasPhone = Boolean(brand.contact.phone.trim());
+    const hasWhatsapp = Boolean(brand.contact.whatsappUrl.trim());
+    const cta = hasPhone
+      ? hasWhatsapp
+        ? renderTemplate(CTA_TEMPLATES[ctaIndex]!, brand)
+        : `للطلب والاستفسار اتصل بنا على ${brand.contact.phone}.`
+      : hasWhatsapp
+        ? "للطلب والاستفسار ابعتلنا رسالة على واتساب."
+        : "";
+    const ctaShort = hasWhatsapp
+      ? renderTemplate(CTA_SHORT_TEMPLATES[ctaIndex]!, brand)
+      : hasPhone
+        ? `تواصل معنا على ${brand.contact.phone}`
+        : "";
 
-    const benefitLine = deriveSalesCopy(product, variant);
+    const benefitLine = deriveSalesCopy(product, variant, brand);
     const headline = buildHeadline(product);
     const category = categoryLabel(product.category);
     const greeting = (options.occasionGreeting ?? "").trim();
@@ -254,7 +282,7 @@ export class ArabicCopywriter {
 
     // Safety: ensure benefitLine is 4-9 words
     const finalBenefit = clampWords(benefitLine, 4, 8);
-    const socialBenefits = deriveSocialBenefits(product, finalBenefit);
+    const socialBenefits = deriveSocialBenefits(product, finalBenefit, brand);
     const socialCaption = [
       hook,
       ...socialBenefits.map((b) => `• ${b}`),
@@ -263,6 +291,9 @@ export class ArabicCopywriter {
     ]
       .filter(Boolean)
       .join("\n");
+
+    assertNoLegacyBrandLeak(fullPostText, brand);
+    assertNoLegacyBrandLeak(socialCaption, brand);
 
     return {
       headline,

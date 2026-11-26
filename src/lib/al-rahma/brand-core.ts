@@ -246,7 +246,10 @@ export interface TenantBrandContext {
   palette?: Partial<BrandVisualTheme["primaryColors"]> | null;
 }
 
-/** Build a BrandConfig from locked tenant context, falling back to base config. */
+export type TenantBrandSource = TenantBrandContext & {
+  brand?: TenantBrandContext | null;
+};
+
 /**
  * Studio/operator identity for the Basic Ad Studio UI shell only.
  *
@@ -260,6 +263,7 @@ export const IDESIGN_STUDIO_CONFIG = {
   tagline: "by iDesign",
   websiteLabel: "idesign.social",
   websiteUrl: "https://idesign.social",
+  faviconUrl: "https://idesign.social/favicon.svg",
   email: "info@idesign.social",
   emailUrl: "mailto:info@idesign.social",
   phoneLabel: "+201097362000",
@@ -274,27 +278,51 @@ export const IDESIGN_STUDIO_CONFIG = {
 
 export type IDesignStudioConfig = typeof IDESIGN_STUDIO_CONFIG;
 
-export function buildBrandConfigFromTenant(ctx?: TenantBrandContext | null): BrandConfig {
+export function buildBrandConfigFromTenant(ctx?: TenantBrandSource | null): BrandConfig {
   const base = AL_RAHMA_BRAND_CONFIG;
   if (!ctx) return base;
-  const brandName = (ctx.brandName || "").trim() || base.brandName;
-  const phone = (ctx.phone || "").trim() || base.contact.phone;
-  const digits = phone.replace(/\D/g, "");
-  const whatsapp = (ctx.whatsapp || "").trim() || (digits ? `https://wa.me/${digits.startsWith("2") ? digits : "2" + digits}` : base.contact.whatsappUrl);
-  const tagline = (ctx.tagline || "").trim() || base.tagline;
-  const currency = (ctx.currency || "").trim() || base.commercial.currencyLabel;
-  const timezone = (ctx.timezone || "").trim() || base.commercial.timezone;
-  const hashtags = Array.isArray(ctx.hashtags) && ctx.hashtags.length ? ctx.hashtags.filter(Boolean).slice(0, 15) : base.hashtags;
-  const palette = ctx.palette ?? {};
+  const nested = "brand" in ctx ? ctx.brand : null;
+  const source: TenantBrandContext =
+    nested && typeof nested === "object" ? nested : ctx;
+  const brandName = (source.brandName || "").trim();
+  const locked = brandName.length > 0;
+  const resolvedName = brandName || base.brandName;
+  const industry = (source.industry || "").trim();
+  const phone = (source.phone || "").trim() || (locked ? "" : base.contact.phone);
+  const whatsapp =
+    (source.whatsapp || "").trim() || (locked ? "" : base.contact.whatsappUrl);
+  const tagline = (source.tagline || "").trim() || (locked ? industry : base.tagline);
+  const currency = (source.currency || "").trim() || base.commercial.currencyLabel;
+  const timezone = (source.timezone || "").trim() || base.commercial.timezone;
+  const hashtags =
+    Array.isArray(source.hashtags) && source.hashtags.length
+      ? source.hashtags.filter(Boolean).slice(0, 15)
+      : locked
+        ? [`#${resolvedName.replace(/[^\p{L}\p{N}]+/gu, "_")}`]
+        : base.hashtags;
+  const palette = source.palette ?? {};
   return {
     ...base,
-    brandName,
-    brandNameEnglish: brandName,
+    id: locked ? "locked-tenant-brand" : base.id,
+    brandName: resolvedName,
+    brandNameEnglish: resolvedName,
+    legalName: locked ? resolvedName : base.legalName,
+    valueProposition: locked
+      ? "للتواصل والاستفسار عن المنتجات."
+      : base.valueProposition,
+    voice: locked ? { ...base.voice, keyMessages: [] } : base.voice,
     activity: tagline,
     tagline,
     taglineEnglish: tagline,
     taglineShort: tagline,
-    contact: { ...base.contact, phone, whatsappUrl: whatsapp, label: "للتواصل :" },
+    contact: {
+      ...base.contact,
+      phone,
+      whatsappUrl: whatsapp,
+      deliveryPromise: locked ? "" : base.contact.deliveryPromise,
+      returnPolicy: locked ? "" : base.contact.returnPolicy,
+      label: locked ? "" : "للتواصل :",
+    },
     commercial: { ...base.commercial, currencyLabel: currency, timezone },
     hashtags,
     visual: {

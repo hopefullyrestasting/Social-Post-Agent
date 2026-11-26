@@ -4,7 +4,7 @@ import {
   PostAngle,
   ProductDetails,
 } from "./arabic-copywriter";
-import { AL_RAHMA_BRAND_CONFIG, buildBrandConfigFromTenant, type BrandConfig, type TenantBrandContext } from "./brand-core";
+import { AL_RAHMA_BRAND_CONFIG, buildBrandConfigFromTenant, type BrandConfig, type TenantBrandSource } from "./brand-core";
 import {
   BackgroundLayer,
   DesignerTemplate,
@@ -27,6 +27,12 @@ import {
   type TextDirection,
 } from "./design-library";
 import { formatPriceText, isSafeOfferText, resolveSalesLine, sanitizeOfferText } from "./studio-fields";
+import {
+  assertNoLegacyBrandLeak,
+  assertTenantBrandExclusive,
+  cleanMarketingText,
+  pickMarketingText,
+} from "./strict-design-rules";
 import { OverlayOptions, OverlaySystem } from "./overlay-system";
 import { QualityGate, QualityGateReport } from "./quality-gate";
 
@@ -54,7 +60,7 @@ export interface ProductionRequest {
   /** Override "today" for deterministic previews and tests. */
   today?: string;
   /** Tenant brand context for dynamic multi-tenant rendering/copy/gate. */
-  brand?: TenantBrandContext | BrandConfig | null;
+  brand?: TenantBrandSource | BrandConfig | null;
   /** Optional explicit price; falls back to product.price. */
   price?: number | null;
   /** Optional operator offer; falls back to product.offerText. */
@@ -185,7 +191,10 @@ export class ProductionEngine {
     template: DesignerTemplate,
   ): ProductionResult {
     const { product } = request;
-    const brand = (request.brand && "visual" in request.brand ? (request.brand as BrandConfig) : buildBrandConfigFromTenant(request.brand as TenantBrandContext | null | undefined));
+    const brand = request.brand && "visual" in request.brand
+      ? request.brand
+      : buildBrandConfigFromTenant(request.brand);
+    assertTenantBrandExclusive(request.brand, brand);
     const width = request.width ?? brand.visual.format.width;
     const height = request.height ?? brand.visual.format.height;
     const angle = resolveAngle(variantNumber, product);
@@ -211,7 +220,11 @@ export class ProductionEngine {
         : "";
     const explicitOffer = request.offerText ?? product.offerText ?? null;
     const offerText = isSafeOfferText(explicitOffer) ? sanitizeOfferText(explicitOffer) : "";
-    const salesLine = resolveSalesLine(product) || null;
+    const salesLine = cleanMarketingText(resolveSalesLine(product), "") || null;
+    const productName = pickMarketingText(
+      [product.title, product.category],
+      "منتج موثّق",
+    );
 
     const copy = ArabicCopywriter.generatePost(product, angle, {
       variant: variantNumber,
@@ -226,7 +239,7 @@ export class ProductionEngine {
         ? (product.verifiedBenefits ?? []).find((item) => item.trim().length > 0)?.trim() ?? ""
         : "";
     const headlineLines = headlinePlanForSlot(designSlot, {
-      productName: product.title,
+      productName,
       headline: copy.headline,
       benefitLine: copy.benefitLine,
       salesLine,
@@ -236,6 +249,15 @@ export class ProductionEngine {
     const productImageUrl = product.productImageUrl?.trim() || null;
     const stagedImageUrl = request.stagedImageUrl?.trim() || null;
     const effectiveSceneImageUrl = stagedImageUrl ?? request.sceneImageUrl ?? null;
+    const lockedTenantBrand =
+      request.brand &&
+      !("visual" in request.brand) &&
+      request.brand.brandName?.trim()
+        ? request.brand
+        : null;
+    const brandLogoUrl = lockedTenantBrand
+      ? lockedTenantBrand.logoUrl ?? null
+      : request.brandLogoUrl ?? null;
     // Colour-match the Simple studio wall/floor to the packaging mood.
     const palette = resolveSimplePaletteKey({
       category: product.category,
@@ -261,7 +283,8 @@ export class ProductionEngine {
       sceneImageUrl: effectiveSceneImageUrl,
       stagedImageUrl,
       stagedImageContainsProduct: request.stagedImageContainsProduct ?? Boolean(stagedImageUrl),
-      brandLogoUrl: request.brandLogoUrl ?? (brand as unknown as { logoUrl?: string }).logoUrl ?? null,
+      brandLogoUrl,
+      showLogo: brand.id === AL_RAHMA_BRAND_CONFIG.id || Boolean(brandLogoUrl),
       brand,
       productImageUrl,
       headline: copy.headline,
@@ -294,6 +317,7 @@ export class ProductionEngine {
     }
 
     const svgOverlay = OverlaySystem.generateOverlaySvg(overlayOptions);
+    assertNoLegacyBrandLeak(svgOverlay, brand);
     const svgDataUri = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
       svgOverlay,
     )}`;
@@ -325,7 +349,7 @@ export class ProductionEngine {
       },
       blockers,
       metadata: {
-        productName: product.title,
+        productName,
         angle,
         designSlot,
         designRecipeId: designRecipe.id,

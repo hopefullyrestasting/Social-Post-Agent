@@ -11,6 +11,7 @@ import {
 } from "../../../../src/lib/al-rahma";
 import { creativeSlotRecipe } from "../../../../src/lib/al-rahma/design-library";
 import { parseProductVisualBrief } from "../../../../src/lib/al-rahma/product-visual-brief";
+import { pickMarketingText } from "../../../../src/lib/al-rahma/strict-design-rules";
 import { removePackshotBackgroundServer } from "../../ai/remove-bg";
 import { compositeProductScene } from "../../ai/product-composite";
 import {
@@ -216,6 +217,16 @@ async function loadBrandLogoUrl(env: Env): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+function loadGenerationBrandLogoUrl(
+  env: Env,
+  tenantBrand?: { brandName?: string | null; logoUrl?: string | null } | null,
+): Promise<string | null> {
+  if (tenantBrand?.brandName?.trim()) {
+    return Promise.resolve(tenantBrand.logoUrl?.trim() || null);
+  }
+  return loadBrandLogoUrl(env);
 }
 
 function toPromotionRecord(row: PromotionRow): PromotionRecord {
@@ -481,7 +492,14 @@ async function generateSlotCreative(
     brandLogoUrl: string | null;
     conditioningImage?: string | null;
     tenantIndustry?: string | null;
-    tenantBrand?: { brandName?: string | null; industry?: string | null; logoUrl?: string | null } | null;
+    tenantBrand?: {
+      brandName?: string | null;
+      industry?: string | null;
+      logoUrl?: string | null;
+      phone?: string | null;
+      whatsapp?: string | null;
+      currency?: string | null;
+    } | null;
     salesLine?: string | null;
     price?: number | null;
     offerText?: string | null;
@@ -514,29 +532,34 @@ async function generateSlotCreative(
   }
   const cutoutApplied = Boolean(cutoutImage);
   const productImageUrl = cutoutImage ?? product.image_url;
+  const productLabel = pickMarketingText([product.name_arabic], "منتج موثّق");
+  const productBrandLabel = pickMarketingText(
+    [product.brand_arabic],
+    "العلامة التجارية",
+  );
 
   // The brief is reconstructed from existing product metadata; vision-derived
   // fields are added by the upload stage when available. Claims stay guarded.
   const visualBrief = parseProductVisualBrief(
     {
-      identity: product.name_arabic,
+      identity: productLabel,
       category: product.category ?? "general",
       industry: tenantIndustry ?? "general",
       shortSalesLine: salesLine ?? product.description ?? "",
     },
     "ar",
     {
-      identity: product.name_arabic,
+      identity: productLabel,
       category: product.category ?? "general",
       industry: tenantIndustry ?? "general",
     },
   );
 
   const sceneContext = {
-    brand: product.brand_arabic,
+    brand: productBrandLabel,
     industry: tenantIndustry,
     category: product.category,
-    name: product.name_arabic,
+    name: productLabel,
     benefits: research.verifiedBenefits,
     visualBrief,
   };
@@ -586,7 +609,7 @@ async function generateSlotCreative(
   }
 
   const details: ProductDetails = {
-    title: product.name_arabic,
+    title: productLabel,
     category: product.category ?? "",
     sourceUrl: research.sourceUrl ?? product.image_source ?? undefined,
     verificationStatus: product.verification_status,
@@ -615,7 +638,21 @@ async function generateSlotCreative(
     promotion,
     occasion,
     today,
-    brandLogoUrl,
+    brand:
+      tenantBrand && tenantBrand.brandName
+        ? {
+            brandName: tenantBrand.brandName,
+            industry: tenantBrand.industry ?? null,
+            logoUrl: tenantBrand.logoUrl ?? null,
+            phone: tenantBrand.phone ?? null,
+            whatsapp: tenantBrand.whatsapp ?? null,
+            currency: tenantBrand.currency ?? null,
+          }
+        : null,
+    brandLogoUrl:
+      tenantBrand?.brandName
+        ? tenantBrand.logoUrl ?? null
+        : brandLogoUrl,
     sceneImageUrls,
     stagedImageUrls,
     stagedImageContainsProductByVariant: stagedContains,
@@ -680,8 +717,8 @@ async function generateSlotCreative(
     id: creativeId,
     campaign_id: "", // filled by caller
     product_id: product.id,
-    product_name_arabic: product.name_arabic,
-    brand_arabic: product.brand_arabic,
+    product_name_arabic: productLabel,
+    brand_arabic: tenantBrand?.brandName ?? product.brand_arabic,
     brand_slug: product.brand_slug,
     variant_number: variant.variantNumber,
     variant: variant.variant,
@@ -932,7 +969,13 @@ async function handlePlan(env: Env, limit: number, tenantId: string | null = nul
   });
 }
 
-async function handleSingle(env: Env, req: Extract<RequestMode, { mode: "single" }>, tenantId: string | null = null, tenantIndustry: string | null = null, tenantBrand: { brandName?: string | null; industry?: string | null; logoUrl?: string | null } | null = null): Promise<Response> {
+async function handleSingle(
+  env: Env,
+  req: Extract<RequestMode, { mode: "single" }>,
+  tenantId: string | null = null,
+  tenantIndustry: string | null = null,
+  tenantBrand: GenerationContext["tenantBrand"] = null,
+): Promise<Response> {
   const today = cairoToday();
   const now = Date.now();
   const product = await loadEligibleProductById(env, req.productId, tenantId);
@@ -947,9 +990,10 @@ async function handleSingle(env: Env, req: Extract<RequestMode, { mode: "single"
   const campaignDate = today;
   await ensureCampaign(env, campaignId, campaignDate, now, 1, 2, tenantId);
 
-  const [occasion, brandLogoUrl] = await Promise.all([
+  const [occasion, brandLogoUrl, offerTexts] = await Promise.all([
     loadActiveOccasion(env),
-    loadBrandLogoUrl(env),
+    loadGenerationBrandLogoUrl(env, tenantBrand),
+    loadOfferTexts(env, [product.id], tenantId),
   ]);
 
   const { creative, stageProvider } = await generateSlotCreative(env, product, req.variantIndex, {
@@ -959,7 +1003,10 @@ async function handleSingle(env: Env, req: Extract<RequestMode, { mode: "single"
     brandLogoUrl,
     conditioningImage: req.conditioningImage ?? null,
     tenantIndustry,
-    tenantBrand: { brandName: null, industry: tenantIndustry, logoUrl: brandLogoUrl ?? null },
+    tenantBrand,
+    salesLine: product.description,
+    price: product.price,
+    offerText: offerTexts.get(product.id) ?? null,
   });
   creative.campaign_id = campaignId;
 
@@ -979,7 +1026,14 @@ async function handleSingle(env: Env, req: Extract<RequestMode, { mode: "single"
 interface GenerationContext {
   tenantId: string | null;
   tenantIndustry?: string | null;
-  tenantBrand?: { brandName?: string | null; industry?: string | null; logoUrl?: string | null } | null;
+  tenantBrand?: {
+    brandName?: string | null;
+    industry?: string | null;
+    logoUrl?: string | null;
+    phone?: string | null;
+    whatsapp?: string | null;
+    currency?: string | null;
+  } | null;
 }
 
 /** Generates exactly two creatives per selected product and persists the queue. */
@@ -1040,7 +1094,7 @@ async function runGenerationBatch(
 
   const [occasion, brandLogoUrl, offerTexts] = await Promise.all([
     loadActiveOccasion(env),
-    loadBrandLogoUrl(env),
+    loadGenerationBrandLogoUrl(env, tenantBrand),
     loadOfferTexts(env, selectedIds, tenantId),
   ]);
 
@@ -1277,6 +1331,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     leaseUntil = lease.leaseUntil;
   }
 
+  const contactInfo = scope.tenant?.brand?.contactInfo;
+  const contact = typeof contactInfo === "string"
+    ? { phone: contactInfo, whatsapp: "" }
+    : contactInfo && typeof contactInfo === "object"
+      ? contactInfo as { phone?: unknown; whatsapp?: unknown }
+      : {};
   const ctx: GenerationContext = {
     tenantId: scope.tenantId,
     tenantIndustry: scope.tenant?.brand?.industry ?? null,
@@ -1285,6 +1345,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           brandName: scope.tenant.brand.brandName,
           industry: scope.tenant.brand.industry,
           logoUrl: scope.tenant.brand.logoUrl,
+          phone: typeof contact.phone === "string" ? contact.phone : null,
+          whatsapp: typeof contact.whatsapp === "string" ? contact.whatsapp : null,
+          currency: scope.tenant.brand.currency,
         }
       : null,
   };

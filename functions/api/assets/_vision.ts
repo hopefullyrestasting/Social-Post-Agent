@@ -1,4 +1,8 @@
-import { parseProductVisualBrief, visualBriefPrompt, type ProductVisualCommercialBrief } from "../../../src/lib/al-rahma/product-visual-brief";
+import {
+  parseProductVisualBrief,
+  visualBriefPrompt,
+  type ProductVisualCommercialBrief,
+} from "../../../src/lib/al-rahma/product-visual-brief";
 /**
  * Vision AI helpers for the Smart Asset Matcher.
  *
@@ -208,7 +212,7 @@ function promptFor(catalog: readonly VisionCatalogProduct[]): string {
     "Then choose exactly one product from the CATALOG that matches what is printed on the pack.",
     "Never guess from the background. Only use text you can actually read on the packaging.",
     'Reply with JSON only, no markdown: {"productId":"<catalog id or empty string>","confidence":"high|medium|low","detectedLabel":"<text printed on the pack>","detectedBrand":"<brand printed on the pack>","detectedType":"<product type, e.g. shampoo>","reasoning":"<short reason>","identity":"<product identity>","primaryFunction":"<function if visibly stated>","dominantTones":[],"surfaceFinish":"<matte|glossy|metallic|glass|textile|mixed>","palette":[],"lightingMood":"<warm|cool-studio|high-contrast|natural-daylight>","shortSalesLine":"<truthful short Arabic phrase>"}',
-    productVisualBriefInstructions("ar", "the product's own industry"),
+    visualBriefPrompt("ar", "the product's own industry"),
     "If nothing in the CATALOG matches, return an empty productId and confidence low.",
     "",
     "CATALOG format: id | brand | product name | category",
@@ -324,7 +328,7 @@ function visualBriefFromGuess(
     .replace(/\.[^.]+$/, "")
     .replace(/[_-]+/g, " ")
     .trim();
-  return buildProductVisualBrief(guess.raw, "ar", {
+  return parseProductVisualBrief(guess.raw, "ar", {
     identity: guess.detectedLabel || fileStem || "منتج جديد",
     category: guess.detectedType || "general",
     industry: guess.detectedType || guess.detectedBrand || "general",
@@ -595,22 +599,4 @@ export async function predictProductFromImage(
     note: "",
     visualBrief,
   };
-}
-
-
-/** Converts a provider JSON reply into a guarded commercial brief for scene and copy stages. */
-export function buildProductVisualBrief(
-  response: unknown,
-  language: ProductVisualCommercialBrief["language"],
-  fallback: Pick<ProductVisualCommercialBrief, "identity" | "category" | "industry">,
-): ProductVisualCommercialBrief {
-  return parseProductVisualBrief(response, language, fallback);
-}
-
-/** Shared prompt fragment for deep product understanding; it explicitly prohibits invented commercial claims. */
-export function productVisualBriefInstructions(
-  language: ProductVisualCommercialBrief["language"],
-  industry: string,
-): string {
-  return visualBriefPrompt(language, industry);
 }

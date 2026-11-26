@@ -29,19 +29,64 @@ export function assertZonesDoNotOverlap(zones: AdZones): boolean {
   return active.every((zone, index) => active.slice(index + 1).every(other => !overlap(zone, other)));
 }
 
+const GLYPH_WIDTH_RATIO = 0.58;
+
+function wrapWords(words: string[], chars: number): string[] {
+  const lines: string[] = [];
+  let line = "";
+
+  for (const word of words) {
+    if (word.length > chars) {
+      if (line) {
+        lines.push(line);
+        line = "";
+      }
+      for (let index = 0; index < word.length; index += chars) {
+        lines.push(word.slice(index, index + chars));
+      }
+      continue;
+    }
+
+    const candidate = line ? `${line} ${word}` : word;
+    if (candidate.length <= chars || !line) {
+      line = candidate;
+    } else {
+      lines.push(line);
+      line = word;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
 export function fitText(text: string, zone: Rect, direction: TextDirection, maxFontSize = 72, minFontSize = 20): FittedText {
   const words = text.trim().split(/\s+/).filter(Boolean);
+  const width = Math.max(1, zone.width);
+  const height = Math.max(1, zone.height);
   for (let fontSize = maxFontSize; fontSize >= minFontSize; fontSize -= 2) {
-    const chars = Math.max(4, Math.floor(zone.width / (fontSize * 0.58)));
-    const lines: string[] = []; let line = "";
-    for (const word of words) {
-      const candidate = line ? `${line} ${word}` : word;
-      if (candidate.length <= chars || !line) line = candidate;
-      else { lines.push(line); line = word; }
-    }
-    if (line) lines.push(line);
+    const chars = Math.max(1, Math.floor(width / (fontSize * GLYPH_WIDTH_RATIO)));
+    const lines = wrapWords(words, chars);
     const lineHeight = Math.round(fontSize * 1.25);
-    if (lines.length * lineHeight <= zone.height) return { lines, fontSize, lineHeight, direction };
+    if (lines.length * lineHeight <= height) return { lines, fontSize, lineHeight, direction };
   }
-  return { lines: [text.slice(0, Math.max(1, Math.floor(zone.width / (minFontSize * 0.58))))], fontSize: minFontSize, lineHeight: Math.round(minFontSize * 1.25), direction };
+
+  let fontSize = Math.max(8, minFontSize);
+  let lineHeight = Math.round(fontSize * 1.25);
+  if (lineHeight > height) {
+    fontSize = Math.max(8, Math.floor(height / 1.25));
+    lineHeight = Math.round(fontSize * 1.25);
+  }
+  const chars = Math.max(1, Math.floor(width / (fontSize * GLYPH_WIDTH_RATIO)));
+  const maxLines = Math.max(1, Math.floor(height / lineHeight));
+  const joined = words.join(" ");
+  const lines: string[] = [];
+  for (let index = 0; index < joined.length; index += chars) {
+    lines.push(joined.slice(index, index + chars));
+  }
+  return {
+    lines: lines.slice(0, maxLines).length ? lines.slice(0, maxLines) : [""],
+    fontSize,
+    lineHeight,
+    direction,
+  };
 }
