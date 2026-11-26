@@ -3,6 +3,10 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import GeneratedCreativesGallery, {
+  type GalleryCampaign,
+  type GalleryCreative,
+} from "@/components/idesign/generated-creatives-gallery";
 import IDMark from "@/components/idesign/id-mark";
 import LanguageSwitcher from "@/components/idesign/language-switcher";
 import {
@@ -69,6 +73,15 @@ type TenantProvisioning = {
   brand_defaults?: ProvisionedBrandDefaults | null;
 };
 
+type TenantGenerationInfo = {
+  state?: "idle" | "running" | "cooldown";
+  busy?: boolean;
+  in_flight_until?: number | null;
+  in_flight_until_iso?: string | null;
+  last_generation_at?: number | null;
+  retry_after_seconds?: number;
+};
+
 type TenantInfo = {
   id?: string;
   label?: string;
@@ -77,6 +90,7 @@ type TenantInfo = {
   brand_locked?: boolean;
   brand?: TenantBrandProfile | null;
   provisioning?: TenantProvisioning | null;
+  generation?: TenantGenerationInfo;
   subscription?: { days_remaining?: number | null; unlimited_generation?: boolean };
 };
 
@@ -96,6 +110,41 @@ type CampaignResult = {
   creatives?: CampaignCreative[];
   selected_product_ids?: string[];
   message?: string;
+  generation?: {
+    state?: string;
+    campaignId?: string;
+    products?: number;
+    creatives?: number;
+  };
+};
+
+type CampaignApiCreative = {
+  id: string;
+  product_id: string;
+  campaign_id?: string | null;
+  variant_number?: number | null;
+  image_url?: string | null;
+  svg?: string | null;
+  product_name_arabic?: string | null;
+  brand_arabic?: string | null;
+  headline_arabic?: string | null;
+  copy_arabic?: string | null;
+};
+
+type CampaignApiRow = {
+  id: string;
+  campaign_date?: string | null;
+  status?: string | null;
+  total_images?: number | null;
+  creatives?: CampaignApiCreative[];
+};
+
+type GenerationPhase = "idle" | "preparing" | "running" | "complete" | "busy";
+
+type GenerationProgress = {
+  phase: GenerationPhase;
+  detail?: string;
+  retryAfterSeconds?: number;
 };
 
 type ProductPatch = {
@@ -170,6 +219,39 @@ async function fetchProducts(signal?: AbortSignal, fallback = ""): Promise<Produ
   return Array.isArray(body.products) ? body.products : [];
 }
 
+async function fetchCampaigns(signal?: AbortSignal): Promise<GalleryCampaign[]> {
+  installAccessKeyFetch();
+  const response = await fetch("/api/db/campaigns?limit=20", {
+    headers: { Accept: "application/json", ...accessKeyHeaders() },
+    cache: "no-store",
+    signal,
+  });
+  const body = await readJson<{ campaigns?: CampaignApiRow[] }>(response);
+  if (!response.ok || body.success === false) {
+    throw new Error(
+      failureMessage(body as ApiFailure, response.status, "Unable to load creatives."),
+    );
+  }
+  return (body.campaigns ?? []).map((campaign) => ({
+    id: campaign.id,
+    campaign_date: campaign.campaign_date ?? null,
+    status: campaign.status ?? null,
+    total_images: campaign.total_images ?? null,
+    creatives: (campaign.creatives ?? []).map((creative): GalleryCreative => ({
+      id: creative.id,
+      product_id: creative.product_id,
+      campaign_id: creative.campaign_id ?? campaign.id,
+      variant_number: creative.variant_number ?? null,
+      image_url: creative.image_url ?? null,
+      svg: creative.svg ?? null,
+      product_name_arabic: creative.product_name_arabic ?? null,
+      brand_arabic: creative.brand_arabic ?? null,
+      headline_arabic: creative.headline_arabic ?? null,
+      copy_arabic: creative.copy_arabic ?? null,
+    })),
+  }));
+}
+
 export default function DashboardPage() {
   const [language, setLanguage] = useState<LanguageCode>("ar");
   const appliedLocaleKey = useRef("");
@@ -186,6 +268,17 @@ export default function DashboardPage() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
+  const [campaigns, setCampaigns] = useState<GalleryCampaign[]>([]);
+  const [loadedGalleryKey, setLoadedGalleryKey] = useState<number | null>(null);
+  const [galleryErrorState, setGalleryErrorState] = useState<{
+    key: number;
+    message: string;
+  } | null>(null);
+  const galleryLoading = loadedGalleryKey !== refreshKey;
+  const galleryError =
+    galleryErrorState?.key === refreshKey ? galleryErrorState.message : "";
+  const [progress, setProgress] = useState<GenerationProgress>({ phase: "idle" });
+  const [retryBody, setRetryBody] = useState<Record<string, unknown> | null>(null);
 
   const storedKey = useSyncExternalStore(subscribeToAccessKey, readAccessKey, serverAccessKey);
   const [manualKey, setManualKey] = useState<string | null>(null);
@@ -221,6 +314,18 @@ export default function DashboardPage() {
           appliedLocaleKey.current = info.id;
           const preferred = languageFromLocale(defaults?.locale);
           if (preferred) setLanguage(preferred);
+        }
+        if (info?.generation?.busy && info.generation.state !== "idle") {
+          const seconds = Math.max(1, info.generation.retry_after_seconds ?? 1);
+          setProgress((previous) =>
+            previous.phase === "complete"
+              ? previous
+              : {
+                  phase: "busy",
+                  detail: `${translate(language, "generationBusy")} ${seconds} ${translate(language, "generationSeconds")}`,
+                  retryAfterSeconds: seconds,
+                },
+          );
         }
         if (info?.brand) {
           setBrandForm((previous) => ({
@@ -275,6 +380,29 @@ export default function DashboardPage() {
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [refreshKey, language]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchCampaigns(controller.signal)
+      .then((items) => {
+        if (!controller.signal.aborted) setCampaigns(items);
+      })
+      .catch((caught: unknown) => {
+        if (!controller.signal.aborted) {
+          setGalleryErrorState({
+            key: refreshKey,
+            message:
+              caught instanceof Error
+                ? caught.message
+                : translate(language, "galleryLoading"),
+          });
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoadedGalleryKey(refreshKey);
       });
     return () => controller.abort();
   }, [refreshKey, language]);
@@ -456,12 +584,29 @@ export default function DashboardPage() {
     }
   }
 
-  async function generateAndDownload(body: Record<string, unknown>) {
+  async function generateAndDownload(
+    body: Record<string, unknown>,
+    retry = false,
+  ) {
     installAccessKeyFetch();
+    const selectedIds = Array.isArray(body.productIds)
+      ? (body.productIds as unknown[]).filter((id): id is string => typeof id === "string")
+      : [];
+    const isSingle = selectedIds.length === 1;
     setGenerating(true);
     setNotice("");
     setError("");
+    setProgress({
+      phase: "preparing",
+      detail: text("generationPreparing"),
+      retryAfterSeconds: undefined,
+    });
+    if (!retry) setRetryBody(null);
     try {
+      setProgress({
+        phase: "running",
+        detail: isSingle ? text("generationSingleStatus") : `${text("generationBatchStatus")}…`,
+      });
       const response = await fetch("/api/db/campaigns/run", {
         method: "POST",
         headers: accessKeyHeaders({
@@ -479,9 +624,42 @@ export default function DashboardPage() {
           setLoading(true);
           setRefreshKey((value) => value + 1);
         }
+        if (failed.code === "generation_rate_limited") {
+          const seconds = Math.max(
+            1,
+            Number((failed as ApiFailure & { retry_after_seconds?: number }).retry_after_seconds) || 1,
+          );
+          setRetryBody(body);
+          setProgress({
+            phase: "busy",
+            detail: `${failed.error || text("generationBusy")} · ${text("generationBusy")} ${seconds} ${text("generationSeconds")}`,
+            retryAfterSeconds: seconds,
+          });
+          return;
+        }
         throw new Error(failureMessage(failed, response.status, text("saveFailed")));
       }
       const creatives = Array.isArray(result.creatives) ? result.creatives : [];
+      // Show the fresh creatives immediately; the API refresh below replaces
+      // this optimistic entry with the persisted campaign from D1.
+      if (creatives.length > 0) {
+        const stamp = Date.now();
+        const optimistic: GalleryCampaign = {
+          id: result.generation?.campaignId || `pending-${stamp}`,
+          status: "completed",
+          total_images: creatives.length,
+          creatives: creatives.map((creative, index): GalleryCreative => ({
+            id: creative.id || `pending-${stamp}-${index}`,
+            product_id: creative.product_id || selectedIds[index] || "",
+            campaign_id: result.generation?.campaignId ?? null,
+            variant_number: creative.variant_number ?? index + 1,
+            image_url: creative.image_url ?? null,
+            svg: creative.svg ?? null,
+            product_name_arabic: creative.product_name_arabic ?? null,
+          })),
+        };
+        setCampaigns((previous) => [optimistic, ...previous]);
+      }
       if (creatives.length > 0) {
         await downloadCreativesZip(
           creatives,
@@ -489,10 +667,13 @@ export default function DashboardPage() {
         );
       }
       setNotice(result.message || `${text("generationDone")} ${creatives.length}`);
+      setProgress({ phase: "complete", detail: text("generationComplete") });
+      setRetryBody(null);
       setSelected([]);
       setLoading(true);
       setRefreshKey((value) => value + 1);
     } catch (caught) {
+      setProgress({ phase: "idle" });
       setError(caught instanceof Error ? caught.message : text("saveFailed"));
     } finally {
       setGenerating(false);
@@ -784,6 +965,46 @@ export default function DashboardPage() {
             </div>
           </div>
 
+          {progress.phase !== "idle" ? (
+            <div
+              role="status"
+              aria-live="polite"
+              className={`mb-4 rounded-lg border p-3 text-sm ${
+                progress.phase === "busy"
+                  ? "border-amber-200 bg-amber-50 text-amber-900"
+                  : progress.phase === "complete"
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                    : "border-blue-200 bg-blue-50 text-blue-900"
+              }`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span>
+                  {progress.phase === "preparing" || progress.phase === "running" ? (
+                    <span
+                      aria-hidden="true"
+                      className="me-2 inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent align-middle"
+                    />
+                  ) : null}
+                  {progress.detail}
+                </span>
+                {progress.phase === "busy" && retryBody ? (
+                  <button
+                    type="button"
+                    disabled={generating}
+                    onClick={() => void generateAndDownload(retryBody, true)}
+                    className="rounded-md border border-amber-400 px-2 py-1 text-xs font-bold disabled:opacity-50"
+                  >
+                    {text("retryGeneration")}
+                  </button>
+                ) : null}
+              </div>
+              {progress.phase === "running" ? (
+                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-blue-100">
+                  <div className="h-full w-1/3 animate-pulse rounded-full bg-[#1D4ED8]" />
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           {notice ? (
             <p role="status" className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
               {notice}
@@ -919,6 +1140,15 @@ export default function DashboardPage() {
           )}
           <p className="mt-4 text-xs text-slate-500">{text("queueHint")}</p>
         </section>
+
+        <GeneratedCreativesGallery
+          campaigns={campaigns}
+          products={products}
+          language={language}
+          loading={galleryLoading}
+          error={galleryError}
+          onRefresh={() => setRefreshKey((value) => value + 1)}
+        />
 
         <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-blue-100 py-6 text-xs text-slate-500">
           <p className="flex items-center gap-2">

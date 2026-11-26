@@ -736,10 +736,13 @@ async function generateSlotCreative(
   return { creative, selectedId: product.id, stageProvider };
 }
 
-function noStore(data: unknown, status = 200): Response {
+function noStore(data: unknown, status = 200, extraHeaders: HeadersInit = {}): Response {
   return Response.json(data, {
     status,
-    headers: { "Cache-Control": "no-store, max-age=0, must-revalidate" },
+    headers: {
+      "Cache-Control": "no-store, max-age=0, must-revalidate",
+      ...extraHeaders,
+    },
   });
 }
 
@@ -969,6 +972,7 @@ async function handleSingle(env: Env, req: Extract<RequestMode, { mode: "single"
     slot: { productId: product.id, variantIndex: req.variantIndex },
     creative: stripInternal(creative),
     stageProvider,
+    generation: { state: "completed", campaignId, creatives: 1 },
   });
 }
 
@@ -1158,6 +1162,12 @@ async function runGenerationBatch(
     stageProvidersByProduct,
     artDirectionStyles: ART_DIRECTION_STYLES,
     creatives: creativesOut,
+    generation: {
+      state: "completed",
+      campaignId,
+      products: selectedIds.length,
+      creatives: creativesOut.length,
+    },
   });
 }
 
@@ -1240,14 +1250,28 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (scope.tenantId) {
     const lease = await leaseGenerationSlot(env, scope.tenantId);
     if (!lease.acquired) {
+      const retryAfterSeconds = Math.max(1, lease.retryAfterSeconds);
+      const message =
+        lease.reason === "inactive"
+          ? "This access key is not active. Contact support to restore generation."
+          : lease.reason === "running"
+            ? `A generation is still running for this key. Try again in ${retryAfterSeconds} seconds.`
+            : lease.reason === "cooldown"
+              ? `Generation just finished for this key. Try again in ${retryAfterSeconds} seconds.`
+              : "Another generation is already running for this key. Try again shortly.";
       return noStore(
         {
           success: false,
           code: "generation_rate_limited",
-          error: "Another generation is already running for this key. Try again shortly.",
-          retry_after_seconds: lease.retryAfterSeconds,
+          error: message,
+          retry_after_seconds: retryAfterSeconds,
+          generation: {
+            state: lease.reason === "inactive" ? "idle" : lease.reason,
+            busy: lease.reason !== "inactive",
+          },
         },
         429,
+        { "Retry-After": String(retryAfterSeconds) },
       );
     }
     leaseUntil = lease.leaseUntil;

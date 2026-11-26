@@ -9,6 +9,11 @@ import { onRequestPost as postProducts } from "../functions/api/db/products";
 import { onRequestGet as getCampaigns } from "../functions/api/db/campaigns";
 import { onRequestPost as runCampaign } from "../functions/api/db/campaigns/run";
 import { onRequestGet as getStats } from "../functions/api/db/stats";
+import {
+  generationStateFromRow,
+  leaseGenerationSlot,
+  releaseGenerationSlot,
+} from "../functions/api/_tenant";
 
 type BV = string | number | null;
 type Row = Record<string, unknown>;
@@ -136,7 +141,8 @@ class MockDB {
       return this.assets.filter((r) => !tenant || r.tenant_key_id === tenant) as T[];
     }
     if (s.includes("from creatives")) {
-      const tenant = s.includes("tenant_key_id = ?") ? v[0] : null;
+      // campaigns.ts binds [...campaignIds, tenantId], so the tenant is last.
+      const tenant = s.includes("tenant_key_id = ?") ? v[v.length - 1] : null;
       return this.creatives.filter((r) => !tenant || r.tenant_key_id === tenant) as T[];
     }
     if (s.includes("from business_settings") && s.includes("key in (")) {
@@ -167,6 +173,25 @@ class MockDB {
       const row = this.activationKeys.find((r) => r.id === v[1]);
       if (row) row.locked_logo_url = v[0];
       return { success: true, meta: { changes: 1 } };
+    }
+    // Atomic generation lease (migrations/0004_tenant_generation_lease.sql).
+    if (s.startsWith("update activation_keys") && s.includes("in_flight_until = ?") && s.includes("last_generation_at = ?")) {
+      const row = this.activationKeys.find((r) => r.id === v[2]);
+      if (!row || row.status !== "active") return { success: true, meta: { changes: 0 } };
+      const free = row.in_flight_until === null || row.in_flight_until === undefined || Number(row.in_flight_until) <= Number(v[3]);
+      const cooled = row.last_generation_at === null || row.last_generation_at === undefined || Number(row.last_generation_at) <= Number(v[4]);
+      if (!free || !cooled) return { success: true, meta: { changes: 0 } };
+      row.in_flight_until = v[0];
+      row.last_generation_at = v[1];
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (s.startsWith("update activation_keys") && s.includes("set in_flight_until = null")) {
+      const row = this.activationKeys.find((r) => r.id === v[0]);
+      if (row && Number(row.in_flight_until) === Number(v[1])) {
+        row.in_flight_until = null;
+        return { success: true, meta: { changes: 1 } };
+      }
+      return { success: true, meta: { changes: 0 } };
     }
     if (s.startsWith("insert into brands")) {
       const keys = sql.match(/\(([^)]+)\)/)?.[1]?.split(",").map((x) => x.trim()) ?? [];
@@ -499,6 +524,148 @@ async function run() {
   const tenantProvisionBody = await json(tenantProvision);
   assert.equal(tenantProvision.status, 401);
   assert.equal(tenantProvisionBody.code, "admin_key_required");
+
+  // --- Generation status is derived safely from persisted lease fields -------
+  const now = Math.floor(Date.now() / 1000);
+  assert.equal(
+    generationStateFromRow(
+      { in_flight_until: now - 10, last_generation_at: now - 60 },
+      now,
+      3,
+    ).state,
+    "idle",
+    "an expired lease is stale, not busy",
+  );
+  const runningState = generationStateFromRow(
+    { in_flight_until: now + 42, last_generation_at: now },
+    now,
+    3,
+  );
+  assert.equal(runningState.state, "running");
+  assert.equal(runningState.retryAfterSeconds, 42);
+  assert.equal(
+    generationStateFromRow(
+      { in_flight_until: null, last_generation_at: now - 1 },
+      now,
+      3,
+    ).state,
+    "cooldown",
+  );
+
+  // --- Atomic lease: no duplicate runs, stale lease reclaimable -------------
+  const keyLease = await provisionKey(db, "LeaseFlow");
+  const leaseRow = db.activationKeys.find((r) => r.label === "LeaseFlow")!;
+  const leaseEnv = { DB: db } as any;
+  const idleMe = await json(
+    await tenantMe(ctx({ DB: db }, "https://x/api/tenant/me", { headers: { "x-access-key": keyLease } })),
+  );
+  assert.equal(idleMe.tenant.generation.state, "idle");
+  assert.equal(idleMe.tenant.generation.busy, false);
+
+  const firstLease = await leaseGenerationSlot(leaseEnv, leaseRow.id as string);
+  assert.equal(firstLease.acquired, true);
+  assert.equal(firstLease.reason, "acquired");
+  const busyMe = await json(
+    await tenantMe(ctx({ DB: db }, "https://x/api/tenant/me", { headers: { "x-access-key": keyLease } })),
+  );
+  assert.equal(busyMe.tenant.generation.state, "running");
+  assert.equal(busyMe.tenant.generation.busy, true);
+  assert.ok(busyMe.tenant.generation.retry_after_seconds >= 1);
+
+  const duplicateLease = await leaseGenerationSlot(leaseEnv, leaseRow.id as string);
+  assert.equal(duplicateLease.acquired, false);
+  assert.equal(duplicateLease.reason, "running");
+  assert.ok(duplicateLease.retryAfterSeconds >= 1);
+
+  // A worker that died left a future lease; once it expires the slot is free.
+  leaseRow.in_flight_until = Math.floor(Date.now() / 1000) - 5;
+  leaseRow.last_generation_at = Math.floor(Date.now() / 1000) - 60;
+  const reclaimed = await leaseGenerationSlot(leaseEnv, leaseRow.id as string);
+  assert.equal(reclaimed.acquired, true, "stale lease must be reclaimable");
+  await releaseGenerationSlot(leaseEnv, leaseRow.id as string, reclaimed.leaseUntil + 1);
+  assert.equal(leaseRow.in_flight_until, reclaimed.leaseUntil, "mismatched release is ignored");
+  await releaseGenerationSlot(leaseEnv, leaseRow.id as string, reclaimed.leaseUntil);
+  assert.equal(leaseRow.in_flight_until, null);
+
+  // A concurrent HTTP run receives a precise 429, not a silent duplicate.
+  const keyRunLease = await provisionKey(db, "RunLease");
+  await lockBrand(ctx({ DB: db }, "https://x/api/tenant/lock-brand", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-access-key": keyRunLease },
+    body: JSON.stringify({ brand_name: "Run Co", industry: "Retail" }),
+  }));
+  const runRow = db.activationKeys.find((r) => r.label === "RunLease")!;
+  const held = await leaseGenerationSlot(leaseEnv, runRow.id as string);
+  assert.equal(held.acquired, true);
+  const blocked = await runCampaign(ctx({ DB: db }, "https://x/api/db/campaigns/run", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-access-key": keyRunLease },
+    body: JSON.stringify({ mode: "basic", count: 1 }),
+  }));
+  assert.equal(blocked.status, 429);
+  const blockedBody = await json(blocked);
+  assert.equal(blockedBody.code, "generation_rate_limited");
+  assert.ok(blockedBody.retry_after_seconds >= 1);
+  assert.equal(
+    blocked.headers.get("Retry-After"),
+    String(blockedBody.retry_after_seconds),
+  );
+  assert.match(String(blockedBody.error), /seconds/);
+  await releaseGenerationSlot(leaseEnv, runRow.id as string, held.leaseUntil);
+
+  // --- Persisted creatives feed the dashboard gallery -----------------------
+  const galleryKey = await provisionKey(db, "GalleryFlow");
+  const galleryTenantId = db.activationKeys.find((r) => r.label === "GalleryFlow")!.id;
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920"><rect width="1080" height="1920" fill="white"/></svg>';
+  const dataUri = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  db.campaigns.push({
+    id: "gallery-c1",
+    tenant_key_id: galleryTenantId,
+    campaign_date: "2026-11-25",
+    status: "completed",
+    total_products: 1,
+    total_images: 2,
+    created_at: 100,
+  });
+  for (const variant of [1, 2]) {
+    db.creatives.push({
+      id: `gc${variant}`,
+      tenant_key_id: galleryTenantId,
+      product_id: "gp1",
+      campaign_id: "gallery-c1",
+      variant_number: variant,
+      image_url: dataUri,
+      headline_arabic: "عرض مميز",
+      copy_arabic: "جاهز للنشر",
+      created_at: 100,
+    });
+  }
+  const galleryBody = await json(
+    await getCampaigns(ctx({ DB: db }, "https://x/api/db/campaigns?limit=20", {
+      headers: { "x-access-key": galleryKey },
+    })),
+  );
+  assert.equal(galleryBody.success, true);
+  const persisted = (galleryBody.campaigns as any[]).find((c) => c.id === "gallery-c1");
+  assert.ok(persisted, "persisted campaign must be returned to the gallery");
+  assert.equal(persisted.creatives.length, 2, "two creatives per product");
+  assert.ok(
+    persisted.creatives.every((c: any) => String(c.image_url).startsWith("data:image/svg+xml")),
+    "gallery previews use the stored SVG data URI",
+  );
+  assert.deepEqual(
+    persisted.creatives.map((c: any) => c.variant_number).sort(),
+    [1, 2],
+  );
+  const otherGallery = await json(
+    await getCampaigns(ctx({ DB: db }, "https://x/api/db/campaigns?limit=20", {
+      headers: { "x-access-key": keyA },
+    })),
+  );
+  assert.ok(
+    !(otherGallery.campaigns as any[]).some((c) => c.id === "gallery-c1"),
+    "gallery data remains tenant scoped",
+  );
 
   console.log("multi-tenant phase4 tests passed");
 }
