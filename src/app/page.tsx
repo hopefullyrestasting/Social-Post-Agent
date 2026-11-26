@@ -6,21 +6,65 @@ import IDMark from "@/components/idesign/id-mark";
 import LanguageSwitcher from "@/components/idesign/language-switcher";
 import { IDESIGN_STUDIO_CONFIG } from "@/lib/al-rahma/brand-core";
 import {
+  detectLanguage,
   languageDirection,
+  persistLanguagePreference,
+  readLanguagePreference,
   translate,
   type LanguageCode,
   type TranslationKey,
 } from "@/lib/al-rahma/i18n";
 
 export default function Home() {
-  const [language, setLanguage] = useState<LanguageCode>("ar");
+  const [language, setLanguage] = useState<LanguageCode>("en");
   const direction = languageDirection(language);
   const text = (key: TranslationKey) => translate(language, key);
+
+  useEffect(() => {
+    let active = true;
+    const savedLanguage = readLanguagePreference();
+    if (savedLanguage) {
+      void Promise.resolve().then(() => {
+        if (active) setLanguage(savedLanguage);
+      });
+      return () => {
+        active = false;
+      };
+    }
+
+    void fetch("/api/locale")
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Unable to resolve visitor locale.");
+        const result: unknown = await response.json();
+        if (
+          active &&
+          typeof result === "object" &&
+          result !== null &&
+          "language" in result &&
+          typeof result.language === "string"
+        ) {
+          setLanguage(detectLanguage({ savedLanguage: readLanguagePreference(), acceptLanguage: result.language }));
+        }
+      })
+      .catch(() => {
+        if (active && !readLanguagePreference()) {
+          setLanguage(detectLanguage({ acceptLanguage: navigator.languages.join(",") }));
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     document.documentElement.lang = language;
     document.documentElement.dir = direction;
   }, [language, direction]);
+
+  const chooseLanguage = (code: LanguageCode) => {
+    persistLanguagePreference(code);
+    setLanguage(code);
+  };
 
   return (
     <main
@@ -43,7 +87,7 @@ export default function Home() {
           <div className="flex flex-wrap items-center gap-2">
             <LanguageSwitcher
               language={language}
-              onChange={setLanguage}
+              onChange={chooseLanguage}
               label={text("language")}
               dir={direction}
             />

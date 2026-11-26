@@ -17,6 +17,63 @@ export const LANGUAGES = [
 
 export type LanguageCode = (typeof LANGUAGES)[number]["code"];
 export type TextDirection = (typeof LANGUAGES)[number]["dir"];
+export const LANGUAGE_STORAGE_KEY = "social-post-agent-language";
+
+const ARABIC_SPEAKING_COUNTRIES = new Set([
+  "AE", "BH", "DZ", "EG", "IQ", "JO", "KW", "LB", "LY", "MA", "MR",
+  "OM", "PS", "QA", "SA", "SD", "SY", "TN", "YE",
+]);
+
+export function isLanguageCode(value: unknown): value is LanguageCode {
+  return typeof value === "string" && LANGUAGES.some((language) => language.code === value);
+}
+
+export function languageFromLocale(locale?: string | null): LanguageCode | null {
+  const base = (locale ?? "").split(/[-_]/)[0]?.toLowerCase();
+  return isLanguageCode(base) ? base : null;
+}
+
+export function detectLanguage({
+  savedLanguage,
+  country,
+  acceptLanguage,
+}: {
+  savedLanguage?: unknown;
+  country?: string | null;
+  acceptLanguage?: string | null;
+}): LanguageCode {
+  if (isLanguageCode(savedLanguage)) return savedLanguage;
+  if (ARABIC_SPEAKING_COUNTRIES.has((country ?? "").toUpperCase())) return "ar";
+
+  const preferredLanguages = (acceptLanguage ?? "")
+    .split(",")
+    .map((entry, order) => {
+      const [locale, ...parameters] = entry.trim().split(";");
+      const quality = parameters
+        .map((parameter) => /^q=([0-9.]+)$/i.exec(parameter.trim()))
+        .find(Boolean)?.[1];
+      return { locale, order, quality: quality === undefined ? 1 : Number(quality) };
+    })
+    .filter((entry) => entry.locale && Number.isFinite(entry.quality) && entry.quality > 0)
+    .sort((left, right) => right.quality - left.quality || left.order - right.order);
+
+  for (const preferred of preferredLanguages) {
+    const language = languageFromLocale(preferred.locale);
+    if (language) return language;
+  }
+  return "en";
+}
+
+export function readLanguagePreference(): LanguageCode | null {
+  if (typeof window === "undefined") return null;
+  return languageFromLocale(window.localStorage.getItem(LANGUAGE_STORAGE_KEY));
+}
+
+export function persistLanguagePreference(language: LanguageCode): void {
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
+  }
+}
 
 const ar = {
   language: "اللغة",
@@ -543,7 +600,7 @@ export const I18N: Record<LanguageCode, Dictionary> = {
 };
 
 export function languageDirection(code: LanguageCode): TextDirection {
-  return LANGUAGES.find((language) => language.code === code)?.dir ?? "rtl";
+  return LANGUAGES.find((language) => language.code === code)?.dir ?? "ltr";
 }
 
 export function translate(code: LanguageCode, key: TranslationKey): string {
