@@ -8,6 +8,8 @@ import GeneratedCreativesGallery, {
   type GalleryCreative,
 } from "@/components/idesign/generated-creatives-gallery";
 import IDMark from "@/components/idesign/id-mark";
+import GlobeIcon from "@/components/idesign/globe-icon";
+import StudioEmblem from "@/components/idesign/studio-emblem";
 import LanguageSwitcher from "@/components/idesign/language-switcher";
 import {
   accessKeyHeaders,
@@ -685,7 +687,7 @@ export default function DashboardPage() {
       <header className="border-b border-blue-100 bg-white">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-5 py-4">
           <Link href="/" className="flex items-center gap-3" aria-label={IDESIGN_STUDIO_CONFIG.name}>
-            <IDMark />
+            <StudioEmblem />
             <span className="leading-tight">
               <span className="block text-lg font-black text-[#1D4ED8]">
                 {IDESIGN_STUDIO_CONFIG.name} · {IDESIGN_STUDIO_CONFIG.productName}
@@ -696,6 +698,12 @@ export default function DashboardPage() {
             </span>
           </Link>
           <div className="flex flex-wrap items-center gap-2">
+            <span
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50"
+              aria-hidden="true"
+            >
+              <GlobeIcon size={20} />
+            </span>
             <LanguageSwitcher
               language={language}
               onChange={setLanguage}

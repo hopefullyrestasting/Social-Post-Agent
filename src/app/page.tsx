@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import IDMark from "@/components/idesign/id-mark";
+import GlobeIcon from "@/components/idesign/globe-icon";
+import StudioEmblem from "@/components/idesign/studio-emblem";
 import LanguageSwitcher from "@/components/idesign/language-switcher";
 import { IDESIGN_STUDIO_CONFIG } from "@/lib/al-rahma/brand-core";
 import {
@@ -30,7 +32,7 @@ export default function Home() {
       <header className="border-b border-blue-100 bg-white">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-5 py-4">
           <div className="flex items-center gap-3">
-            <IDMark />
+            <StudioEmblem />
             <span className="leading-tight">
               <span className="block text-lg font-black text-[#1D4ED8]">
                 {IDESIGN_STUDIO_CONFIG.name} · {text("introBadge")}
@@ -41,6 +43,12 @@ export default function Home() {
             </span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <span
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50"
+              aria-hidden="true"
+            >
+              <GlobeIcon size={20} />
+            </span>
             <LanguageSwitcher
               language={language}
               onChange={setLanguage}

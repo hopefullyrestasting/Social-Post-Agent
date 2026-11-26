@@ -27,6 +27,7 @@ import {
   type TextDirection,
 } from "./design-library";
 import { formatPriceText, isSafeOfferText, resolveSalesLine, sanitizeOfferText } from "./studio-fields";
+import { assertTenantBrandExclusive, pickMarketingText } from "./strict-design-rules";
 import { OverlayOptions, OverlaySystem } from "./overlay-system";
 import { QualityGate, QualityGateReport } from "./quality-gate";
 
@@ -186,6 +187,7 @@ export class ProductionEngine {
   ): ProductionResult {
     const { product } = request;
     const brand = (request.brand && "visual" in request.brand ? (request.brand as BrandConfig) : buildBrandConfigFromTenant(request.brand as TenantBrandContext | null | undefined));
+    assertTenantBrandExclusive(request.brand as TenantBrandContext | BrandConfig | null | undefined, brand);
     const width = request.width ?? brand.visual.format.width;
     const height = request.height ?? brand.visual.format.height;
     const angle = resolveAngle(variantNumber, product);
@@ -212,6 +214,7 @@ export class ProductionEngine {
     const explicitOffer = request.offerText ?? product.offerText ?? null;
     const offerText = isSafeOfferText(explicitOffer) ? sanitizeOfferText(explicitOffer) : "";
     const salesLine = resolveSalesLine(product) || null;
+    const productName = pickMarketingText([product.title, product.category], "منتج موثّق");
 
     const copy = ArabicCopywriter.generatePost(product, angle, {
       variant: variantNumber,
@@ -226,7 +229,7 @@ export class ProductionEngine {
         ? (product.verifiedBenefits ?? []).find((item) => item.trim().length > 0)?.trim() ?? ""
         : "";
     const headlineLines = headlinePlanForSlot(designSlot, {
-      productName: product.title,
+      productName,
       headline: copy.headline,
       benefitLine: copy.benefitLine,
       salesLine,
@@ -325,7 +328,7 @@ export class ProductionEngine {
       },
       blockers,
       metadata: {
-        productName: product.title,
+        productName,
         angle,
         designSlot,
         designRecipeId: designRecipe.id,

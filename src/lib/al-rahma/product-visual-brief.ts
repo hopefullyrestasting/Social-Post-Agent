@@ -1,3 +1,5 @@
+import { isRawFilename } from "./strict-design-rules";
+
 export type LightingMood = "warm" | "cool-studio" | "high-contrast" | "natural-daylight";
 export type SurfaceFinish = "matte" | "glossy" | "metallic" | "glass" | "textile" | "mixed";
 
@@ -14,7 +16,9 @@ const INDUSTRY_GUARDS: Record<string, string[]> = {
 };
 
 function clean(value: unknown, max = 160): string {
-  return typeof value === "string" ? value.trim().replace(/\s+/g, " ").slice(0, max) : "";
+  if (typeof value !== "string") return "";
+  const text = value.trim().replace(/\s+/g, " ").slice(0, max);
+  return text && !isRawFilename(text) ? text : "";
 }
 function list(value: unknown, max = 5): string[] {
   return Array.isArray(value) ? value.map(item => clean(item, 40)).filter(Boolean).slice(0, max) : [];
@@ -33,12 +37,15 @@ export function isIndustryCompatible(industry: string, category: string, identit
 }
 export function parseProductVisualBrief(raw: unknown, language: ProductVisualCommercialBrief["language"], fallback: Pick<ProductVisualCommercialBrief, "identity" | "category" | "industry">): ProductVisualCommercialBrief {
   const value = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
-  const identity = clean(value.identity) || fallback.identity;
-  const category = clean(value.category) || fallback.category;
-  const industry = clean(value.industry) || fallback.industry;
+  const fallbackIdentity = clean(fallback.identity) || "منتج موثّق";
+  const fallbackCategory = clean(fallback.category) || "general";
+  const fallbackIndustry = clean(fallback.industry) || "general";
+  const identity = clean(value.identity) || fallbackIdentity;
+  const category = clean(value.category) || fallbackCategory;
+  const industry = clean(value.industry) || fallbackIndustry;
   const compatible = isIndustryCompatible(industry, category, identity);
   return {
-    identity, category: compatible ? category : fallback.category, industry,
+    identity, category: compatible ? category : fallbackCategory, industry,
     primaryFunction: clean(value.primaryFunction) || "Product benefit requires verification",
     dominantTones: list(value.dominantTones),
     surfaceFinish: finish(value.surfaceFinish),

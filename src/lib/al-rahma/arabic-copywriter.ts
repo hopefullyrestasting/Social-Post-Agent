@@ -1,5 +1,5 @@
-import { assertTenantBrandExclusive, cleanMarketingText } from "./strict-design-rules";
-import { AL_RAHMA_BRAND_CONFIG, buildBrandConfigFromTenant, type BrandConfig, type TenantBrandContext } from "./brand-core";
+import { assertNoLegacyBrandLeak, assertTenantBrandExclusive, cleanMarketingText } from "./strict-design-rules";
+import { buildBrandConfigFromTenant, type BrandConfig, type TenantBrandContext } from "./brand-core";
 import { creativeSlotRecipe, type CreativeSlot } from "./design-library";
 import type { ProductVisualCommercialBrief } from "./product-visual-brief";
 import { resolveSalesLine } from "./studio-fields";
@@ -87,7 +87,7 @@ const CTA_SHORT_TEMPLATES: [string, string] = [
   "تواصل معنا الآن",
 ];
 
-function renderTemplate(template: string, brand: BrandConfig = AL_RAHMA_BRAND_CONFIG): string {
+function renderTemplate(template: string, brand: BrandConfig): string {
   const values: Record<string, string> = {
     brand: brand.brandName,
     phone: brand.contact.phone,
@@ -139,6 +139,7 @@ function categoryLabel(category: string): string {
 function deriveSalesCopy(
   product: ProductDetails,
   variant: CopyVariant,
+  brand: BrandConfig,
 ): string {
   // Sales copy MUST come only from verified benefit claims or category/value propositions.
   // Never use usage instructions.
@@ -157,7 +158,7 @@ function deriveSalesCopy(
     salesLine,
     `جودة ${category} مميزة`,
     `${name} ${category}`.trim(),
-    `عناية مميزة من ${AL_RAHMA_BRAND_CONFIG.brandName}`,
+    `عناية مميزة من ${brand.brandName}`,
   ]
     .map((item) => item.trim())
     .filter(Boolean);
@@ -178,13 +179,17 @@ function buildHeadline(product: ProductDetails): string {
   return `${raw} ${category}`.trim();
 }
 
-function deriveSocialBenefits(product: ProductDetails, salesCopy: string): [string, string, string] {
+function deriveSocialBenefits(
+  product: ProductDetails,
+  salesCopy: string,
+  brand: BrandConfig,
+): [string, string, string] {
   const verified = clean(product.verifiedBenefits);
   const category = categoryLabel(product.category);
   const safeFallbacks = [
     clampWords(salesCopy, 4, 8),
     `جودة موثّقة في ${category}`,
-    `اختيار موثّق من ${AL_RAHMA_BRAND_CONFIG.brandName}`,
+    `اختيار موثّق من ${brand.brandName}`,
   ].map((s) => s.trim()).filter(Boolean);
 
   const items: string[] = [];
@@ -196,7 +201,7 @@ function deriveSocialBenefits(product: ProductDetails, salesCopy: string): [stri
     if (items.length >= 3) break;
     if (!items.includes(f)) items.push(f);
   }
-  while (items.length < 3) items.push(`اختيار موثّق من ${AL_RAHMA_BRAND_CONFIG.brandName}`);
+  while (items.length < 3) items.push(`اختيار موثّق من ${brand.brandName}`);
   return [items[0], items[1], items[2]];
 }
 
@@ -222,7 +227,7 @@ export class ArabicCopywriter {
       brand
     );
 
-    const benefitLine = deriveSalesCopy(product, variant);
+    const benefitLine = deriveSalesCopy(product, variant, brand);
     const headline = buildHeadline(product);
     const category = categoryLabel(product.category);
     const greeting = (options.occasionGreeting ?? "").trim();
@@ -256,7 +261,7 @@ export class ArabicCopywriter {
 
     // Safety: ensure benefitLine is 4-9 words
     const finalBenefit = clampWords(benefitLine, 4, 8);
-    const socialBenefits = deriveSocialBenefits(product, finalBenefit);
+    const socialBenefits = deriveSocialBenefits(product, finalBenefit, brand);
     const socialCaption = [
       hook,
       ...socialBenefits.map((b) => `• ${b}`),
@@ -265,6 +270,9 @@ export class ArabicCopywriter {
     ]
       .filter(Boolean)
       .join("\n");
+
+    assertNoLegacyBrandLeak(fullPostText, brand);
+    assertNoLegacyBrandLeak(socialCaption, brand);
 
     return {
       headline,

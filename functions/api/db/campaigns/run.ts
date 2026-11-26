@@ -11,6 +11,7 @@ import {
 } from "../../../../src/lib/al-rahma";
 import { creativeSlotRecipe } from "../../../../src/lib/al-rahma/design-library";
 import { parseProductVisualBrief } from "../../../../src/lib/al-rahma/product-visual-brief";
+import { pickMarketingText } from "../../../../src/lib/al-rahma/strict-design-rules";
 import { removePackshotBackgroundServer } from "../../ai/remove-bg";
 import { compositeProductScene } from "../../ai/product-composite";
 import {
@@ -514,29 +515,31 @@ async function generateSlotCreative(
   }
   const cutoutApplied = Boolean(cutoutImage);
   const productImageUrl = cutoutImage ?? product.image_url;
+  const productLabel = pickMarketingText([product.name_arabic], "منتج موثّق");
+  const brandLabel = pickMarketingText([product.brand_arabic], "العلامة التجارية");
 
   // The brief is reconstructed from existing product metadata; vision-derived
   // fields are added by the upload stage when available. Claims stay guarded.
   const visualBrief = parseProductVisualBrief(
     {
-      identity: product.name_arabic,
+      identity: productLabel,
       category: product.category ?? "general",
       industry: tenantIndustry ?? "general",
       shortSalesLine: salesLine ?? product.description ?? "",
     },
     "ar",
     {
-      identity: product.name_arabic,
+      identity: productLabel,
       category: product.category ?? "general",
       industry: tenantIndustry ?? "general",
     },
   );
 
   const sceneContext = {
-    brand: product.brand_arabic,
+    brand: brandLabel,
     industry: tenantIndustry,
     category: product.category,
-    name: product.name_arabic,
+    name: productLabel,
     benefits: research.verifiedBenefits,
     visualBrief,
   };
@@ -586,7 +589,7 @@ async function generateSlotCreative(
   }
 
   const details: ProductDetails = {
-    title: product.name_arabic,
+    title: productLabel,
     category: product.category ?? "",
     sourceUrl: research.sourceUrl ?? product.image_source ?? undefined,
     verificationStatus: product.verification_status,
@@ -615,7 +618,16 @@ async function generateSlotCreative(
     promotion,
     occasion,
     today,
-    brandLogoUrl,
+    brand: tenantBrand
+      ? {
+          brandName: tenantBrand.brandName ?? null,
+          industry: tenantBrand.industry ?? null,
+          logoUrl: tenantBrand.logoUrl ?? null,
+        }
+      : null,
+    brandLogoUrl: tenantBrand?.brandName
+      ? (tenantBrand.logoUrl ?? null)
+      : (brandLogoUrl ?? tenantBrand?.logoUrl ?? null),
     sceneImageUrls,
     stagedImageUrls,
     stagedImageContainsProductByVariant: stagedContains,
@@ -680,7 +692,7 @@ async function generateSlotCreative(
     id: creativeId,
     campaign_id: "", // filled by caller
     product_id: product.id,
-    product_name_arabic: product.name_arabic,
+    product_name_arabic: details.title,
     brand_arabic: product.brand_arabic,
     brand_slug: product.brand_slug,
     variant_number: variant.variantNumber,
@@ -947,9 +959,10 @@ async function handleSingle(env: Env, req: Extract<RequestMode, { mode: "single"
   const campaignDate = today;
   await ensureCampaign(env, campaignId, campaignDate, now, 1, 2, tenantId);
 
-  const [occasion, brandLogoUrl] = await Promise.all([
+  const [occasion, brandLogoUrl, offerTexts] = await Promise.all([
     loadActiveOccasion(env),
     loadBrandLogoUrl(env),
+    loadOfferTexts(env, [product.id], tenantId),
   ]);
 
   const { creative, stageProvider } = await generateSlotCreative(env, product, req.variantIndex, {
@@ -959,7 +972,10 @@ async function handleSingle(env: Env, req: Extract<RequestMode, { mode: "single"
     brandLogoUrl,
     conditioningImage: req.conditioningImage ?? null,
     tenantIndustry,
-    tenantBrand: { brandName: null, industry: tenantIndustry, logoUrl: brandLogoUrl ?? null },
+    tenantBrand: tenantBrand ?? { brandName: null, industry: tenantIndustry, logoUrl: brandLogoUrl ?? null },
+    salesLine: product.description,
+    price: product.price,
+    offerText: offerTexts.get(product.id) ?? null,
   });
   creative.campaign_id = campaignId;
 

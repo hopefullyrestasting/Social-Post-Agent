@@ -1,5 +1,6 @@
-import { assertZonesDoNotOverlap, createAdZones, fitText } from "./layout-geometry";
+import { createAdZones, fitText } from "./layout-geometry";
 ﻿import { AL_RAHMA_BRAND_CONFIG, buildBrandConfigFromTenant, type BrandConfig, type TenantBrandContext } from "./brand-core";
+import { assertSafeZones, assertTenantBrandExclusive } from "./strict-design-rules";
 import {
   BackgroundLayer,
   DesignerTemplate,
@@ -181,7 +182,7 @@ function commonDefs(): string {
   `;
 }
 
-function floatingEmblem(brandLogoUrl: string | null | undefined, brand: BrandConfig): string {
+function floatingEmblem(brandLogoUrl: string | null | undefined): string {
   // Top-right floating emblem x=830..1010, y=55..235 (no solid header bar)
   const logo = brandLogoUrl?.trim() || null;
   const boxX = 830;
@@ -454,6 +455,7 @@ function legacyContactMarkers(brand: BrandConfig): string {
 export class OverlaySystem {
   public static generateOverlaySvg(opts: OverlayOptions = {}): string {
     const brand = (opts.brand && "visual" in opts.brand ? (opts.brand as BrandConfig) : buildBrandConfigFromTenant(opts.brand as TenantBrandContext | null | undefined));
+    assertTenantBrandExclusive(opts.brand as TenantBrandContext | BrandConfig | null | undefined, brand);
     const width = opts.width ?? brand.visual.format.width;
     const height = opts.height ?? brand.visual.format.height;
     const template = opts.template ?? "simple-botanical-horizon";
@@ -469,9 +471,19 @@ export class OverlaySystem {
     const designSlot: CreativeSlot = opts.designSlot ?? 1;
     const direction: TextDirection = opts.textDirection ?? "rtl";
     const hasCommercialBadge = Boolean(promotion || priceText || offerText);
-    const zonesCollisionFree = assertZonesDoNotOverlap(
-      createAdZones(width, height, { price: hasCommercialBadge, offer: hasCommercialBadge }),
-    );
+    const zones = createAdZones(width, height, {
+      price: hasCommercialBadge,
+      offer: hasCommercialBadge,
+    });
+    assertSafeZones({
+      logo: zones.logoZone,
+      headline: zones.headlineZone,
+      product: zones.productZone,
+      footer: zones.brandContactZone,
+      price: zones.priceZone,
+      offer: zones.offerZone,
+    }, { width, height });
+    const zonesCollisionFree = true;
 
     const background =
       opts.background ??
@@ -493,7 +505,7 @@ export class OverlaySystem {
       <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" dir="${direction}" data-layout-zones="${zonesCollisionFree ? "collision-free" : "overlap"}" role="img" aria-label="${escapeXml(brand.brandName)}">
         ${commonDefs()}
         <g id="scene-background" data-template="${template}" data-staged-product="${stagedContainsProduct ? "true" : "false"}"${stagedContainsProduct ? ' data-ai-composite="true"' : ""}>${background.markup}</g>
-        ${opts.showLogo === false ? "" : floatingEmblem(opts.brandLogoUrl, brand)}
+        ${opts.showLogo === false ? "" : floatingEmblem(opts.brandLogoUrl)}
         ${opts.showLogo === false ? "" : '<g id="top-header-pill" data-layout="floating-emblem-compat"></g>'}
         ${dualToneHeadline(width, height, headline, benefit, headlineLines, brand, designSlot, direction)}
         ${heroPackshot(width, productUrl, { staged: Boolean(stagedImageUrl) })}

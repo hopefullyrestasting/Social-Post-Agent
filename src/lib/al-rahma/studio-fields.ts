@@ -12,6 +12,8 @@
  * phrases are rejected before storage and again by the Quality Gate.
  */
 
+import { isRawFilename } from "./strict-design-rules";
+
 export const MAX_SALES_LINE_LENGTH = 120;
 export const MAX_OFFER_LENGTH = 100;
 
@@ -123,7 +125,7 @@ export function buildStudioSalesLine(input: {
     .trim();
   const source = [input.detectedType, input.tenantIndustry, fileStem, input.detectedLabel]
     .map((item) => collapse(item ?? ""))
-    .find((item) => item.length > 0);
+    .find((item) => item.length > 0 && !isRawFilename(item));
   if (!source) return "منتج مختار بعناية لك";
   const category = source.split(/\s+/).slice(0, 3).join(" ");
   const candidate = `جودة ${category} مميزة لك`;
