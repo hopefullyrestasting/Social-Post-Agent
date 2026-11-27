@@ -251,7 +251,7 @@ export type TenantBrandSource = TenantBrandContext & {
 };
 
 /**
- * Studio/operator identity for the Basic Ad Studio UI shell only.
+ * Studio/operator identity for the PostCraft UI shell only.
  *
  * All brand names, phone numbers and contact links used by the landing page,
  * dashboard shell and export filenames must come from this object. Generated
@@ -259,7 +259,7 @@ export type TenantBrandSource = TenantBrandContext & {
  */
 export const IDESIGN_STUDIO_CONFIG = {
   name: "iDesign",
-  productName: "AI Social Ad Studio",
+  productName: "PostCraft",
   tagline: "by iDesign",
   websiteLabel: "idesign.social",
   websiteUrl: "https://idesign.social",

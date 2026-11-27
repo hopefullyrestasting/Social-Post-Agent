@@ -7,7 +7,7 @@
  * Annual plan rules:
  *   - `status` must be `active`
  *   - `expires_at` (epoch seconds) must be in the future when set
- *   - there is NO hard image quota: generation is unlimited for the year
+ *   - quota_total > 0 is enforced; zero means unlimited for the year
  *   - rate/concurrency is protected with a short D1-backed lease
  */
 
@@ -26,6 +26,9 @@ export interface TenantScopeEnv extends TenantEnv {
    * authenticated and is scoped to that key's data.
    */
   REQUIRE_ACCESS_KEY?: string;
+  ENVIRONMENT?: string;
+  CF_PAGES_ENVIRONMENT?: string;
+  CLOUDFLARE_ENVIRONMENT?: string;
 }
 
 export interface ActivationKeyRow {
@@ -76,7 +79,7 @@ export interface TenantContext {
   expiresAt: number | null;
   brandLocked: boolean;
   brand: TenantBrandLock | null;
-  quota: { total: number; used: number; enforced: false };
+  quota: { total: number; used: number; enforced: boolean };
   generation: TenantGenerationStatus;
 }
 
@@ -257,7 +260,7 @@ export function tenantFromRow(row: ActivationKeyRow): TenantContext {
     quota: {
       total: Number.isFinite(quotaTotal) ? quotaTotal : 0,
       used: Number.isFinite(quotaUsed) ? quotaUsed : 0,
-      enforced: false,
+      enforced: quotaTotal > 0,
     },
     generation: generationStateFromRow(row),
   };
@@ -375,6 +378,22 @@ export async function authenticateTenant(
     );
   }
 
+  const quotaTotal = Number(row.quota_total ?? 0);
+  const quotaUsed = Number(row.quota_used ?? 0);
+  if (
+    Number.isSafeInteger(quotaTotal) &&
+    quotaTotal > 0 &&
+    Number.isSafeInteger(quotaUsed) &&
+    quotaUsed >= quotaTotal
+  ) {
+    return failure(
+      429,
+      "tenant_quota_exceeded",
+      "This tenant has exhausted its generation quota.",
+      { quota: { total: quotaTotal, used: quotaUsed } },
+    );
+  }
+
   return { ok: true, tenant: tenantFromRow(row) };
 }
 
@@ -437,6 +456,7 @@ export type GenerationLeaseReason =
   | "running"
   | "cooldown"
   | "inactive"
+  | "quota_exceeded"
   | "conflict";
 
 export interface GenerationLeaseResult {
@@ -472,11 +492,12 @@ export async function leaseGenerationSlot(
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const result = await env.DB.prepare(
       `UPDATE activation_keys
-       SET in_flight_until = ?, last_generation_at = ?
+       SET in_flight_until = ?, last_generation_at = ?, quota_used = quota_used + 1
        WHERE id = ?
          AND status = 'active'
          AND (in_flight_until IS NULL OR in_flight_until <= ?)
-         AND (last_generation_at IS NULL OR last_generation_at <= ?)`,
+         AND (last_generation_at IS NULL OR last_generation_at <= ?)
+         AND (quota_total IS NULL OR quota_total <= 0 OR quota_used < quota_total)`,
     )
       .bind(leaseUntil, now, tenantId, now, cooldownThreshold)
       .run();
@@ -504,6 +525,16 @@ export async function leaseGenerationSlot(
         leaseUntil,
         retryAfterSeconds: 0,
         reason: "inactive",
+      };
+    }
+    const quotaTotal = Number(row?.quota_total ?? 0);
+    const quotaUsed = Number(row?.quota_used ?? 0);
+    if (quotaTotal > 0 && quotaUsed >= quotaTotal) {
+      return {
+        acquired: false,
+        leaseUntil,
+        retryAfterSeconds: 0,
+        reason: "quota_exceeded",
       };
     }
     const state = generationStateFromRow(row, now, cooldownSeconds);
@@ -648,7 +679,17 @@ export type TenantScopeResult = ({ ok: true } & TenantScope) | TenantAuthFailure
  */
 export function requiresAccessKey(env: TenantScopeEnv | undefined): boolean {
   const flag = (env?.REQUIRE_ACCESS_KEY ?? "").trim().toLowerCase();
-  return flag === "1" || flag === "true" || flag === "yes" || flag === "on";
+  if (flag === "1" || flag === "true" || flag === "yes" || flag === "on") {
+    return true;
+  }
+  const environment = [
+    env?.ENVIRONMENT,
+    env?.CF_PAGES_ENVIRONMENT,
+    env?.CLOUDFLARE_ENVIRONMENT,
+  ]
+    .filter((value): value is string => typeof value === "string")
+    .some((value) => value.trim().toLowerCase() === "production");
+  return environment;
 }
 
 /**
@@ -656,14 +697,10 @@ export function requiresAccessKey(env: TenantScopeEnv | undefined): boolean {
  * not applied yet) means single-tenant legacy mode, never a hard failure.
  */
 export async function countActivationKeys(env: TenantEnv): Promise<number> {
-  try {
-    const row = await env.DB.prepare(
-      "SELECT COUNT(*) AS count FROM activation_keys",
-    ).first<{ count: number }>();
-    return row?.count ?? 0;
-  } catch {
-    return 0;
-  }
+  const row = await env.DB.prepare(
+    "SELECT COUNT(*) AS count FROM activation_keys",
+  ).first<{ count: number }>();
+  return row?.count ?? 0;
 }
 
 /**
@@ -697,7 +734,17 @@ export async function resolveTenantScope(
     );
   }
 
-  const provisioned = await countActivationKeys(env);
+  let provisioned: number;
+  try {
+    provisioned = await countActivationKeys(env);
+  } catch (error) {
+    console.error("Activation key inventory lookup failed.", error);
+    return failure(
+      500,
+      "access_key_lookup_failed",
+      "Unable to validate tenant access configuration.",
+    );
+  }
   if (provisioned > 0) {
     return failure(
       401,

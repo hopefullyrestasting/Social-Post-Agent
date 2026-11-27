@@ -27,13 +27,34 @@ const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
  * rows. Reads pass through; handlers resolve their own tenant scope.
  */
 export const onRequest: PagesFunction<Env> = async (context) => {
+  const url = new URL(context.request.url);
+
+  if (
+    url.pathname.replace(/\/+$/, "") === "/api/ai/studio-scene" &&
+    context.request.method.toUpperCase() === "GET"
+  ) {
+    return Response.json(
+      {
+        success: false,
+        code: "method_not_allowed",
+        error: "Unauthenticated scene generation via GET is disabled.",
+      },
+      {
+        status: 405,
+        headers: {
+          Allow: "POST",
+          "Cache-Control": "no-store, max-age=0, must-revalidate",
+        },
+      },
+    );
+  }
+
   const decision = await authorizeAdminRequest(context.request, context.env);
 
   if (!decision.allowed) {
     return decision.response as Response;
   }
 
-  const url = new URL(context.request.url);
   const mutating = MUTATING_METHODS.has(context.request.method.toUpperCase());
   const tenantScopedWrite = isTenantWriteRequest(context.request);
   const hasAccessKey = Boolean(extractAccessKey(context.request).trim());

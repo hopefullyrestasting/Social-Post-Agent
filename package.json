@@ -1,7 +1,7 @@
 {
   "name": "social-post-agent",
   "version": "1.0.0",
-  "description": "Al-Rahma Store Social Post Agent — AI-powered content generation, copywriter, overlay system, and quality gate for Egyptian e-commerce.",
+  "description": "PostCraft by iDesign — a multi-tenant RTL/LTR social product showcase studio.",
   "license": "MIT",
   "private": true,
   "scripts": {

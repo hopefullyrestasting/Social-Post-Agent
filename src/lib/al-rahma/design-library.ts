@@ -1,7 +1,7 @@
 /**
  * Design Intelligence & Visual Composition Library.
  *
- * A deterministic, reusable art-direction playbook for the Basic Studio. It is
+ * A deterministic, reusable art-direction playbook for the PostCraft studio. It is
  * intentionally free of model calls, brand literals and tenant data: every
  * consumer imports the same rules so a two-image batch receives complementary
  * creative treatments instead of near-identical renders.

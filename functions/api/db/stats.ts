@@ -24,7 +24,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       tenant
         ? env.DB.prepare("SELECT COUNT(*) AS count FROM products WHERE tenant_key_id = ?").bind(tenant).first<{ count: number }>()
         : env.DB.prepare("SELECT COUNT(*) AS count FROM products").first<{ count: number }>(),
-      env.DB.prepare("SELECT COUNT(*) AS count FROM brands").first<{ count: number }>(),
+      tenant
+        ? env.DB.prepare("SELECT COUNT(DISTINCT brand_id) AS count FROM products WHERE tenant_key_id = ?").bind(tenant).first<{ count: number }>()
+        : env.DB.prepare("SELECT COUNT(*) AS count FROM brands").first<{ count: number }>(),
       tenant
         ? env.DB.prepare("SELECT COUNT(*) AS count FROM products WHERE tenant_key_id = ? AND verification_status != 'verified'").bind(tenant).first<{ count: number }>()
         : env.DB.prepare("SELECT COUNT(*) AS count FROM products WHERE verification_status != 'verified'").first<{ count: number }>(),

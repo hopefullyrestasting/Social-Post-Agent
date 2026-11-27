@@ -57,8 +57,8 @@ async function sendAccessEmail(
 
   const firstName = event.customer_first_name?.trim();
   const greeting = firstName ? `Hello ${firstName},` : "Hello,";
-  const text = `${greeting}\n\nYour Social Post Agent studio access key is:\n${accessKey}\n\nOpen your studio: ${DASHBOARD_URL}`;
-  const html = `<p>${escapeHtml(greeting)}</p><p>Your Social Post Agent studio access key is:</p><p><strong>${accessKey}</strong></p><p><a href="${DASHBOARD_URL}">Open your studio</a></p>`;
+  const text = `${greeting}\n\nYour PostCraft by iDesign studio access key is:\n${accessKey}\n\nOpen your studio: ${DASHBOARD_URL}`;
+  const html = `<p>${escapeHtml(greeting)}</p><p>Your PostCraft by iDesign studio access key is:</p><p><strong>${accessKey}</strong></p><p><a href="${DASHBOARD_URL}">Open your studio</a></p>`;
 
   try {
     const response = await fetch("https://api.resend.com/emails", {
@@ -70,7 +70,7 @@ async function sendAccessEmail(
       body: JSON.stringify({
         from,
         to: [event.email],
-        subject: "Your Social Post Agent studio access",
+        subject: "Your PostCraft by iDesign studio access",
         text,
         html,
       }),

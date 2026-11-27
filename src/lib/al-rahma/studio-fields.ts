@@ -1,7 +1,7 @@
 import { cleanMarketingText, isRawFilename } from "./strict-design-rules";
 
 /**
- * Validation helpers for the Basic Studio's operator-owned product fields.
+ * Validation helpers for the PostCraft operator-owned product fields.
  *
  * These fields are optional metadata, not research claims:
  * - `salesLine` is a short, punchy, claim-free phrase stored in the existing
