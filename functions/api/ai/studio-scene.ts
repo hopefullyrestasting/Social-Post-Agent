@@ -32,6 +32,8 @@ interface AiBinding {
 export interface SceneEnv {
   AI?: AiBinding;
   GEMINI_API_KEY?: string;
+  DB: D1Database;
+  REQUIRE_ACCESS_KEY?: string;
 }
 
 export type TemplateId = DesignerTemplate;
@@ -528,33 +530,67 @@ function parseSceneRequest(body: Record<string, unknown>): {
 }
 
 export const onRequestPost: PagesFunction<SceneEnv> = async ({ request, env }) => {
-  let payload: unknown = {};
+  const {
+    resolveTenantScope,
+    leaseGenerationSlot,
+    releaseGenerationSlot,
+  } = await import("../_tenant");
+
+  const scope = await resolveTenantScope(request, env);
+  if (!scope.ok) return scope.response;
+  if (!scope.tenantId) {
+    return noStoreJson(
+      {
+        success: false,
+        code: "access_key_required",
+        error: "Paid scene generation requires an authenticated tenant access key.",
+      },
+      401,
+    );
+  }
+
+  const lease = await leaseGenerationSlot(env, scope.tenantId);
+  if (!lease.acquired) {
+    const retryAfterSeconds = Math.max(1, lease.retryAfterSeconds);
+    return noStoreJson(
+      {
+        success: false,
+        code: lease.reason === "quota_exceeded" ? "tenant_quota_exceeded" : "generation_rate_limited",
+        error: lease.reason === "quota_exceeded"
+          ? "This tenant has exhausted its generation quota."
+          : "This tenant is currently rate-limited.",
+        retry_after_seconds: retryAfterSeconds,
+      },
+      429,
+    );
+  }
+
+  try {
+    let payload: unknown = {};
   try {
     const text = await request.text();
     payload = text ? JSON.parse(text) : {};
   } catch {
     return noStoreJson({ success: false, error: "Request body must be valid JSON." }, 400);
   }
-  const body = (payload && typeof payload === "object" ? payload : {}) as Record<string, unknown>;
-  const { styleId, seed, promptOverride, context, slot, textDirection } = parseSceneRequest(body);
-  const scene = await generateArtDirectedScene(env, styleId, context, { seed, promptOverride, slot, textDirection });
-  return noStoreJson({ success: true, provider: scene.provider, styleId: scene.styleId, styleLabelAr: scene.styleLabelAr, styleLabelEn: scene.styleLabelEn, template: scene.template, model: scene.model, designSlot: scene.designSlot ?? null, image: scene.image, kind: scene.provider === "deterministic-studio" ? "inline-vector" : "data-uri", fallback: scene.fallbackReason });
+    const body = (payload && typeof payload === "object" ? payload : {}) as Record<string, unknown>;
+    const { styleId, seed, promptOverride, context, slot, textDirection } = parseSceneRequest(body);
+    const scene = await generateArtDirectedScene(env, styleId, context, { seed, promptOverride, slot, textDirection });
+    return noStoreJson({ success: true, provider: scene.provider, styleId: scene.styleId, styleLabelAr: scene.styleLabelAr, styleLabelEn: scene.styleLabelEn, template: scene.template, model: scene.model, designSlot: scene.designSlot ?? null, image: scene.image, kind: scene.provider === "deterministic-studio" ? "inline-vector" : "data-uri", fallback: scene.fallbackReason });
+  } finally {
+    await releaseGenerationSlot(env, scope.tenantId, lease.leaseUntil);
+  }
 };
 
 export const onRequestGet: PagesFunction<SceneEnv> = async ({ request, env }) => {
-  const url = new URL(request.url);
-  const styleParam = url.searchParams.get("style");
-  const templateParam = url.searchParams.get("template");
-  const seedParam = url.searchParams.get("seed");
-  const promptOverride = url.searchParams.get("prompt") || undefined;
-  const slotParam = url.searchParams.get("slot");
-  const slot: CreativeSlot | undefined = slotParam === "1" || slotParam === "2" ? Number(slotParam) as CreativeSlot : undefined;
-  const textDirection: TextDirection = url.searchParams.get("textDirection") === "ltr" ? "ltr" : "rtl";
-  const styleId = isArtDirectionStyleId(styleParam)
-    ? styleParam
-    : isTemplateId(templateParam)
-      ? styleFromTemplate(templateParam)
-      : DEFAULT_ART_DIRECTION_STYLE;
-  const scene = await generateArtDirectedScene(env, styleId, undefined, { seed: seedParam ? clampSeed(Number(seedParam)) : undefined, promptOverride, slot, textDirection });
-  return noStoreJson({ success: true, provider: scene.provider, styleId: scene.styleId, styleLabelAr: scene.styleLabelAr, styleLabelEn: scene.styleLabelEn, template: scene.template, model: scene.model, designSlot: scene.designSlot ?? null, image: scene.image, kind: scene.provider === "deterministic-studio" ? "inline-vector" : "data-uri", fallback: scene.fallbackReason });
+  void request;
+  void env;
+  return noStoreJson(
+    {
+      success: false,
+      code: "method_not_allowed",
+      error: "Unauthenticated scene generation via GET is disabled.",
+    },
+    405,
+  );
 };
