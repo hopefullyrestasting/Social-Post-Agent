@@ -33,6 +33,7 @@ import {
   resolveSalesLine,
   sanitizeSalesLine,
 } from "../../../src/lib/al-rahma/studio-fields";
+import { pickMarketingText } from "../../../src/lib/al-rahma/strict-design-rules";
 
 export type UploadEnv = AssetStoreEnv;
 
@@ -184,10 +185,10 @@ export const onRequestPost: PagesFunction<UploadEnv> = async ({
       if (!autoCreate) {
         return noStore({ success: false, error: "Product not found." }, 404);
       }
-      const t = scope as { tenant?: { locked_industry?: string|null; brand?: { industry?: string|null; brandName?: string|null }; locked_brand_name?: string|null } }; const tenantIndustry = t.tenant?.locked_industry ?? t.tenant?.brand?.industry ?? null;
+      const tenantIndustry = scope.tenant?.brand?.industry?.trim() || null;
       const created = await autoCreateProductFromImage(env, {
         tenantId: scope.tenantId,
-        tenantBrandName: t.tenant?.brand?.brandName ?? t.tenant?.locked_brand_name ?? null,
+        tenantBrandName: scope.tenant?.brand?.brandName?.trim() || null,
         tenantIndustry,
         fileName: imageFile.name,
         bytes: sourceBytes,
@@ -330,10 +331,13 @@ async function autoCreateProductFromImage(
     .replace(/[_-]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  const inferredName = (detectedLabel || fileStem || "منتج جديد").slice(0, 160);
+  const inferredName = pickMarketingText(
+    [detectedLabel, fileStem],
+    input.skipVision ? "شعار العلامة التجارية" : "منتج جديد",
+  );
   const inferredCategory = input.skipVision
     ? "brand_logo"
-    : (detectedType || input.tenantIndustry || "عام").slice(0, 80);
+    : pickMarketingText([detectedType, input.tenantIndustry], "عام", 80);
   const salesLine = input.skipVision
     ? ""
     : (isSafeSalesLine(input.salesLine) ? sanitizeSalesLine(input.salesLine) : "") ||

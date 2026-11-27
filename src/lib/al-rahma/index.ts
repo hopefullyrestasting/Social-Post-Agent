@@ -10,6 +10,7 @@ export * from "./i18n";
 export * from "./studio-fields";
 export * from "./svg-utils";
 export * from "./product-visual-brief";
+export * from "./strict-design-rules";
 export {
   assertNoLegacyBrandLeak,
   assertSafeZones,

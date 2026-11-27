@@ -9,8 +9,8 @@ import GeneratedCreativesGallery, {
 } from "@/components/idesign/generated-creatives-gallery";
 import GlobeIcon from "@/components/idesign/globe-icon";
 import IDMark from "@/components/idesign/id-mark";
-import LanguageSwitcher from "@/components/idesign/language-switcher";
 import StudioEmblem from "@/components/idesign/studio-emblem";
+import LanguageSwitcher from "@/components/idesign/language-switcher";
 import {
   accessKeyHeaders,
   installAccessKeyFetch,
