@@ -1,50 +1,109 @@
-# Social Post Agent — مخزن الرحمة
+# PostCraft by iDesign
 
-لوحة عربية من اليمين إلى اليسار لإدارة منتجات **مخزن الرحمة للأدوية والمستلزمات الطبية ومستحضرات التجميل**. تقتصر بيانات العمل على مستحضرات التجميل والعناية بالشعر والبشرة والعناية الشخصية والعطور والمستلزمات الطبية.
+PostCraft is a branded social content studio for brands, agencies, graphic
+designers, and product sellers. It turns a product catalog and authentic
+reference images into polished, ready-to-review social creatives while keeping
+brand identity, verified product information, and tenant ownership separate.
 
-البراندات المسجلة في قاعدة البيانات هي VATIKA، FARIDA، MINK، PENDULINE، ASSAF، MUKHMARIA وALOE EVA. الأسماء والأعداد المعروضة في اللوحة تُقرأ من D1، ولا توجد بيانات منتجات تجريبية أو عملية إعادة تهيئة/إعادة seed لقاعدة البيانات.
+- **Brands** can establish a one-time brand lock and keep a consistent identity.
+- **Agencies** can manage multiple client workspaces from separate activation keys.
+- **Graphic designers** can create RTL/LTR product showcases and export creative sets.
+- **Product sellers** can organize a catalog and produce sequential product designs
+  without reusing the same generated item.
 
-## التقنية
+## Studio capabilities
 
-- Next.js App Router مع تصدير ثابت إلى `out/`.
-- Cloudflare Pages Functions في `functions/api/db/`.
-- Cloudflare D1 بربط `DB`؛ اسم قاعدة البيانات `makhzan-al-rahma`.
-- مسارات القراءة: `/api/db/stats` و`/api/db/brands` و`/api/db/products` و`/api/db/research`.
-- صفحة اللوحة: `/dashboard`، والصفحة الرئيسية توفر رابطًا إليها.
+- Multi-tenant workspace isolation for products, assets, campaigns, creatives,
+  settings, and quota usage.
+- Activation-key authentication with per-key quota and status management.
+- One-time brand locking: a key can be unlocked and reset by an administrator,
+  after which it may be locked to a brand again without changing the activation key.
+- RTL and LTR interfaces and generated text layouts, including Arabic and English.
+- Verified product data, controlled claims, authentic reference images, and
+  export-ready 1080 x 1920 social creative output.
+- Payhip purchase-key provisioning and admin key provisioning flows, with the
+  existing webhook and key-validation behavior preserved.
 
-## التطوير والفحوصات
+## Architecture
 
-يتطلب Node.js وnpm:
+The repository uses:
 
-```powershell
+- Next.js 16 App Router with static export (`output: "export"`), built to `out/`.
+- TypeScript and Tailwind CSS.
+- Cloudflare Pages Functions in `functions/api/`.
+- Cloudflare D1 as the only application datastore.
+- Tenant-scoped D1 queries and activation-key digests; raw activation keys are
+  never persisted or logged.
+- Cloudflare bindings and environment variables for runtime configuration.
+
+The main routes are:
+
+| Route | Purpose |
+| --- | --- |
+| `/` | Product entry point and studio launch |
+| `/dashboard` | Key-authenticated multi-tenant studio |
+| `/admin` | Admin key management and support controls |
+| `/api/...` | Cloudflare Pages Functions for tenant, D1, webhook, asset, and AI operations |
+
+## Local development
+
+Requires Node.js and npm.
+
+```sh
 npm ci
-npm test
+npm run dev
+```
+
+The production site is a static Next.js export. Cloudflare Pages serves `out/`
+and executes files under `functions/` as Pages Functions.
+
+```sh
 npm run typecheck
+npm test
 npm run lint
 npm run build
 ```
 
-يبني `npm run build` ملفات الموقع الثابتة إلى `out/`. تستخدم Cloudflare Pages مجلد `out/` وتنفّذ ملفات `functions/` كـ Pages Functions.
+`npm run build` creates `out/`. Do not commit build output or local configuration
+containing credentials.
 
-## ربط Cloudflare
+## Cloudflare and D1
 
-ملف `wrangler.toml` يعرّف ربط D1 باسم `DB` ومعرّف قاعدة البيانات. لا تضع مفاتيح API أو أسرارًا في ملفات الواجهة أو Git. لفحص D1 عن بُعد:
+Cloudflare Pages provides the `DB` D1 binding and the required runtime bindings.
+Database configuration and migrations are documented in `wrangler.toml` and
+`migrations/`.
 
-```powershell
+This project uses additive D1 migrations only. Do not drop, truncate, or rewrite
+D1 tables or production rows. Apply migrations only after review and explicit
+approval for the target environment.
+
+Example read-only inspection:
+
+```sh
 npx wrangler login
 npx wrangler d1 execute makhzan-al-rahma --remote --command "SELECT COUNT(*) FROM products"
 ```
 
-استعلامات اللوحة للقراءة فقط. لا تشغّل migrations على قاعدة الإنتاج قبل مراجعة التغييرات وخطة النشر.
+## Security and tenant controls
 
-## بنية البحث والتحقق
+- Admin endpoints require `ADMIN_API_KEY` through the existing `requireAdmin`
+  authentication flow.
+- Tenant endpoints authenticate activation keys and enforce tenant ownership.
+- SQL parameters are bound rather than interpolated.
+- Quotas are isolated per activation key.
+- Brand lock resets clear the tenant's lock fields, lock metadata, and tenant
+  brand override settings. They preserve the activation key, tenant status,
+  provisioning metadata, and quota state.
+- Secrets belong only in Cloudflare bindings or environment configuration.
+  Never commit `.dev.vars`, API keys, access keys, or webhook secrets.
 
-الحقول الحالية في `products` تحفظ هوية المنتج والعلامة التجارية والحجم والحالة والتوفر بالمخزن. تحفظ `product_assets` صور المراجع وروابط مصادرها. يوثّق `migrations/0000_baseline.sql` المخطط الأساسي المُلتقط من قاعدة الإنتاج، ويضيف `migrations/0001_product_research.sql` جداول المصادر، والادعاءات المرتبطة بمصدر محدد، وسجل تأكيدات المخزون؛ وهو migration إضافي لا يغيّر أو يعيد إنشاء سجلات المنتجات. طُبّق الـ migration على قاعدة الإنتاج بتاريخ 2026-11-15 دون تغيير أي صف من صفوف المنتجات.
+## Search and social discovery
 
-لا تُعرض الفوائد أو الاستخدامات على أنها موثقة إلا بعد ربطها بمصدر والتحقق منها. لا تستنتج اللوحة مقاسات أو مكونات أو فوائد غير موجودة في البيانات.
+The static export includes metadata and discovery assets for PostCraft:
 
-## سير العمل الإعلاني
+- `public/robots.txt`
+- `public/sitemap.xml`
+- `public/site.webmanifest`
+- `public/favicon.svg`
 
-الجدولة اليومية غير مفعّلة. يجب التحقق من جاهزية بيانات المنتج وصوره المرجعية في لوحة التحكم، وإعداد مزود توليد الصور والتخزين، ومراجعة النتائج قبل أي تشغيل إعلاني؛ لا تستخدم أصولًا أو ادعاءات تجريبية كبيانات حقيقية.
-
-للتواصل والطلبات: **01000017548** — [واتساب](https://wa.me/20100017548).
+The public website identity is [idesign.social](https://idesign.social).

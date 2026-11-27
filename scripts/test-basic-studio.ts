@@ -1,5 +1,5 @@
 /**
- * Basic Studio contract tests.
+ * PostCraft studio contract tests.
  *
  * Covers the simplified iDesign studio flow end to end with a MockDB:
  * - sequential, non-repeating D1-backed generation (including reload persistence)
@@ -533,7 +533,7 @@ async function testBrandingAndLanguageContract() {
   // Every iDesign literal lives in the single brand config.
   const config = IDESIGN_STUDIO_CONFIG;
   assert.equal(config.name, "iDesign");
-  assert.equal(config.productName, "AI Social Ad Studio");
+  assert.equal(config.productName, "PostCraft");
   assert.equal(config.websiteUrl, "https://idesign.social");
   assert.equal(config.websiteLabel, "idesign.social");
   assert.equal(config.emailUrl, "mailto:info@idesign.social");
@@ -543,7 +543,6 @@ async function testBrandingAndLanguageContract() {
   assert.equal(config.colors.royalBlueBright, "#2563EB");
 
   const banned = [
-    "AI Social Ad Studio",
     "idesign.social",
     "info@idesign.social",
     "https://wa.me/201097362000",
@@ -713,7 +712,7 @@ async function run() {
   await testBrandingAndLanguageContract();
   await testGeneratedCreativesContract();
   console.log(
-    "Basic Studio tests passed: sequential non-repeating batches with reload persistence, 2 distinct design slots per product, custom count/selection, already-generated 409, design-library hierarchy/prompt rules, guarded vision-brief copy fallback, conditional price/offer metadata with intact quality gate, access key bar, one-time brand lock card, RTL/LTR alignment, centralised iDesign branding/links, six-language switcher contract, and persistent Generated Creatives gallery with generation progress.",
+    "PostCraft tests passed: sequential non-repeating batches with reload persistence, 2 distinct design slots per product, custom count/selection, already-generated 409, design-library hierarchy/prompt rules, guarded vision-brief copy fallback, conditional price/offer metadata with intact quality gate, access key bar, one-time brand lock card, RTL/LTR alignment, centralised iDesign branding/links, six-language switcher contract, and persistent Generated Creatives gallery with generation progress.",
   );
 }
 

@@ -470,7 +470,7 @@ const patchSchema = z
   })
   .strict();
 
-/** PATCH /api/db/products?id=... — Basic Studio inline field edits. */
+/** PATCH /api/db/products?id=... — PostCraft inline field edits. */
 export const onRequestPatch: PagesFunction<Env> = async ({ request, env }) => {
   const scope = await resolveTenantScope(request, env);
   if (!scope.ok) return scope.response;

@@ -1,5 +1,5 @@
 /**
- * UI language catalog for the Basic Studio shell.
+ * UI language catalog for the PostCraft studio shell.
  *
  * Translation keys are shared by the landing page and dashboard. This module
  * is dependency-free and client-safe (no React, no server imports), so tests
@@ -80,7 +80,7 @@ const ar = {
   languageHint: "اختر لغة الواجهة",
   home: "الرئيسية",
   support: "الدعم واتساب",
-  title: "استوديو الإعلانات البسيط",
+  title: "PostCraft",
   subtitle: "ارفع صور منتجاتك، راجع الاسم والسعر والعرض، ثم ولّد تصميمين لكل منتج دون تكرار.",
   upload: "ارفع صور المنتجات من الجوال أو الكمبيوتر",
   uploadHint: "اختر عدة صور؛ سيحلل الذكاء الاصطناعي كل صورة ويقترح سطر بيع قصيرًا.",
@@ -172,7 +172,7 @@ export const I18N: Record<LanguageCode, Dictionary> = {
     languageHint: "Choose interface language",
     home: "Home",
     support: "Chat support",
-    title: "Basic Ad Studio",
+    title: "PostCraft",
     subtitle: "Upload product photos, review the name, price and offer, then generate two designs per product with no repeats.",
     upload: "Upload product images from phone or computer",
     uploadHint: "Select multiple images; AI inspects each one and suggests a short punchy sales line.",
@@ -258,7 +258,7 @@ export const I18N: Record<LanguageCode, Dictionary> = {
     languageHint: "Pilih bahasa antara muka",
     home: "Laman utama",
     support: "Sokongan sembang",
-    title: "Studio Iklan Asas",
+    title: "PostCraft",
     subtitle: "Muat naik gambar produk, semak nama/harga/tawaran, kemudian jana dua reka bentuk bagi setiap produk tanpa pengulangan.",
     upload: "Muat naik gambar produk dari telefon atau komputer",
     uploadHint: "Pilih beberapa gambar; AI akan menganalisis setiap produk dan mencadangkan ayat jualan pendek.",
@@ -344,7 +344,7 @@ export const I18N: Record<LanguageCode, Dictionary> = {
     languageHint: "Choisir la langue de l'interface",
     home: "Accueil",
     support: "Assistance par chat",
-    title: "Studio publicitaire simple",
+    title: "PostCraft",
     subtitle: "Téléchargez vos photos de produits, vérifiez le nom/prix/offre, puis générez deux visuels par produit sans répétition.",
     upload: "Télécharger des images de produits depuis le téléphone ou l'ordinateur",
     uploadHint: "Sélectionnez plusieurs images ; l'IA analyse chaque produit et suggère une courte phrase de vente.",
@@ -430,7 +430,7 @@ export const I18N: Record<LanguageCode, Dictionary> = {
     languageHint: "Oberflächensprache wählen",
     home: "Startseite",
     support: "Chat-Support",
-    title: "Einfaches Ad-Studio",
+    title: "PostCraft",
     subtitle: "Produktfotos hochladen, Name/Preis/Angebot prüfen und dann zwei Designs pro Produkt ohne Wiederholung erstellen.",
     upload: "Produktbilder vom Handy oder Computer hochladen",
     uploadHint: "Mehrere Bilder auswählen; die KI analysiert jedes Produkt und schlägt eine kurze Verkaufszeile vor.",
@@ -516,7 +516,7 @@ export const I18N: Record<LanguageCode, Dictionary> = {
     languageHint: "选择界面语言",
     home: "首页",
     support: "在线客服",
-    title: "简易广告工作室",
+    title: "PostCraft",
     subtitle: "上传产品图片，检查名称/价格/优惠，然后为每个产品生成两个设计，且不重复。",
     upload: "从手机或电脑上传产品图片",
     uploadHint: "可选择多张图片；AI 会分析每个产品并建议一句简短有力的广告语。",
