@@ -7,8 +7,8 @@ import GeneratedCreativesGallery, {
   type GalleryCampaign,
   type GalleryCreative,
 } from "@/components/idesign/generated-creatives-gallery";
-import IDMark from "@/components/idesign/id-mark";
 import GlobeIcon from "@/components/idesign/globe-icon";
+import IDMark from "@/components/idesign/id-mark";
 import StudioEmblem from "@/components/idesign/studio-emblem";
 import LanguageSwitcher from "@/components/idesign/language-switcher";
 import {
@@ -20,7 +20,11 @@ import {
 import { IDESIGN_STUDIO_CONFIG } from "@/lib/al-rahma/brand-core";
 import { downloadCreativesZip, type ExportCreative } from "@/lib/al-rahma/export";
 import {
+  detectLanguage,
+  languageFromLocale,
   languageDirection,
+  persistLanguagePreference,
+  readLanguagePreference,
   translate,
   type LanguageCode,
   type TranslationKey,
@@ -181,14 +185,6 @@ function maskAccessKey(key: string): string {
   return `${trimmed.slice(0, 4)}••••${trimmed.slice(-4)}`;
 }
 
-function languageFromLocale(locale?: string | null): LanguageCode | null {
-  const base = (locale ?? "").split(/[-_]/)[0]?.toLowerCase();
-  if (base === "ar" || base === "en" || base === "ms" || base === "fr" || base === "de" || base === "zh") {
-    return base;
-  }
-  return null;
-}
-
 async function fetchTenant(signal?: AbortSignal): Promise<TenantInfo | null> {
   installAccessKeyFetch();
   const response = await fetch("/api/tenant/me", {
@@ -255,8 +251,9 @@ async function fetchCampaigns(signal?: AbortSignal): Promise<GalleryCampaign[]> 
 }
 
 export default function DashboardPage() {
-  const [language, setLanguage] = useState<LanguageCode>("ar");
+  const [language, setLanguage] = useState<LanguageCode>("en");
   const appliedLocaleKey = useRef("");
+  const hasExplicitLanguagePreference = useRef(false);
   const direction = languageDirection(language);
   const text = (key: TranslationKey) => translate(language, key);
 
@@ -305,6 +302,44 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
+    let active = true;
+    const savedLanguage = readLanguagePreference();
+    if (savedLanguage) {
+      hasExplicitLanguagePreference.current = true;
+      void Promise.resolve().then(() => {
+        if (active) setLanguage(savedLanguage);
+      });
+      return () => {
+        active = false;
+      };
+    }
+
+    void fetch("/api/locale")
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Unable to resolve visitor locale.");
+        const result: unknown = await response.json();
+        if (
+          active &&
+          !hasExplicitLanguagePreference.current &&
+          typeof result === "object" &&
+          result !== null &&
+          "language" in result &&
+          typeof result.language === "string"
+        ) {
+          setLanguage(detectLanguage({ acceptLanguage: result.language }));
+        }
+      })
+      .catch(() => {
+        if (active && !hasExplicitLanguagePreference.current) {
+          setLanguage(detectLanguage({ acceptLanguage: navigator.languages.join(",") }));
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
     const controller = new AbortController();
     fetchTenant(controller.signal)
       .then((info) => {
@@ -315,7 +350,7 @@ export default function DashboardPage() {
         if (info?.id && appliedLocaleKey.current !== info.id) {
           appliedLocaleKey.current = info.id;
           const preferred = languageFromLocale(defaults?.locale);
-          if (preferred) setLanguage(preferred);
+          if (preferred && !hasExplicitLanguagePreference.current) setLanguage(preferred);
         }
         if (info?.generation?.busy && info.generation.state !== "idle") {
           const seconds = Math.max(1, info.generation.retry_after_seconds ?? 1);
@@ -362,6 +397,12 @@ export default function DashboardPage() {
     document.documentElement.lang = language;
     document.documentElement.dir = direction;
   }, [language, direction]);
+
+  const chooseLanguage = (code: LanguageCode) => {
+    hasExplicitLanguagePreference.current = true;
+    persistLanguagePreference(code);
+    setLanguage(code);
+  };
 
   useEffect(() => {
     const controller = new AbortController();
@@ -706,7 +747,7 @@ export default function DashboardPage() {
             </span>
             <LanguageSwitcher
               language={language}
-              onChange={setLanguage}
+              onChange={chooseLanguage}
               label={text("language")}
               dir={direction}
             />

@@ -8,8 +8,9 @@ never create other keys.
 ## 1. Cloudflare checklist
 
 1. Bind D1 database `makhzan-al-rahma` to the Pages project (`DB`).
-2. Make sure additive migrations through `0006_basic_studio_fields.sql` are
-   applied. Apply new migrations only after review/approval:
+2. Make sure the required additive migrations are applied. The Payhip webhook
+   also needs `0008_payhip_webhook_events.sql`; review and get approval before
+   applying any migration to production:
    ```powershell
    npx wrangler d1 migrations apply makhzan-al-rahma --remote
    ```
@@ -23,7 +24,41 @@ never create other keys.
 5. Deploy, then verify read-only with `GET /api/tenant/me` using a provisioned
    key before giving it to a customer.
 
-## 2. Helper
+## 2. Admin key generator
+
+Open `/admin`, enter the `ADMIN_API_KEY`, and use **Generate Client Key** to
+create a tenant. The form records the client label/email, plan identifier,
+expiry, quota setting and default locale (`en`/LTR or `ar`/RTL). The raw
+`arh_...` key is shown once with a copy button and the studio link; store and
+deliver it securely. A quota setting of `0` means no quota limit.
+
+## 3. Payhip auto-provisioning and email
+
+Configure Payhip's **paid** webhook to call
+`https://<your-pages-project>.pages.dev/api/webhooks/payhip`. Set these Pages
+environment secrets/variables outside the repository:
+
+```text
+PAYHIP_API_KEY   Payhip Developer API key used to validate Payhip's SHA-256 signature
+RESEND_API_KEY   Resend API key for access email delivery
+MAIL_FROM        Verified sender address, e.g. Social Post Agent <studio@example.com>
+```
+
+The endpoint accepts only Payhip's signed `paid` event, uses its transaction
+ID for idempotency, provisions an annual English-default key, and sends the
+key plus dashboard link through Resend. Its response reports `delivered`,
+`failed`, or `not_configured`; missing mail settings do not block provisioning.
+Payhip deliveries are idempotent and do not issue a second key when retried.
+
+## 4. Default language
+
+The static landing page and studio begin in English/LTR. A user's saved
+language-switcher choice takes precedence; otherwise Arabic-speaking Cloudflare
+locations select Arabic/RTL, then a supported `Accept-Language` preference is
+used, with English as the final fallback. A tenant's provisioned locale is
+used when there is no saved user choice.
+
+## 5. Helper
 
 `scripts/provision-copy.ts` calls `POST /api/tenant/provision` once per copy.
 Raw keys are returned once and printed in redacted form on stdout. With `--out`,
@@ -110,7 +145,7 @@ Use `--copies` for reseller-specific overrides. It can extend `--count`:
 npx tsx scripts/provision-copy.ts --copies ./private/copies.json --out ./private/keys.json
 ```
 
-## 3. Tenant handoff
+## 6. Tenant handoff
 
 1. Open `/dashboard` and paste the `arh_...` key into the Access Key bar.
 2. Confirm prefilled brand name, industry, locale and support contact.
@@ -120,7 +155,7 @@ npx tsx scripts/provision-copy.ts --copies ./private/copies.json --out ./private
 4. Click **Lock Brand & Save (One-Time)**. The identity is now permanent.
 5. Upload product photos and generate creatives.
 
-## 4. Safety
+## 7. Safety
 
 - Admin key stays server-side; the helper sends it only in `X-Admin-Key`.
 - Never paste raw access keys into chat, tickets, source files or screenshots.

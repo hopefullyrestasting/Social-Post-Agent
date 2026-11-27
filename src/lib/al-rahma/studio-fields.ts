@@ -1,3 +1,5 @@
+import { cleanMarketingText, isRawFilename } from "./strict-design-rules";
+
 /**
  * Validation helpers for the Basic Studio's operator-owned product fields.
  *
@@ -11,8 +13,6 @@
  * Nothing here invents benefits, prices, urgency or shipping promises. Risky
  * phrases are rejected before storage and again by the Quality Gate.
  */
-
-import { isRawFilename } from "./strict-design-rules";
 
 export const MAX_SALES_LINE_LENGTH = 120;
 export const MAX_OFFER_LENGTH = 100;
@@ -123,9 +123,14 @@ export function buildStudioSalesLine(input: {
     .replace(/[_-]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  const source = [input.detectedType, input.tenantIndustry, fileStem, input.detectedLabel]
-    .map((item) => collapse(item ?? ""))
-    .find((item) => item.length > 0 && !isRawFilename(item));
+  const source = [
+    input.detectedType,
+    input.tenantIndustry,
+    isRawFilename(input.fileName) ? "" : fileStem,
+    input.detectedLabel,
+  ]
+    .map((item) => cleanMarketingText(collapse(item ?? ""), ""))
+    .find((item) => item.length > 0);
   if (!source) return "منتج مختار بعناية لك";
   const category = source.split(/\s+/).slice(0, 3).join(" ");
   const candidate = `جودة ${category} مميزة لك`;

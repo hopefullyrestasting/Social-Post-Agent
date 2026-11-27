@@ -1,5 +1,8 @@
-import { parseProductVisualBrief, visualBriefPrompt, type ProductVisualCommercialBrief } from "../../../src/lib/al-rahma/product-visual-brief";
-import { cleanMarketingText, pickMarketingText } from "../../../src/lib/al-rahma/strict-design-rules";
+import {
+  parseProductVisualBrief,
+  visualBriefPrompt,
+  type ProductVisualCommercialBrief,
+} from "../../../src/lib/al-rahma/product-visual-brief";
 /**
  * Vision AI helpers for the Smart Asset Matcher.
  *
@@ -289,26 +292,17 @@ function sanitizeGuess(value: Record<string, unknown> | null): RawGuess | null {
   const guess: RawGuess = {
     productId: clampText(value.productId, 100),
     confidence,
-    detectedLabel: cleanMarketingText(
-      clampText(
-        value.detectedLabel ?? value.label ?? value.productName,
-        300,
-      ),
-      "",
+    detectedLabel: clampText(
+      value.detectedLabel ?? value.label ?? value.productName,
+      300,
     ),
-    detectedBrand: cleanMarketingText(
-      clampText(
-        value.detectedBrand ?? value.brand ?? value.brandName,
-        120,
-      ),
-      "",
+    detectedBrand: clampText(
+      value.detectedBrand ?? value.brand ?? value.brandName,
+      120,
     ),
-    detectedType: cleanMarketingText(
-      clampText(
-        value.detectedType ?? value.type ?? value.productType,
-        120,
-      ),
-      "",
+    detectedType: clampText(
+      value.detectedType ?? value.type ?? value.productType,
+      120,
     ),
     reasoning: clampText(value.reasoning ?? value.reason, 400),
     raw: value,
@@ -335,9 +329,9 @@ function visualBriefFromGuess(
     .replace(/[_-]+/g, " ")
     .trim();
   return parseProductVisualBrief(guess.raw, "ar", {
-    identity: pickMarketingText([guess.detectedLabel, fileStem], "منتج جديد"),
-    category: pickMarketingText([guess.detectedType], "general"),
-    industry: pickMarketingText([guess.detectedType, guess.detectedBrand], "general"),
+    identity: guess.detectedLabel || fileStem || "منتج جديد",
+    category: guess.detectedType || "general",
+    industry: guess.detectedType || guess.detectedBrand || "general",
   });
 }
 
