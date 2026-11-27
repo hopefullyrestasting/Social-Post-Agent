@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import IDMark from "@/components/idesign/id-mark";
-import GlobeIcon from "@/components/idesign/globe-icon";
 import StudioEmblem from "@/components/idesign/studio-emblem";
 import LanguageSwitcher from "@/components/idesign/language-switcher";
 import { IDESIGN_STUDIO_CONFIG } from "@/lib/al-rahma/brand-core";
@@ -69,10 +68,7 @@ export default function Home() {
   };
 
   return (
-    <main
-      dir={direction}
-      className="min-h-screen bg-white text-slate-900"
-    >
+    <main dir={direction} className="min-h-screen bg-white text-slate-900">
       <header className="border-b border-blue-100 bg-white">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-5 py-4">
           <div className="flex items-center gap-3">
@@ -87,12 +83,6 @@ export default function Home() {
             </span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <span
-              className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50"
-              aria-hidden="true"
-            >
-              <GlobeIcon size={20} />
-            </span>
             <LanguageSwitcher
               language={language}
               onChange={chooseLanguage}
@@ -138,22 +128,13 @@ export default function Home() {
               <p className="font-black text-[#1D4ED8]">{text("contact")}</p>
             </div>
             <div className="mt-6 space-y-3 text-sm font-semibold" dir="ltr">
-              <a
-                href={IDESIGN_STUDIO_CONFIG.websiteUrl}
-                className="block text-blue-700 underline"
-              >
+              <a href={IDESIGN_STUDIO_CONFIG.websiteUrl} className="block text-blue-700 underline">
                 {IDESIGN_STUDIO_CONFIG.websiteLabel}
               </a>
-              <a
-                href={IDESIGN_STUDIO_CONFIG.emailUrl}
-                className="block text-blue-700 underline"
-              >
+              <a href={IDESIGN_STUDIO_CONFIG.emailUrl} className="block text-blue-700 underline">
                 {IDESIGN_STUDIO_CONFIG.email}
               </a>
-              <a
-                href={IDESIGN_STUDIO_CONFIG.whatsappUrl}
-                className="block text-blue-700 underline"
-              >
+              <a href={IDESIGN_STUDIO_CONFIG.whatsappUrl} className="block text-blue-700 underline">
                 {IDESIGN_STUDIO_CONFIG.phoneLabel}
               </a>
             </div>

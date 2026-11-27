@@ -33,3 +33,39 @@ html, body {
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+
+/* The admin console uses inline desktop styles; preserve its table while making
+   the header, key controls, and tenant search usable on narrow screens. */
+@media (max-width: 700px) {
+  body:has(main[dir="ltr"] table) main[dir="ltr"] {
+    padding: 16px !important;
+  }
+
+  body:has(main[dir="ltr"] table) main[dir="ltr"] > header {
+    align-items: stretch !important;
+    flex-direction: column !important;
+    gap: 16px;
+  }
+
+  body:has(main[dir="ltr"] table) main[dir="ltr"] > header > div,
+  body:has(main[dir="ltr"] table) main[dir="ltr"] > section {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  body:has(main[dir="ltr"] table) main[dir="ltr"] input,
+  body:has(main[dir="ltr"] table) main[dir="ltr"] select {
+    max-width: 100%;
+  }
+
+  body:has(main[dir="ltr"] table) main[dir="ltr"] > section[style*="overflow"] {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* The standalone globe in the dashboard header now visually belongs to the
+   language control, which renders the matching vector inside its pill. */
+header span:has(+ div > div > button[aria-expanded]) {
+  display: none !important;
+}

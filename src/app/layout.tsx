@@ -42,8 +42,8 @@ export const metadata: Metadata = {
     follow: true,
   },
   icons: {
-    icon: "/favicon.svg",
-    apple: "/favicon.svg",
+    icon: IDESIGN_STUDIO_CONFIG.faviconUrl,
+    apple: IDESIGN_STUDIO_CONFIG.faviconUrl,
   },
   manifest: "/site.webmanifest",
 };
