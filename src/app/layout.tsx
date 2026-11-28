@@ -3,13 +3,54 @@ import { IDESIGN_STUDIO_CONFIG } from "@/lib/al-rahma/brand-core";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: `${IDESIGN_STUDIO_CONFIG.name} — ${IDESIGN_STUDIO_CONFIG.productName}`,
-  description: `Basic Ad Studio by ${IDESIGN_STUDIO_CONFIG.name}: upload product photos, review details, and generate two ready-to-share designs per product without repeats.`,
+  metadataBase: new URL(IDESIGN_STUDIO_CONFIG.websiteUrl),
+  title: {
+    default: "PostCraft by iDesign",
+    template: "%s | PostCraft",
+  },
+  description:
+    "PostCraft by iDesign is a multi-tenant social content studio for brands, agencies, designers, and product sellers. Create polished product showcases in Arabic RTL or English LTR.",
+  keywords: [
+    "PostCraft",
+    "iDesign",
+    "social media design",
+    "product showcase",
+    "brand content",
+    "ad creator",
+    "Arabic social media",
+    "RTL design",
+    "LTR design",
+  ],
+  openGraph: {
+    type: "website",
+    locale: "en_US",
+    alternateLocale: ["ar_EG"],
+    url: IDESIGN_STUDIO_CONFIG.websiteUrl,
+    siteName: IDESIGN_STUDIO_CONFIG.productName,
+    title: "PostCraft by iDesign",
+    description:
+      "A multi-tenant social content studio for brands, agencies, designers, and product sellers.",
+  },
+  twitter: {
+    card: "summary",
+    title: "PostCraft by iDesign",
+    description:
+      "Create branded RTL and LTR product showcases for social media.",
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
+  icons: {
+    icon: IDESIGN_STUDIO_CONFIG.faviconUrl,
+    apple: IDESIGN_STUDIO_CONFIG.faviconUrl,
+  },
+  manifest: "/site.webmanifest",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ar" dir="rtl">
+    <html lang="en" dir="ltr">
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />

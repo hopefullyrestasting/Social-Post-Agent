@@ -1,7 +1,7 @@
 {
   "name": "social-post-agent",
   "version": "1.0.0",
-  "description": "Al-Rahma Store Social Post Agent — AI-powered content generation, copywriter, overlay system, and quality gate for Egyptian e-commerce.",
+  "description": "PostCraft by iDesign — a multi-tenant RTL/LTR social product showcase studio.",
   "license": "MIT",
   "private": true,
   "scripts": {
@@ -10,7 +10,7 @@
     "start": "next start",
     "lint": "eslint src functions",
     "typecheck": "tsc --noEmit",
-    "test": "tsx scripts/test-al-rahma-pipeline.ts && tsx scripts/test-db-api.ts && tsx scripts/test-basic-studio.ts && tsx scripts/test-phase16.ts && tsx scripts/test-multi-tenant-phase4.ts && tsx scripts/test-vision-layout.ts && tsx scripts/test-provision-copy.ts && tsx scripts/test-design-rules-compliance.ts && tsx scripts/test-admin-scale.ts"
+    "test": "tsx scripts/test-al-rahma-pipeline.ts && tsx scripts/test-db-api.ts && tsx scripts/test-basic-studio.ts && tsx scripts/test-phase16.ts && tsx scripts/test-multi-tenant-phase4.ts && tsx scripts/test-vision-layout.ts && tsx scripts/test-provision-copy.ts && tsx scripts/test-design-rules-compliance.ts && tsx scripts/test-admin-scale.ts && tsx scripts/test-tenant-provisioning-locale.ts"
   },
   "dependencies": {
     "jszip": "^3.10.2",

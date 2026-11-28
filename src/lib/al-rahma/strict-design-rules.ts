@@ -6,38 +6,36 @@ import {
 } from "./brand-core";
 import type { Rect } from "./layout-geometry";
 
-/**
- * Strict creative-rule guards shared by the copy, overlay, upload and campaign
- * pipelines.
- *
- * They exist so a rule can only be implemented once: raw storage/camera
- * filenames never reach human-facing copy, operator-owned commercial metadata
- * stays optional, layout zones never clip or collide, and a locked tenant never
- * renders the legacy default brand.
- */
-
 const CAMERA_PREFIX =
   /^(?:whatsapp(?:\s+image)?|img|dsc|image|photo|screenshot|screen[\s_-]*shot|pxl|signal|telegram)[\s_-]*\d/i;
 const HASHED_FILE = /^[a-f0-9]{16,}(?:\.[a-z0-9]{1,5})?$/i;
+const HASH_TOKEN = /(?:^|[\s_.-])[a-f0-9]{16,}(?:$|[\s_.-])/i;
 const IMAGE_EXTENSION = /\.(?:jpe?g|png|webp|heic|heif|avif|gif|bmp|tiff?)$/i;
-const CAMERA_STEM = /(?:^|[\s_-])(?:whatsapp|img|dsc|image|photo|screenshot|signal|telegram)(?:$|[\s_-])/i;
+const CAMERA_STEM =
+  /(?:^|[\s_-])(?:whatsapp|img|dsc|image|photo|screenshot|signal|telegram)(?:$|[\s_-])/i;
+const CAMERA_FILENAME_IN_TEXT =
+  /(?:^|[\s/([{])(?:whatsapp(?:\s+image)?|img|dsc|image|photo|screenshot|screen[\s_-]*shot|pxl|signal|telegram)[\s_-]*\d[\w\s.:-]*?\.(?:jpe?g|png|webp|heic|heif|avif|gif|bmp|tiff?)(?=$|[\s)\]},;])/i;
 
 function collapse(value: string | null | undefined): string {
   return (value ?? "").trim().replace(/\s+/g, " ");
 }
 
-/** True for storage/camera/chat export names that must never be shown to people. */
 export function isRawFilename(value: string | null | undefined): boolean {
   const text = collapse(value);
   if (!text) return false;
-  if (HASHED_FILE.test(text)) return true;
-  if (CAMERA_PREFIX.test(text)) return true;
+  if (
+    HASHED_FILE.test(text) ||
+    HASH_TOKEN.test(text) ||
+    CAMERA_PREFIX.test(text) ||
+    CAMERA_FILENAME_IN_TEXT.test(text)
+  ) {
+    return true;
+  }
   if (!IMAGE_EXTENSION.test(text)) return false;
   const stem = text.replace(IMAGE_EXTENSION, "");
   return CAMERA_STEM.test(stem) || /\d{6,}/.test(stem);
 }
 
-/** Removes storage/camera filenames before they can enter human-facing creative copy. */
 export function cleanMarketingText(
   value: string | null | undefined,
   fallback: string,
@@ -47,7 +45,6 @@ export function cleanMarketingText(
   return text.slice(0, 120);
 }
 
-/** First clean candidate wins; useful when a label, stem and category compete. */
 export function pickMarketingText(
   values: ReadonlyArray<string | null | undefined>,
   fallback: string,
@@ -60,7 +57,6 @@ export function pickMarketingText(
   return fallback;
 }
 
-/** Reads a locked tenant name from either a flat or nested context shape. */
 function lockedBrandName(
   tenant: TenantBrandSource | BrandConfig | null | undefined,
 ): string {
@@ -71,22 +67,16 @@ function lockedBrandName(
   return typeof nested?.brandName === "string" ? nested.brandName.trim() : "";
 }
 
-/** Tenant renders must always carry the locked brand identity, not the legacy default. */
 export function assertTenantBrandExclusive(
   tenant: TenantBrandSource | BrandConfig | null | undefined,
   resolved: BrandConfig,
 ): void {
   const locked = lockedBrandName(tenant);
-  if (!locked) return;
-  if ((resolved.brandName ?? "").trim() !== locked) {
+  if (locked && (resolved.brandName ?? "").trim() !== locked) {
     throw new Error("Tenant brand context must resolve to its own locked identity.");
   }
 }
 
-/**
- * Guards generated human-facing text after resolution. A locked tenant may
- * never contain the legacy default brand name or its English label.
- */
 export function assertNoLegacyBrandLeak(
   text: string | null | undefined,
   resolved: BrandConfig,
@@ -107,12 +97,12 @@ export function assertNoLegacyBrandLeak(
 }
 
 export interface RuleZones {
-  logo: Rect;
+  logo?: Rect | null;
   headline: Rect;
   product: Rect;
   offer?: Rect | null;
   price?: Rect | null;
-  footer: Rect;
+  footer?: Rect | null;
 }
 
 const intersects = (a: Rect, b: Rect): boolean =>
@@ -122,17 +112,21 @@ const intersects = (a: Rect, b: Rect): boolean =>
   a.y + a.height > b.y;
 
 const isFiniteRect = (rect: Rect): boolean =>
-  [rect.x, rect.y, rect.width, rect.height].every((value) => Number.isFinite(value));
+  [rect.x, rect.y, rect.width, rect.height].every(Number.isFinite);
 
-/**
- * Proves a creative is publishable: every active zone is finite, non-empty,
- * inside the canvas and disjoint from every other zone. Optional price/offer
- * zones are skipped when absent, so the same guard serves conditional layouts.
- */
 export function assertSafeZones(
   zones: RuleZones,
   canvas: { width: number; height: number } = { width: 1080, height: 1920 },
 ): void {
+  if (
+    !Number.isFinite(canvas.width) ||
+    !Number.isFinite(canvas.height) ||
+    canvas.width <= 0 ||
+    canvas.height <= 0
+  ) {
+    throw new Error("Creative canvas dimensions are invalid.");
+  }
+
   const entries = Object.entries(zones).filter(
     (entry): entry is [string, Rect] => Boolean(entry[1]),
   );
@@ -149,11 +143,12 @@ export function assertSafeZones(
       throw new Error(`Creative zone "${name}" clips off canvas.`);
     }
   }
-  for (let i = 0; i < entries.length; i += 1) {
-    for (let j = i + 1; j < entries.length; j += 1) {
-      if (intersects(entries[i]![1], entries[j]![1])) {
+
+  for (let index = 0; index < entries.length; index += 1) {
+    for (let other = index + 1; other < entries.length; other += 1) {
+      if (intersects(entries[index]![1], entries[other]![1])) {
         throw new Error(
-          `Creative zones "${entries[i]![0]}" and "${entries[j]![0]}" overlap.`,
+          `Creative zones "${entries[index]![0]}" and "${entries[other]![0]}" overlap.`,
         );
       }
     }

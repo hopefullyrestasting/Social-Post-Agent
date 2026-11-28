@@ -1,4 +1,5 @@
 import { requireAdmin, noStore } from "./_admin";
+import { tenantSettingKey } from "../_tenant";
 
 interface Env { DB: D1Database; ADMIN_API_KEY?: string; }
 const text = (value: unknown, limit = 500) => typeof value === "string" ? value.trim().slice(0, limit) : "";
@@ -18,8 +19,39 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   } else if (action === "extend_expiry") {
     const days = Number(body.days); if (!Number.isInteger(days) || days < 1 || days > 3650) return Response.json({success:false,error:"days must be 1–3650."},{status:400});
     await env.DB.prepare("UPDATE activation_keys SET expires_at = MAX(COALESCE(expires_at, ?), ?) + ? WHERE id = ?").bind(now,now,days*86400,tenantId).run();
-  } else if (action === "unlock_brand") {
-    await env.DB.prepare("UPDATE activation_keys SET brand_locked = 0, locked_at = NULL WHERE id = ?").bind(tenantId).run();
+  } else if (action === "unlock_brand" || action === "reset_brand_lock") {
+    const statements: D1PreparedStatement[] = [
+      env.DB.prepare(
+        `UPDATE activation_keys
+         SET brand_locked = 0,
+             locked_brand_name = NULL,
+             locked_industry = NULL,
+             locked_logo_url = NULL,
+             locked_brand_json = NULL,
+             locked_at = NULL
+         WHERE id = ?`,
+      ).bind(tenantId),
+      env.DB.prepare(
+        "UPDATE brand_profiles SET is_active = 0, updated_at = ? WHERE id = ?",
+      ).bind(now, tenantId),
+    ];
+    for (const key of [
+      "brand_name",
+      "industry",
+      "brand_logo_url",
+      "brand_description",
+      "currency",
+      "locale",
+      "rtl",
+      "contact_info",
+    ]) {
+      statements.push(
+        env.DB.prepare(
+          "UPDATE business_settings SET value = NULL, updated_at = ? WHERE tenant_key_id = ? AND key = ?",
+        ).bind(now * 1000, tenantId, tenantSettingKey(tenantId, key)),
+      );
+    }
+    await env.DB.batch(statements);
   } else if (action === "override_brand") {
     const brandName=text(body.brandName,120), industry=text(body.industry,120), logoUrl=text(body.logoUrl,2048);
     if (!brandName || !industry) return Response.json({success:false,error:"brandName and industry are required."},{status:400});

@@ -1,35 +1,18 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #0f172a;
-  --card-bg: #ffffff;
-  --card-border: #dbeafe;
-  --muted: #64748b;
-  --brand-blue: #1d4ed8;
-  --brand-blue-bright: #2563eb;
-  --brand-blue-soft: #eff6ff;
-}
+:root { --background: #ffffff; --foreground: #0f172a; --card-bg: #ffffff; --card-border: #dbeafe; --muted: #64748b; --brand-blue: #1d4ed8; --brand-blue-bright: #2563eb; --brand-blue-soft: #eff6ff; }
+html, body { background: var(--background); color: var(--foreground); font-family: 'Cairo', 'Tajawal', ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; min-height: 100vh; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: #f1f5f9; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
-html, body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: 'Cairo', 'Tajawal', ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  min-height: 100vh;
-}
-
-/* Custom Soft Scrollbars */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-::-webkit-scrollbar-track {
-  background: #f1f5f9;
-}
-::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 4px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+@media (max-width: 700px) {
+  body:has(main[dir="ltr"] table) main[dir="ltr"] { padding: 16px !important; }
+  body:has(main[dir="ltr"] table) main[dir="ltr"] > header { align-items: stretch !important; flex-direction: column !important; gap: 16px; }
+  body:has(main[dir="ltr"] table) main[dir="ltr"] > header > div,
+  body:has(main[dir="ltr"] table) main[dir="ltr"] > section { min-width: 0; max-width: 100%; }
+  body:has(main[dir="ltr"] table) main[dir="ltr"] input,
+  body:has(main[dir="ltr"] table) main[dir="ltr"] select { max-width: 100%; }
+  body:has(main[dir="ltr"] table) main[dir="ltr"] > section[style*="overflow"] { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
 }

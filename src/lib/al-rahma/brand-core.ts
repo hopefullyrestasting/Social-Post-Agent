@@ -231,6 +231,7 @@ export const AL_RAHMA_BRAND_CONFIG: BrandConfig = {
   ],
 };
 
+
 /** Minimal tenant brand context injected by multi-tenant runtime. */
 export interface TenantBrandContext {
   brandName?: string | null;
@@ -245,13 +246,12 @@ export interface TenantBrandContext {
   palette?: Partial<BrandVisualTheme["primaryColors"]> | null;
 }
 
-/** Flat tenant context or the older nested `{ brand: ... }` lock shape. */
 export type TenantBrandSource = TenantBrandContext & {
   brand?: TenantBrandContext | null;
 };
 
 /**
- * Studio/operator identity for the Basic Ad Studio UI shell only.
+ * Studio/operator identity for the PostCraft UI shell only.
  *
  * All brand names, phone numbers and contact links used by the landing page,
  * dashboard shell and export filenames must come from this object. Generated
@@ -259,7 +259,7 @@ export type TenantBrandSource = TenantBrandContext & {
  */
 export const IDESIGN_STUDIO_CONFIG = {
   name: "iDesign",
-  productName: "AI Social Ad Studio",
+  productName: "PostCraft",
   tagline: "by iDesign",
   websiteLabel: "idesign.social",
   websiteUrl: "https://idesign.social",
@@ -278,23 +278,19 @@ export const IDESIGN_STUDIO_CONFIG = {
 
 export type IDesignStudioConfig = typeof IDESIGN_STUDIO_CONFIG;
 
-/** Build a BrandConfig from locked tenant context, falling back to base config. */
 export function buildBrandConfigFromTenant(ctx?: TenantBrandSource | null): BrandConfig {
   const base = AL_RAHMA_BRAND_CONFIG;
   if (!ctx) return base;
-  // Older callers pass `{ brand: TenantBrandLock }`; normalize both shapes.
   const nested = "brand" in ctx ? ctx.brand : null;
-  const source: TenantBrandContext = nested && typeof nested === "object" ? nested : ctx;
+  const source: TenantBrandContext =
+    nested && typeof nested === "object" ? nested : ctx;
   const brandName = (source.brandName || "").trim();
   const locked = brandName.length > 0;
   const resolvedName = brandName || base.brandName;
   const industry = (source.industry || "").trim();
   const phone = (source.phone || "").trim() || (locked ? "" : base.contact.phone);
-  const digits = phone.replace(/\D/g, "");
   const whatsapp =
-    (source.whatsapp || "").trim() ||
-    (digits ? `https://wa.me/${digits.startsWith("2") ? digits : "2" + digits}` : locked ? "" : base.contact.whatsappUrl);
-  // A locked tenant must never inherit the legacy marketing line or hashtags.
+    (source.whatsapp || "").trim() || (locked ? "" : base.contact.whatsappUrl);
   const tagline = (source.tagline || "").trim() || (locked ? industry : base.tagline);
   const currency = (source.currency || "").trim() || base.commercial.currencyLabel;
   const timezone = (source.timezone || "").trim() || base.commercial.timezone;
@@ -307,13 +303,26 @@ export function buildBrandConfigFromTenant(ctx?: TenantBrandSource | null): Bran
   const palette = source.palette ?? {};
   return {
     ...base,
+    id: locked ? "locked-tenant-brand" : base.id,
     brandName: resolvedName,
     brandNameEnglish: resolvedName,
+    legalName: locked ? resolvedName : base.legalName,
+    valueProposition: locked
+      ? "للتواصل والاستفسار عن المنتجات."
+      : base.valueProposition,
+    voice: locked ? { ...base.voice, keyMessages: [] } : base.voice,
     activity: tagline,
     tagline,
     taglineEnglish: tagline,
     taglineShort: tagline,
-    contact: { ...base.contact, phone, whatsappUrl: whatsapp, label: "للتواصل :" },
+    contact: {
+      ...base.contact,
+      phone,
+      whatsappUrl: whatsapp,
+      deliveryPromise: locked ? "" : base.contact.deliveryPromise,
+      returnPolicy: locked ? "" : base.contact.returnPolicy,
+      label: locked ? "" : "للتواصل :",
+    },
     commercial: { ...base.commercial, currencyLabel: currency, timezone },
     hashtags,
     visual: {

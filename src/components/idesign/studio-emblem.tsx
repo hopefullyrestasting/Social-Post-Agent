@@ -5,11 +5,6 @@ import { useState } from "react";
 import { IDESIGN_STUDIO_CONFIG } from "@/lib/al-rahma/brand-core";
 import IDMark from "./id-mark";
 
-/**
- * Studio shell emblem. Prefers the live iDesign favicon for brand recognition
- * and falls back to the bundled vector mark when the remote asset cannot load.
- * It is UI-only and never enters a generated tenant creative.
- */
 export default function StudioEmblem({ size = 44 }: { size?: number }) {
   const [failed, setFailed] = useState(false);
   if (failed) return <IDMark size={size} />;
