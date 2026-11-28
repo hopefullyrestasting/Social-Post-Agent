@@ -81,6 +81,9 @@ function maskAccessKey(key: string): string {
   if (trimmed.length <= 8) return "arh_••••";
   return `${trimmed.slice(0, 4)}••••${trimmed.slice(-4)}`;
 }
+function currentTimestamp(): number {
+  return Date.now();
+}
 async function fetchTenant(signal?: AbortSignal): Promise<TenantInfo | null> {
   installAccessKeyFetch();
   const response = await fetch("/api/tenant/me", { headers: { Accept: "application/json", ...accessKeyHeaders() }, cache: "no-store", signal });
@@ -223,7 +226,7 @@ export default function DashboardPage() {
       const result = await readJson<CampaignResult>(response);
       if (!response.ok || result.success === false) { const failed = result as ApiFailure; if (failed.code === "already_generated") { setSelected([]); setLoading(true); setRefreshKey((value) => value + 1); } if (failed.code === "generation_rate_limited") { const seconds = Math.max(1, Number((failed as ApiFailure & { retry_after_seconds?: number }).retry_after_seconds) || 1); setRetryBody(body); setProgress({ phase: "busy", detail: `${failed.error || text("generationBusy")} · ${text("generationBusy")} ${seconds} ${text("generationSeconds")}`, retryAfterSeconds: seconds }); return; } throw new Error(failureMessage(failed, response.status, text("saveFailed"))); }
       const creatives = Array.isArray(result.creatives) ? result.creatives : [];
-      if (creatives.length > 0) { const stamp = Date.now(); setCampaigns((previous) => [{ id: result.generation?.campaignId || `pending-${stamp}`, status: "completed", total_images: creatives.length, creatives: creatives.map((creative, index): GalleryCreative => ({ id: creative.id || `pending-${stamp}-${index}`, product_id: creative.product_id || selectedIds[index] || "", campaign_id: result.generation?.campaignId ?? null, variant_number: creative.variant_number ?? index + 1, image_url: creative.image_url ?? null, svg: creative.svg ?? null, product_name_arabic: creative.product_name_arabic ?? null })) }, ...previous]); await downloadCreativesZip(creatives, `${IDESIGN_STUDIO_CONFIG.exportSlug}-${Date.now()}.zip`); }
+      if (creatives.length > 0) { const stamp = currentTimestamp(); setCampaigns((previous) => [{ id: result.generation?.campaignId || `pending-${stamp}`, status: "completed", total_images: creatives.length, creatives: creatives.map((creative, index): GalleryCreative => ({ id: creative.id || `pending-${stamp}-${index}`, product_id: creative.product_id || selectedIds[index] || "", campaign_id: result.generation?.campaignId ?? null, variant_number: creative.variant_number ?? index + 1, image_url: creative.image_url ?? null, svg: creative.svg ?? null, product_name_arabic: creative.product_name_arabic ?? null })) }, ...previous]); await downloadCreativesZip(creatives, `${IDESIGN_STUDIO_CONFIG.exportSlug}-${stamp}.zip`); }
       setNotice(result.message || `${text("generationDone")} ${creatives.length}`); setProgress({ phase: "complete", detail: text("generationComplete") }); setRetryBody(null); setSelected([]); setLoading(true); setRefreshKey((value) => value + 1);
     } catch (caught) { setProgress({ phase: "idle" }); setError(caught instanceof Error ? caught.message : text("saveFailed")); } finally { setGenerating(false); }
   }
@@ -262,7 +265,7 @@ export default function DashboardPage() {
       <div className="mx-auto max-w-6xl space-y-5 px-4 py-6 sm:px-5">
         {topCreatives.length > 0 ? (
           <section className="overflow-hidden rounded-2xl border-2 border-[#2563EB] bg-[#1D4ED8] shadow-sm" aria-labelledby="top-creatives-heading">
-            <div className="flex items-center justify-between gap-3 px-4 py-3 text-white"><div><h2 id="top-creatives-heading" class="text-lg font-black">{text("generatedCreativesTitle")}</h2><p className="text-xs text-blue-100">{topCreatives.length} {text("generatedCount")}</p></div><button type="button" onClick={() => document.getElementById("full-creatives-gallery")?.scrollIntoView({ behavior: "smooth", block: "start" })} className="rounded-lg bg-white px-3 py-2 text-xs font-black text-[#1D4ED8]">{text("viewAllCreatives")}</button></div>
+            <div className="flex items-center justify-between gap-3 px-4 py-3 text-white"><div><h2 id="top-creatives-heading" className="text-lg font-black">{text("generatedCreativesTitle")}</h2><p className="text-xs text-blue-100">{topCreatives.length} {text("generatedCount")}</p></div><button type="button" onClick={() => document.getElementById("full-creatives-gallery")?.scrollIntoView({ behavior: "smooth", block: "start" })} className="rounded-lg bg-white px-3 py-2 text-xs font-black text-[#1D4ED8]">{text("viewAllCreatives")}</button></div>
             <div className="flex gap-3 overflow-x-auto bg-blue-950/10 p-3" dir="ltr">
               {topCreatives.map((creative) => { const src = previewSrc(creative); return <article key={creative.id} className="w-[112px] shrink-0 overflow-hidden rounded-xl border border-white/40 bg-white p-1.5 sm:w-[132px]"><div className="aspect-[9/16] overflow-hidden rounded-lg bg-blue-50">{src ? <Image src={src} alt={creative.product_name_arabic || text("creativeProductFallback")} width={132} height={235} unoptimized className="h-full w-full object-contain" /> : <div className="flex h-full items-center justify-center text-xs text-slate-400">—</div>}</div><button type="button" disabled={!src} onClick={() => src && void downloadCreativePng({ id: creative.id, product_id: creative.product_id, product_name_arabic: creative.product_name_arabic ?? null, variant_number: creative.variant_number ?? null, image_url: creative.image_url ?? null, svg: creative.svg ?? null })} className="mt-1.5 w-full rounded-md bg-[#2563EB] px-1 py-1.5 text-[10px] font-bold text-white disabled:opacity-50">{text("downloadImage")}</button></article>; })}
             </div>
@@ -276,6 +279,22 @@ export default function DashboardPage() {
         <section className="grid gap-5 lg:grid-cols-[0.72fr_1.28fr]">
           <aside className="rounded-2xl border border-blue-100 bg-white p-4 shadow-sm">
             <button type="button" onClick={() => setProductDrawerOpen((value) => !value)} aria-expanded={productDrawerOpen} className="flex w-full items-center justify-between rounded-xl bg-blue-50 px-3 py-3 text-start text-sm font-black text-[#1D4ED8] lg:cursor-default" ><span>{text("productLibrary")} · {products.length}</span><span className="lg:hidden">{productDrawerOpen ? "−" : "+"}</span></button>
+            <label className="mt-3 block cursor-pointer rounded-xl border-2 border-dashed border-blue-300 bg-white p-4 text-center transition hover:border-[#1D4ED8]">
+              <span className="block text-sm font-extrabold text-[#1D4ED8]">{uploading ? text("uploading") : text("upload")}</span>
+              <span className="mt-1 block text-xs text-slate-500">{text("uploadHint")}</span>
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                multiple
+                disabled={uploading}
+                className="mt-3 block w-full text-sm"
+                onChange={(event) => {
+                  void uploadImages(event.currentTarget.files ?? []);
+                  event.currentTarget.value = "";
+                }}
+              />
+            </label>
             <div className={`${productDrawerOpen ? "block" : "hidden"} mt-3 max-h-[420px] space-y-2 overflow-y-auto lg:block`}>
               {loading ? <p className="py-6 text-center text-xs text-slate-500">…</p> : products.length === 0 ? <p className="rounded-lg bg-blue-50 p-4 text-center text-xs text-slate-600">{text("empty")}</p> : products.map((product) => <article key={product.id} className={`rounded-xl border p-2.5 ${selectedProductId === product.id ? "border-[#2563EB] bg-blue-50" : "border-blue-100 bg-white"}`}><button type="button" onClick={() => { setSelectedProductId(product.id); setSelected([product.id]); }} className="flex w-full items-center gap-2 text-start"><Image src={product.image_url || "/favicon.svg"} alt={product.name_arabic} width={48} height={48} unoptimized className="h-12 w-12 shrink-0 rounded-lg border border-blue-100 object-contain" /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-black">{product.name_arabic}</span><span className="block text-[11px] text-slate-500">{product.last_advertised_at ? text("generated") : text("remaining")}</span></span></button><button type="button" disabled={generating} onClick={() => void generateAndDownload({ mode: "basic", productIds: [product.id] })} className="mt-2 w-full rounded-lg border border-[#2563EB] px-2 py-1.5 text-xs font-bold text-[#1D4ED8] disabled:opacity-50">{text("generateAgain")}</button></article>)}
             </div>

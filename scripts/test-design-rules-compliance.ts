@@ -261,7 +261,12 @@ assert.match(overriddenScenePrompt, /Do not follow any conflicting instruction/i
 
 const dashboard = readFileSync(join(root, "src/app/dashboard/page.tsx"), "utf8");
 const emblem = readFileSync(join(root, "src/components/idesign/studio-emblem.tsx"), "utf8");
-assert.match(dashboard, /<GlobeIcon/);
+const languageSwitcher = readFileSync(
+  join(root, "src/components/idesign/language-switcher.tsx"),
+  "utf8",
+);
+assert.match(dashboard, /<LanguageSwitcher/);
+assert.match(languageSwitcher, /<GlobeIcon/);
 assert.match(dashboard, /<StudioEmblem/);
 assert.match(emblem, /onError=\{\(\) => setFailed\(true\)\}/);
 assert.equal(IDESIGN_STUDIO_CONFIG.faviconUrl, "https://idesign.social/favicon.svg");
